@@ -109,6 +109,14 @@ public interface ErrorCodeConstants {
     ErrorCode PHARMACY_MEMBER_SMS_CODE_NOT_EXISTS = new ErrorCode(1_030_006_010, "请先获取该手机号的验证码");
     ErrorCode PHARMACY_MEMBER_SMS_DEV_CODE_NOT_CONFIGURED = new ErrorCode(1_030_006_011,
             "开发环境未配置测试验证码，请通过环境变量 PHARMACY_DEV_SMS_CODE 配置");
+    ErrorCode PHARMACY_WECHAT_LOGIN_CONFIG_MISSING = new ErrorCode(1_030_006_012,
+            "微信登录未配置可信租户或小程序应用");
+    ErrorCode PHARMACY_WECHAT_LOGIN_CODE_INVALID = new ErrorCode(1_030_006_013,
+            "微信登录凭证无效或已失效");
+    ErrorCode PHARMACY_WECHAT_LOGIN_TYPE_INVALID = new ErrorCode(1_030_006_014,
+            "微信登录类型不支持");
+    ErrorCode PHARMACY_WECHAT_IDENTITY_MEMBER_MISSING = new ErrorCode(1_030_006_015,
+            "微信身份绑定的会员不存在");
 
     // ========== 会员等级 1-030-007-000 ==========
     ErrorCode PHARMACY_MEMBER_LEVEL_NOT_EXISTS = new ErrorCode(1_030_007_000, "会员等级不存在");
@@ -220,6 +228,7 @@ public interface ErrorCodeConstants {
     ErrorCode PRESC_STATUS_INVALID = new ErrorCode(1_032_001_004, "处方状态不允许该操作");
     ErrorCode PRESC_SOURCE_INVALID = new ErrorCode(1_032_001_005, "处方来源非法：只能为 0(纸质拍照)/1(电子处方平台)/2(复诊续方)");
     ErrorCode PRESC_IMAGES_EXCEED = new ErrorCode(1_032_001_006, "处方影像最多上传 5 张");
+    ErrorCode PRESC_NOT_OWNER = new ErrorCode(1_032_001_007, "无权查看他人处方");
 
     // ========== 审方 1-032-002-000（E 维护）==========
     ErrorCode PRESC_REVIEW_ALREADY = new ErrorCode(1_032_002_000, "处方已审核，不能重复审核");

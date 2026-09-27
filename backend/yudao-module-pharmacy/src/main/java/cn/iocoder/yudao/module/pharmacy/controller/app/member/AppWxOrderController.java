@@ -44,6 +44,15 @@ public class AppWxOrderController {
     @Resource
     private WxOrderLineService wxOrderLineService;
 
+    @PostMapping("/payment-notify")
+    @jakarta.annotation.security.PermitAll // Pay module sends no member token; service verifies persisted records.
+    @Operation(summary = "接收支付业务通知")
+    public CommonResult<Boolean> paymentNotify(@RequestBody @Valid
+            cn.iocoder.yudao.module.pay.api.notify.dto.PayOrderNotifyReqDTO request) {
+        wxOrderService.notifyWxOrderPaid(request.getMerchantOrderId(), request.getPayOrderId());
+        return success(true);
+    }
+
     @PostMapping("/create")
     @Operation(summary = "从购物车已勾选商品下单（到店自提/同城配送）",
             description = "usePoints 只表示希望使用的抵扣积分，实际可用值与赠送积分由后端按会员等级与积分规则计算")
@@ -95,6 +104,34 @@ public class AppWxOrderController {
         wxOrderService.validateWxOrderOwner(getLoginUserId(), id);
         // 小程序端没有库存作业身份，会员取消只关闭订单，冻结 / 出库的库存由门店节点释放或回补
         wxOrderService.cancelWxOrderByMember(id, cancelReason);
+        return success(true);
+    }
+
+    @PostMapping("/simulate-pay")
+    @Operation(summary = "模拟支付本人订单（幂等）：待支付 → 已支付 + 待拣货",
+            description = "默认关闭；仅开发测试环境可启用，使用服务端金额并经支付成功链完成扣库")
+    @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
+    public CommonResult<Boolean> simulatePay(@RequestParam("id") Long id) {
+        // 校验订单归属后模拟支付，避免越权操作他人订单
+        wxOrderService.validateWxOrderOwner(getLoginUserId(), id);
+        wxOrderService.simulatePayWxOrderByMember(id);
+        return success(true);
+    }
+
+    @GetMapping("/mock-payment-available")
+    @Operation(summary = "查询当前实例是否开放测试模拟支付")
+    public CommonResult<Boolean> isMockPaymentAvailable() {
+        return success(wxOrderService.isMockPaymentAvailable());
+    }
+
+    @PostMapping("/confirm-receive")
+    @Operation(summary = "确认本人配送订单收货（幂等）：配送准备完成 → 完成",
+            description = "仅已支付且完成拣货的配送订单；自提由门店员工按取货码核销")
+    @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
+    public CommonResult<Boolean> confirmReceive(@RequestParam("id") Long id) {
+        // 校验订单归属后确认收货，避免越权操作他人订单
+        wxOrderService.validateWxOrderOwner(getLoginUserId(), id);
+        wxOrderService.confirmReceiveWxOrderByMember(id);
         return success(true);
     }
 

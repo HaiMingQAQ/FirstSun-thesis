@@ -58,6 +58,8 @@ services:
       - ./sql/migrations/20260918_l_fix_demo_location_163032.sql:/docker-entrypoint-initdb.d/35-fix-demo-location-163032.sql:ro
       - ./sql/migrations/20260917_o_pharmacy_ai_prototype.sql:/docker-entrypoint-initdb.d/36-pharmacy-ai-prototype.sql:ro
       - ./sql/migrations/20260918_a_ai_menu_fix.sql:/docker-entrypoint-initdb.d/37-pharmacy-ai-menu-fix.sql:ro
+      - ./sql/migrations/20260922_p_admin_delivery_demo_data.sql:/docker-entrypoint-initdb.d/38-admin-delivery-demo-data.sql:ro
+      - ./sql/migrations/20260922_f_pharmacy_wechat_identity.sql:/docker-entrypoint-initdb.d/39-pharmacy-wechat-identity.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
@@ -94,9 +96,15 @@ services:
       # 会员手机号快捷登录的「开发测试验证码」：仅 local/dev profile 生效，
       # 生产环境不使用该变量；真实验证码值只写在本地 .env（已被 git 忽略）
       PHARMACY_DEV_SMS_CODE: ${PHARMACY_DEV_SMS_CODE:-}
+      PHARMACY_WECHAT_TENANT_ID: ${PHARMACY_WECHAT_TENANT_ID:-}
+      PHARMACY_WECHAT_APP_ID: ${PHARMACY_WECHAT_APP_ID:-}
+      WX_MINIAPP_APPID: ${WX_MINIAPP_APPID:-}
+      WX_MINIAPP_SECRET: ${WX_MINIAPP_SECRET:-}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx512m -Djava.security.egd=file:/dev/./urandom}
+      # 团队开发 Compose 默认禁用；测试支付只在单独创建的隔离测试环境人工开启。
       ARGS: >-
         --spring.profiles.active=local
+        --firstsun.miniapp.mock-payment-enabled=false
         --spring.datasource.dynamic.datasource.master.url=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-firstsun_pharmacy}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
         --spring.datasource.dynamic.datasource.master.username=${MYSQL_USER:-pharmacy}
         --spring.datasource.dynamic.datasource.master.password=${MYSQL_PASSWORD:-pharmacy123}

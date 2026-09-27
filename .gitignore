@@ -38,6 +38,11 @@ Thumbs.db
 **/package-lock.json
 .reasonix/
 
+# Local miniapp acceptance output
+/scripts/miniapp-http-acceptance/runtime/
+/scripts/miniapp-http-acceptance/runtime-history/
+/mall-uniapp/audit-rerun-*.log
+
 # Local environment overrides
 **/.env.*.local
 

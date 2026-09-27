@@ -1,5 +1,7 @@
 # FirstSun Pharmacy — SSH 隧道受限演示部署指南
 
+> 毕设基线补充：现有云端演示 Compose 显式关闭模拟支付。`local` profile 不能证明实例隔离；不得在现有云端演示实例开启该开关。测试支付只可在单独创建、人工确认隔离的测试环境开启。小程序发布条件见 [构建说明](../mall-uniapp/README.deploy.md)，真机连接尚未验证。
+
 > 源码基线：`codex/admin-delivery`（基于 `origin/main` @ f0068958，以当前交付提交为准）
 > 镜像标签：后端 `codex-20260922`，管理后台 `codex-20260923-demo-data`（非 latest）
 > 适用场景：无域名、无公网 HTTPS 条件下的 SSH 隧道受限演示
@@ -80,6 +82,7 @@ cp .env.prod.example .env.prod
 可选设置：
 - `PHARMACY_DEV_SMS_CODE` — 演示测试验证码（仅 SSH 隧道下使用；留空则禁用）
 - `PHARMACY_AI_API_KEY` — AI 功能密钥（见下文 AI 密钥配置）
+- 微信登录联调时填写 `PHARMACY_WECHAT_TENANT_ID`、`PHARMACY_WECHAT_APP_ID`、`WX_MINIAPP_APPID`、`WX_MINIAPP_SECRET`；实际值仅保存在受保护的 `.env.prod` 中
 
 > `.env.prod` 已在 `.gitignore` 排除范围，不应提交。
 
@@ -143,16 +146,17 @@ cd ~/firstsun/FirstSun/deploy
 docker compose -p firstsun-admin-delivery \
   -f docker-compose.prod.yml --env-file .env.prod up -d
 
-# 观察 MySQL 初始化（38 个 SQL 文件首次执行需 1-3 分钟）
+# 观察 MySQL 初始化（39 个 SQL 文件）
 docker compose -p firstsun-admin-delivery -f docker-compose.prod.yml logs -f mysql
 
 # MySQL ready 后观察后端启动
 docker compose -p firstsun-admin-delivery -f docker-compose.prod.yml logs -f backend
 ```
 
-首次创建空数据卷时，MySQL 会按 `01` 至 `38` 的顺序执行初始化脚本。第 38 份脚本
+首次创建空数据卷时，MySQL 会按 `01` 至 `39` 的顺序执行初始化脚本。第 38 份脚本
 `20260922_p_admin_delivery_demo_data.sql` 为 FirstSun 租户（`tenant_id=163`）补充管理后台
 A-F 板块的关联演示数据，推荐仅在首次初始化的空数据卷中执行。
+第 39 份 `20260922_f_pharmacy_wechat_identity.sql` 只创建微信身份绑定表，不写入身份数据。
 
 **前置数据依赖（重要）**：第 38 份脚本不自行创建门店、分类、仓库、货位、供应商、员工、
 班次及会员等基础记录，而是引用此前迁移已写入的固定 ID 演示记录——主要来自第 23 份
@@ -282,6 +286,9 @@ docker exec firstsun-admin-delivery-mysql \
 >   数据，前置检查失败即终止。
 > - **升级不得通过删除数据卷重建来完成**，否则会丢失既有业务数据。
 
+> 已有数据库若需要微信登录，备份后单独执行第 39 份身份表迁移。可选的
+> `20260919_f_wx_miniapp_app_api.sql` 和 HTTP 测试 `seed.sql` 不属于通用初始化链。
+
 ### 回滚到上一次备份
 
 ```bash
@@ -359,7 +366,7 @@ deploy/
 
 ### 未验证（需独立环境复现）
 - [ ] 服务器实际内存是否足够启动全部 4 个容器
-- [ ] MySQL 38 个 init 脚本在低内存下能否完整执行
+- [ ] MySQL 39 个 init 脚本在低内存下能否完整执行
 - [ ] Spring Boot 在 `-Xmx512m` 下的运行时稳定性
 - [ ] SSH 隧道下 admin-ui 前端 API 请求代理是否正常
 - [ ] 管理后台双入口登录页在浏览器中的实际渲染与登录流程
