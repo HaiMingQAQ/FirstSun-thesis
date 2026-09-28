@@ -22,6 +22,12 @@
         FROM ph_warehouse
         WHERE tenant_id = #{scope.tenantId} AND store_id = #{scope.storeId} AND deleted = 0 AND id = #{id}
     </select>
+    <select id="selectLocation" resultType="cn.iocoder.yudao.module.pharmacy.controller.admin.inventory.vo.InventoryReadVO$Location">
+        SELECT l.id, l.warehouse_id, l.status
+        FROM ph_location l JOIN ph_warehouse w ON w.id = l.warehouse_id AND w.tenant_id = l.tenant_id
+        WHERE l.id = #{id} AND l.warehouse_id = #{warehouseId} AND l.tenant_id = #{scope.tenantId}
+          AND w.store_id = #{scope.storeId} AND l.deleted = 0 AND w.deleted = 0
+    </select>
 
     <sql id="locationWhere">
         FROM ph_location l

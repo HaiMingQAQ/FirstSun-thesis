@@ -13,6 +13,8 @@ public interface InventoryReadMapper {
     long countWarehouses(@Param("scope") Scope scope, @Param("q") InventoryReadQuery query);
     List<InventoryReadVO.Warehouse> selectWarehouses(@Param("scope") Scope scope, @Param("q") InventoryReadQuery query);
     InventoryReadVO.Warehouse selectWarehouse(@Param("scope") Scope scope, @Param("id") long id);
+    InventoryReadVO.Location selectLocation(@Param("scope") Scope scope, @Param("warehouseId") long warehouseId,
+                                             @Param("id") long id);
     long countLocations(@Param("scope") Scope scope, @Param("q") InventoryReadQuery query);
     List<InventoryReadVO.Location> selectLocations(@Param("scope") Scope scope, @Param("q") InventoryReadQuery query);
     long countBatches(@Param("scope") Scope scope, @Param("q") InventoryReadQuery query);

@@ -247,6 +247,7 @@ class WxOrderPointSettlementTest {
         order.setOrderNo(ORDER_NO);
         order.setMemberId(MEMBER_ID);
         order.setStoreId(STORE_ID);
+        order.setOrderType(0);
         order.setStatus(WxOrderStatusEnum.WAIT_VERIFY.getStatus());
         order.setPayStatus(1);
         order.setPayableAmount(new BigDecimal("53.60"));

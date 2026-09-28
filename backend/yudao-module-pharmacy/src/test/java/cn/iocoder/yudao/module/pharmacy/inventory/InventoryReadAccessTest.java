@@ -4,8 +4,13 @@ import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.security.core.LoginUser;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.EmployeeDO;
+import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.StoreDO;
 import cn.iocoder.yudao.module.pharmacy.service.base.EmployeeService;
+import cn.iocoder.yudao.module.pharmacy.service.base.StoreService;
 import cn.iocoder.yudao.module.pharmacy.service.inventory.InventoryReadAccess;
+import cn.iocoder.yudao.module.pharmacy.service.permission.PharmacyStoreDataAccess;
+import cn.iocoder.yudao.module.system.api.permission.PermissionApi;
+import cn.iocoder.yudao.module.system.enums.permission.RoleCodeEnum;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +25,10 @@ import static org.mockito.Mockito.*;
 /** Authorization logic tests only. Does not verify A's SQL, token authentication or real MySQL. */
 class InventoryReadAccessTest {
     private final EmployeeService employees = mock(EmployeeService.class);
-    private final InventoryReadAccess access = new InventoryReadAccess(employees);
+    private final StoreService stores = mock(StoreService.class);
+    private final PermissionApi permissions = mock(PermissionApi.class);
+    private final InventoryReadAccess access = new InventoryReadAccess(employees,
+            new PharmacyStoreDataAccess(permissions, employees, stores));
     private LoginUser login;
 
     @BeforeEach
@@ -38,6 +46,12 @@ class InventoryReadAccessTest {
         employee.setStatus(1);
         employee.setStoreId(7L);
         when(employees.getEmployeeByUserId(11L)).thenReturn(employee);
+        StoreDO ownStore = new StoreDO();
+        ownStore.setId(7L);
+        when(stores.getStore(7L)).thenReturn(ownStore);
+        StoreDO secondStore = new StoreDO();
+        secondStore.setId(8L);
+        when(stores.getStore(8L)).thenReturn(secondStore);
     }
 
     @AfterEach
@@ -53,6 +67,16 @@ class InventoryReadAccessTest {
         assertEquals(7, access.requireScope(7L).storeId());
     }
     @Test void otherStoreDenied() {
+        assertThrows(AccessDeniedException.class, () -> access.requireScope(8L));
+    }
+    @Test void authorizedTenantAdminCanOperateExplicitStoreInOwnTenant() {
+        login.setId(12L);
+        when(permissions.hasAnyRoles(12L, RoleCodeEnum.TENANT_ADMIN.getCode())).thenReturn(true);
+        assertEquals(new InventoryReadAccess.Scope(1, 8), access.requireScope(8L));
+        assertThrows(AccessDeniedException.class, () -> access.requireScope(9L));
+        assertThrows(AccessDeniedException.class, () -> access.requireScope(null));
+        login.setVisitTenantId(2L);
+        TenantContextHolder.setTenantId(2L);
         assertThrows(AccessDeniedException.class, () -> access.requireScope(8L));
     }
     @Test void noEmployeeDenied() {

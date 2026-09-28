@@ -17,10 +17,15 @@ import java.util.List;
 public interface WxOrderMapper extends BaseMapperX<WxOrderDO> {
 
     default PageResult<WxOrderDO> selectPage(WxOrderPageReqVO reqVO) {
+        return selectAdminPage(reqVO, reqVO.getStoreId());
+    }
+
+    /** 管理端分页由服务层提供已授权的门店条件，不能使用客户端原始 storeId。 */
+    default PageResult<WxOrderDO> selectAdminPage(WxOrderPageReqVO reqVO, Long scopedStoreId) {
         return selectPage(reqVO, new LambdaQueryWrapperX<WxOrderDO>()
                 .likeIfPresent(WxOrderDO::getOrderNo, reqVO.getOrderNo())
                 .eqIfPresent(WxOrderDO::getMemberId, reqVO.getMemberId())
-                .eqIfPresent(WxOrderDO::getStoreId, reqVO.getStoreId())
+                .eqIfPresent(WxOrderDO::getStoreId, scopedStoreId)
                 .eqIfPresent(WxOrderDO::getOrderType, reqVO.getOrderType())
                 .eqIfPresent(WxOrderDO::getStatus, reqVO.getStatus())
                 .eqIfPresent(WxOrderDO::getPayStatus, reqVO.getPayStatus())

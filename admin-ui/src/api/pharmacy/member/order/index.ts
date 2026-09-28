@@ -44,10 +44,10 @@ export const cancelOrder = async (id: number, cancelReason: string) => {
   return await request.put({ url: '/pharmacy/member/order/cancel', params: { id, cancelReason } })
 }
 
-// 核销订单（后端契约：Query 参数 id、pickupCode、verifyBy）
-export const verifyOrder = async (id: number, pickupCode: string, verifyBy: number) => {
+// 核销订单（后端契约：Query 参数 id、pickupCode；核销员工由服务端解析）
+export const verifyOrder = async (id: number, pickupCode: string) => {
   return await request.put({
     url: '/pharmacy/member/order/verify',
-    params: { id, pickupCode, verifyBy }
+    params: { id, pickupCode }
   })
 }

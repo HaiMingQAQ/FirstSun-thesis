@@ -23,6 +23,7 @@ import cn.iocoder.yudao.module.pharmacy.enums.PurchaseOrderStatusEnum;
 import cn.iocoder.yudao.module.pharmacy.enums.PurchaseReceiptStatusEnum;
 import cn.iocoder.yudao.module.pharmacy.service.base.EmployeeService;
 import cn.iocoder.yudao.module.pharmacy.service.base.StoreService;
+import cn.iocoder.yudao.module.pharmacy.service.permission.PharmacyStoreDataAccess;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -116,6 +117,12 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
     private StoreService storeService;
 
     @Resource
+    private PharmacyStoreDataAccess storeDataAccess;
+
+    @Resource
+    private PurchaseInventoryReferenceAccess inventoryReferences;
+
+    @Resource
     private EmployeeService employeeService;
 
     @Resource
@@ -130,6 +137,7 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createReceipt(PurchaseReceiptSaveReqVO createReqVO) {
+        storeDataAccess.requireStore(createReqVO.getStoreId());
         storeService.validateStoreExistsAndOpen(createReqVO.getStoreId());
         EmployeeDO receiver = resolveReceiver();
         PurchaseOrderDO order = resolveOrder(createReqVO, receiver);
@@ -145,6 +153,8 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
         receipt.setIsFreeReceipt(createReqVO.getIsFreeReceipt() == null ? 0 : createReqVO.getIsFreeReceipt());
         receipt.setStatus(PurchaseReceiptStatusEnum.DRAFT.getStatus());
         fillTotalsAndFlags(receipt, order, createReqVO.getLines(), null);
+        inventoryReferences.validateReceiptReferences(createReqVO.getStoreId(), createReqVO.getWarehouseId(),
+                createReqVO.getLines().stream().map(PurchaseReceiptLineSaveReqVO::getLocationId).toList());
 
         for (int attempt = 0; attempt < NO_MAX_RETRY; attempt++) {
             receipt.setReceiptNo(generateReceiptNo(createReqVO.getStoreId(), businessDate));
@@ -167,6 +177,7 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
         if (!PurchaseReceiptStatusEnum.isDraft(receipt.getStatus())) {
             throw exception(PURCHASE_RECEIPT_STATUS_INVALID);
         }
+        storeDataAccess.requireStore(updateReqVO.getStoreId());
         storeService.validateStoreExistsAndOpen(updateReqVO.getStoreId());
         EmployeeDO receiver = resolveReceiver();
         PurchaseOrderDO order = resolveOrder(updateReqVO, receiver);
@@ -180,6 +191,8 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
         update.setReceiveDate(updateReqVO.getReceiveDate());
         update.setIsFreeReceipt(updateReqVO.getIsFreeReceipt() == null ? 0 : updateReqVO.getIsFreeReceipt());
         fillTotalsAndFlags(update, order, updateReqVO.getLines(), receipt.getId());
+        inventoryReferences.validateReceiptReferences(updateReqVO.getStoreId(), updateReqVO.getWarehouseId(),
+                updateReqVO.getLines().stream().map(PurchaseReceiptLineSaveReqVO::getLocationId).toList());
         receiptMapper.updateById(update);
 
         // 明细整体重建：必须物理删除旧明细（uk_receipt_line(receipt_id, line_no) 不含 deleted 列，
@@ -202,12 +215,17 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
 
     @Override
     public PurchaseReceiptDO getReceipt(Long id) {
-        return receiptMapper.selectById(id);
+        storeDataAccess.scopeStoreId(null);
+        PurchaseReceiptDO receipt = receiptMapper.selectById(id);
+        if (receipt != null) {
+            storeDataAccess.requireStore(receipt.getStoreId());
+        }
+        return receipt;
     }
 
     @Override
     public PageResult<PurchaseReceiptDO> getReceiptPage(PurchaseReceiptPageReqVO reqVO) {
-        return receiptMapper.selectPage(reqVO);
+        return receiptMapper.selectPage(reqVO, storeDataAccess.scopeStoreId(reqVO.getStoreId()));
     }
 
     @Override
@@ -215,6 +233,7 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
         if (receiptId == null) {
             return Collections.emptyList();
         }
+        validateReceiptExists(receiptId);
         return receiptLineMapper.selectListByReceiptId(receiptId);
     }
 
@@ -223,6 +242,7 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
         if (receiptIds == null || receiptIds.isEmpty()) {
             return Collections.emptyList();
         }
+        receiptIds.forEach(this::validateReceiptExists);
         return receiptLineMapper.selectListByReceiptIds(receiptIds);
     }
 
@@ -231,10 +251,12 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
         if (id == null) {
             throw exception(PURCHASE_RECEIPT_NOT_EXISTS);
         }
+        storeDataAccess.scopeStoreId(null);
         PurchaseReceiptDO receipt = receiptMapper.selectById(id);
         if (receipt == null) {
             throw exception(PURCHASE_RECEIPT_NOT_EXISTS);
         }
+        storeDataAccess.requireStore(receipt.getStoreId());
         return receipt;
     }
 
@@ -269,6 +291,9 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
         PurchaseOrderDO order = null;
         if (receipt.getOrderId() != null) {
             order = purchaseOrderService.validateOrderExists(receipt.getOrderId());
+            if (!Objects.equals(order.getStoreId(), receipt.getStoreId())) {
+                throw exception(PURCHASE_RECEIPT_ORDER_LINE_MISMATCH);
+            }
             if (!PurchaseOrderStatusEnum.canReceive(order.getStatus())) {
                 throw exception(PURCHASE_RECEIPT_ORDER_NOT_RECEIVABLE);
             }
@@ -382,6 +407,9 @@ public class PurchaseReceiptServiceImpl implements PurchaseReceiptService {
             throw exception(PURCHASE_RECEIPT_ORDER_NOT_RECEIVABLE);
         }
         PurchaseOrderDO order = purchaseOrderService.validateOrderExists(reqVO.getOrderId());
+        if (!Objects.equals(order.getStoreId(), reqVO.getStoreId())) {
+            throw exception(PURCHASE_RECEIPT_ORDER_LINE_MISMATCH);
+        }
         if (!PurchaseOrderStatusEnum.canReceive(order.getStatus())) {
             throw exception(PURCHASE_RECEIPT_ORDER_NOT_RECEIVABLE);
         }

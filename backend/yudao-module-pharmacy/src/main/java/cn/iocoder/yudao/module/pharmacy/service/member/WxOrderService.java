@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.pharmacy.service.member;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderPageReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderSaveReqVO;
+import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderUpdateReqVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderDO;
 
 import jakarta.validation.Valid;
@@ -22,7 +23,7 @@ public interface WxOrderService {
     /**
      * 更新小程序订单
      */
-    void updateWxOrder(@Valid WxOrderSaveReqVO updateReqVO);
+    void updateWxOrder(@Valid WxOrderUpdateReqVO updateReqVO);
 
     /**
      * 删除小程序订单

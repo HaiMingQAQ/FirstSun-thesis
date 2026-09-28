@@ -142,7 +142,7 @@
   <!-- 订单详情抽屉 -->
   <OrderDetail ref="detailRef" @success="handleDetailSuccess" />
 
-  <!-- 核销对话框：提货码必填；核销人取当前登录后台用户，不允许手工填写 -->
+  <!-- 核销对话框：提货码必填；核销员工由服务端根据登录用户确认 -->
   <el-dialog v-model="verifyVisible" title="订单核销" width="420px">
     <el-form ref="verifyFormRef" :model="verifyForm" :rules="verifyRules" label-width="80px">
       <el-form-item label="订单号">
@@ -157,7 +157,7 @@
         />
       </el-form-item>
       <el-form-item label="核销人">
-        <span>{{ verifyByName || '当前登录用户' }}</span>
+        <span>由当前账号关联的在职员工档案确定</span>
       </el-form-item>
     </el-form>
     <template #footer>
@@ -170,7 +170,6 @@
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { formatDate } from '@/utils/formatTime'
 import * as OrderApi from '@/api/pharmacy/member/order'
-import { useUserStore } from '@/store/modules/user'
 import OrderDetail from './OrderDetail.vue'
 
 defineOptions({ name: 'PharmacyMemberOrder' })
@@ -241,11 +240,7 @@ const handleCancel = async (id: number) => {
   } catch {}
 }
 
-/** 当前登录后台用户（核销人来源） */
-const userStore = useUserStore()
-const verifyByName = computed(() => userStore.getUser?.nickname ?? '')
-
-/** 核销订单：提货码必填，核销人取当前登录用户 ID，不允许由用户填写 */
+/** 核销订单：只提交订单与提货码，服务端从登录用户解析核销员工 */
 const verifyVisible = ref(false)
 const verifyLoading = ref(false)
 const verifyFormRef = ref()
@@ -269,14 +264,9 @@ const submitVerify = async () => {
   if (!verifyFormRef.value) return
   const valid = await verifyFormRef.value.validate()
   if (!valid) return
-  const verifyBy = userStore.getUser?.id
-  if (!verifyBy) {
-    message.error('未获取到当前登录用户，无法核销')
-    return
-  }
   verifyLoading.value = true
   try {
-    await OrderApi.verifyOrder(verifyForm.id!, verifyForm.pickupCode, verifyBy)
+    await OrderApi.verifyOrder(verifyForm.id!, verifyForm.pickupCode)
     message.success('订单核销成功')
     verifyVisible.value = false
     await getList()

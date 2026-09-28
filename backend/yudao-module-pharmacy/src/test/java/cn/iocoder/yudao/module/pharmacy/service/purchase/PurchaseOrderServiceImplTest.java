@@ -1,8 +1,10 @@
 package cn.iocoder.yudao.module.pharmacy.service.purchase;
 
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.pharmacy.api.DrugApi;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.purchase.vo.order.PurchaseOrderLineSaveReqVO;
+import cn.iocoder.yudao.module.pharmacy.controller.admin.purchase.vo.order.PurchaseOrderPageReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.purchase.vo.order.PurchaseOrderSaveReqVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.EmployeeDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.StoreDO;
@@ -16,6 +18,7 @@ import cn.iocoder.yudao.module.pharmacy.enums.PurchaseDocSeqTypeEnum;
 import cn.iocoder.yudao.module.pharmacy.enums.PurchaseOrderStatusEnum;
 import cn.iocoder.yudao.module.pharmacy.service.base.EmployeeService;
 import cn.iocoder.yudao.module.pharmacy.service.base.StoreService;
+import cn.iocoder.yudao.module.pharmacy.service.permission.PharmacyStoreDataAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -48,9 +52,11 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -72,6 +78,10 @@ class PurchaseOrderServiceImplTest {
     private PurchaseDocSeqService seqService;
     @Mock
     private StoreService storeService;
+    @Mock
+    private PharmacyStoreDataAccess storeDataAccess;
+    @Mock
+    private PurchaseInventoryReferenceAccess inventoryReferences;
     @Mock
     private SupplierService supplierService;
     @Mock
@@ -158,6 +168,28 @@ class PurchaseOrderServiceImplTest {
         assertEquals(PURCHASE_ORDER_DISCOUNT_INVALID.getCode(), ex.getCode());
     }
 
+    @Test
+    void createOrder_shouldRejectOtherStoreBeforeInsert() {
+        PurchaseOrderSaveReqVO reqVO = buildReqVO(List.of(line(1L, 1, "5.00", "1.00")));
+        reqVO.setStoreId(408L);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.createOrder(reqVO));
+        verify(orderMapper, never()).insert(any(PurchaseOrderDO.class));
+    }
+
+    @Test
+    void createOrder_shouldRejectWarehouseOutsideAuthorizedStoreBeforeInsert() {
+        mockCreateDependencies();
+        PurchaseOrderSaveReqVO reqVO = buildReqVO(List.of(line(1L, 1, "5.00", "1.00")));
+        reqVO.setWarehouseId(902L);
+        doThrow(new AccessDeniedException("warehouse outside store"))
+                .when(inventoryReferences).validateOrderWarehouse(407L, 902L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.createOrder(reqVO));
+        verify(orderMapper, never()).insert(any(PurchaseOrderDO.class));
+    }
+
     // ==================== 更新订单 ====================
 
     @Test
@@ -183,6 +215,143 @@ class PurchaseOrderServiceImplTest {
         // D4 回归：必须先物理删除旧明细，否则逻辑删除残留行会让重插行号撞唯一键
         verify(orderLineMapper).physicalDeleteByOrderId(1L);
         verify(orderLineMapper, never()).deleteByOrderId(any());
+    }
+
+    @Test
+    void updateOrder_shouldRejectWarehouseOutsideAuthorizedStoreBeforeWrite() {
+        when(orderMapper.selectById(1L)).thenReturn(order(1L, PurchaseOrderStatusEnum.DRAFT.getStatus()));
+        mockCreateDependencies();
+        PurchaseOrderSaveReqVO reqVO = buildReqVO(List.of(line(1L, 1, "5.00", "1.00")));
+        reqVO.setId(1L);
+        reqVO.setWarehouseId(902L);
+        doThrow(new AccessDeniedException("warehouse outside store"))
+                .when(inventoryReferences).validateOrderWarehouse(407L, 902L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.updateOrder(reqVO));
+        verify(orderMapper, never()).updateById(any(PurchaseOrderDO.class));
+        verify(orderLineMapper, never()).physicalDeleteByOrderId(1L);
+    }
+
+    @Test
+    void updateOrder_shouldRequireExistingAndSubmittedStores() {
+        when(orderMapper.selectById(1L)).thenReturn(order(1L, PurchaseOrderStatusEnum.DRAFT.getStatus()));
+        PurchaseOrderSaveReqVO reqVO = buildReqVO(List.of(line(1L, 1, "5.00", "1.00")));
+        reqVO.setId(1L);
+        reqVO.setStoreId(408L);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.updateOrder(reqVO));
+        verify(storeDataAccess).requireStore(407L);
+        verify(storeDataAccess).requireStore(408L);
+        verify(orderMapper, never()).updateById(any(PurchaseOrderDO.class));
+    }
+
+    @Test
+    void updateOrder_shouldRejectGuessedExistingOrder() {
+        PurchaseOrderDO otherStore = order(2L, PurchaseOrderStatusEnum.DRAFT.getStatus());
+        otherStore.setStoreId(408L);
+        when(orderMapper.selectById(2L)).thenReturn(otherStore);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+        PurchaseOrderSaveReqVO reqVO = buildReqVO(List.of(line(1L, 1, "5.00", "1.00")));
+        reqVO.setId(2L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.updateOrder(reqVO));
+        verify(orderMapper, never()).updateById(any(PurchaseOrderDO.class));
+    }
+
+    // ==================== 门店范围读取 ====================
+
+    @Test
+    void getOrderPage_shouldApplyEmployeeStoreAtMapperBoundary() {
+        PurchaseOrderPageReqVO reqVO = new PurchaseOrderPageReqVO();
+        when(storeDataAccess.scopeStoreId(null)).thenReturn(407L);
+        when(orderMapper.selectPage(reqVO, 407L)).thenReturn(PageResult.empty());
+
+        assertEquals(0L, orderService.getOrderPage(reqVO).getTotal());
+        verify(orderMapper).selectPage(reqVO, 407L);
+    }
+
+    @Test
+    void getOrderPage_shouldAllowTenantAdminAllStores() {
+        PurchaseOrderPageReqVO reqVO = new PurchaseOrderPageReqVO();
+        when(storeDataAccess.scopeStoreId(null)).thenReturn(null);
+
+        orderService.getOrderPage(reqVO);
+        verify(orderMapper).selectPage(reqVO, (Long) null);
+    }
+
+    @Test
+    void getOrderPage_shouldRejectOtherStoreFilterBeforeQuery() {
+        PurchaseOrderPageReqVO reqVO = new PurchaseOrderPageReqVO();
+        reqVO.setStoreId(408L);
+        when(storeDataAccess.scopeStoreId(408L)).thenThrow(new AccessDeniedException("other store"));
+
+        assertThrows(AccessDeniedException.class, () -> orderService.getOrderPage(reqVO));
+        verifyNoInteractions(orderMapper);
+    }
+
+    @Test
+    void getOrder_shouldRejectGuessedOtherStoreId() {
+        PurchaseOrderDO otherStore = order(2L, PurchaseOrderStatusEnum.DRAFT.getStatus());
+        otherStore.setStoreId(408L);
+        when(orderMapper.selectById(2L)).thenReturn(otherStore);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.getOrder(2L));
+    }
+
+    @Test
+    void getOrder_shouldRejectChangedTenantBeforeLookup() {
+        when(storeDataAccess.scopeStoreId(null)).thenThrow(new AccessDeniedException("other tenant"));
+
+        assertThrows(AccessDeniedException.class, () -> orderService.getOrder(2L));
+        verifyNoInteractions(orderMapper);
+    }
+
+    @Test
+    void getOrderList_shouldRejectUnexpectedOtherStoreRow() {
+        PurchaseOrderDO otherStore = order(2L, PurchaseOrderStatusEnum.DRAFT.getStatus());
+        otherStore.setStoreId(408L);
+        when(storeDataAccess.scopeStoreId(null)).thenReturn(407L);
+        when(orderMapper.selectListByIds(List.of(1L, 2L), 407L))
+                .thenReturn(List.of(order(1L, PurchaseOrderStatusEnum.DRAFT.getStatus()), otherStore));
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.getOrderList(List.of(1L, 2L)));
+    }
+
+    @Test
+    void getOrderLinesByOrderIds_shouldQueryOnlyScopedParents() {
+        when(storeDataAccess.scopeStoreId(null)).thenReturn(407L);
+        when(orderMapper.selectListByIds(List.of(1L, 2L), 407L))
+                .thenReturn(List.of(order(1L, PurchaseOrderStatusEnum.DRAFT.getStatus())));
+        when(orderLineMapper.selectListByOrderIds(List.of(1L)))
+                .thenReturn(List.of(orderLine(11L, 10, 0)));
+
+        assertEquals(1, orderService.getOrderLinesByOrderIds(List.of(1L, 2L)).size());
+        verify(orderLineMapper).selectListByOrderIds(List.of(1L));
+    }
+
+    @Test
+    void getOrderLines_shouldRejectGuessedOtherStoreParent() {
+        PurchaseOrderDO otherStore = order(2L, PurchaseOrderStatusEnum.DRAFT.getStatus());
+        otherStore.setStoreId(408L);
+        when(orderMapper.selectById(2L)).thenReturn(otherStore);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.getOrderLines(2L));
+        verify(orderLineMapper, never()).selectListByOrderId(2L);
+    }
+
+    @Test
+    void submitOrder_shouldRejectOtherStoreBeforeMutation() {
+        PurchaseOrderDO otherStore = order(2L, PurchaseOrderStatusEnum.DRAFT.getStatus());
+        otherStore.setStoreId(408L);
+        when(orderMapper.selectById(2L)).thenReturn(otherStore);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> orderService.submitOrder(2L));
+        verify(orderMapper, never()).updateById(any(PurchaseOrderDO.class));
     }
 
     // ==================== 取消订单 ====================

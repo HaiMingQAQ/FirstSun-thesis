@@ -18,6 +18,7 @@ import cn.iocoder.yudao.module.pharmacy.enums.PurchaseDocSeqTypeEnum;
 import cn.iocoder.yudao.module.pharmacy.enums.PurchaseOrderStatusEnum;
 import cn.iocoder.yudao.module.pharmacy.service.base.EmployeeService;
 import cn.iocoder.yudao.module.pharmacy.service.base.StoreService;
+import cn.iocoder.yudao.module.pharmacy.service.permission.PharmacyStoreDataAccess;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -89,6 +90,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     private StoreService storeService;
 
     @Resource
+    private PharmacyStoreDataAccess storeDataAccess;
+
+    @Resource
+    private PurchaseInventoryReferenceAccess inventoryReferences;
+
+    @Resource
     private SupplierService supplierService;
 
     @Resource
@@ -103,10 +110,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createOrder(PurchaseOrderSaveReqVO createReqVO) {
+        storeDataAccess.requireStore(createReqVO.getStoreId());
         validateStore(createReqVO.getStoreId());
         // 供应商必须启用且首营审核通过
         supplierService.validateSupplierPurchasable(createReqVO.getSupplierId());
         validateLines(createReqVO.getLines());
+        inventoryReferences.validateOrderWarehouse(createReqVO.getStoreId(), createReqVO.getWarehouseId());
 
         PurchaseOrderDO order = new PurchaseOrderDO();
         order.setStoreId(createReqVO.getStoreId());
@@ -138,12 +147,14 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     @Transactional(rollbackFor = Exception.class)
     public void updateOrder(PurchaseOrderSaveReqVO updateReqVO) {
         PurchaseOrderDO order = validateOrderExists(updateReqVO.getId());
+        storeDataAccess.requireStore(updateReqVO.getStoreId());
         if (!PurchaseOrderStatusEnum.isDraft(order.getStatus())) {
             throw exception(PURCHASE_ORDER_STATUS_INVALID);
         }
         validateStore(updateReqVO.getStoreId());
         supplierService.validateSupplierPurchasable(updateReqVO.getSupplierId());
         validateLines(updateReqVO.getLines());
+        inventoryReferences.validateOrderWarehouse(updateReqVO.getStoreId(), updateReqVO.getWarehouseId());
 
         PurchaseOrderDO update = new PurchaseOrderDO();
         update.setId(order.getId());
@@ -180,7 +191,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public PurchaseOrderDO getOrder(Long id) {
-        return orderMapper.selectById(id);
+        storeDataAccess.scopeStoreId(null);
+        PurchaseOrderDO order = orderMapper.selectById(id);
+        if (order != null) {
+            storeDataAccess.requireStore(order.getStoreId());
+        }
+        return order;
     }
 
     @Override
@@ -188,12 +204,17 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (ids == null || ids.isEmpty()) {
             return Collections.emptyList();
         }
-        return orderMapper.selectListByIds(ids);
+        Long scopedStoreId = storeDataAccess.scopeStoreId(null);
+        List<PurchaseOrderDO> orders = orderMapper.selectListByIds(ids, scopedStoreId);
+        orders.stream().map(PurchaseOrderDO::getStoreId).distinct()
+                .forEach(storeDataAccess::requireStore);
+        return orders;
     }
 
     @Override
     public PageResult<PurchaseOrderDO> getOrderPage(PurchaseOrderPageReqVO reqVO) {
-        return orderMapper.selectPage(reqVO);
+        Long scopedStoreId = storeDataAccess.scopeStoreId(reqVO.getStoreId());
+        return orderMapper.selectPage(reqVO, scopedStoreId);
     }
 
     @Override
@@ -201,6 +222,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (orderId == null) {
             return Collections.emptyList();
         }
+        validateOrderExists(orderId);
         return orderLineMapper.selectListByOrderId(orderId);
     }
 
@@ -209,7 +231,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (orderIds == null || orderIds.isEmpty()) {
             return Collections.emptyList();
         }
-        return orderLineMapper.selectListByOrderIds(orderIds);
+        List<Long> accessibleOrderIds = getOrderList(orderIds).stream()
+                .map(PurchaseOrderDO::getId).collect(Collectors.toList());
+        if (accessibleOrderIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return orderLineMapper.selectListByOrderIds(accessibleOrderIds);
     }
 
     @Override
@@ -217,10 +244,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (id == null) {
             throw exception(PURCHASE_ORDER_NOT_EXISTS);
         }
+        storeDataAccess.scopeStoreId(null);
         PurchaseOrderDO order = orderMapper.selectById(id);
         if (order == null) {
             throw exception(PURCHASE_ORDER_NOT_EXISTS);
         }
+        storeDataAccess.requireStore(order.getStoreId());
         return order;
     }
 

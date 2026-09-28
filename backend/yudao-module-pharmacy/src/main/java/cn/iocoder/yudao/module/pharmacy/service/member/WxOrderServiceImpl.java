@@ -19,6 +19,7 @@ import cn.iocoder.yudao.module.pharmacy.api.payment.PaymentFacade;
 import cn.iocoder.yudao.module.pharmacy.api.payment.dto.PayOrderDTO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderPageReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderSaveReqVO;
+import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderUpdateReqVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.MemberAddressDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxCartDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderDO;
@@ -29,6 +30,7 @@ import cn.iocoder.yudao.module.pharmacy.dal.mysql.member.WxOrderLineMapper;
 import cn.iocoder.yudao.module.pharmacy.dal.mysql.member.WxOrderMapper;
 import cn.iocoder.yudao.module.pharmacy.enums.WxOrderStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +46,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
@@ -82,6 +85,8 @@ public class WxOrderServiceImpl implements WxOrderService {
     private static final int STOCK_CLEANUP_LIMIT = 100;
     /** 门店批量清理的单次处理硬上限，防止一次请求拖垮库存作业 */
     private static final int STOCK_CLEANUP_MAX_LIMIT = 200;
+    /** 全库唯一索引 uk_pickup_code 冲突时，重试生成取货码的次数。 */
+    private static final int PICKUP_CODE_RETRIES = 5;
 
     @Resource
     private WxOrderMapper wxOrderMapper;
@@ -139,36 +144,49 @@ public class WxOrderServiceImpl implements WxOrderService {
     private MemberPointSettlementService memberPointSettlementService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createWxOrder(WxOrderSaveReqVO createReqVO) {
         // 校验订单号唯一
         validateOrderNoUnique(null, createReqVO.getOrderNo());
-        // 校验状态合法
-        validateStatus(createReqVO.getStatus());
+        if (!Objects.equals(createReqVO.getOrderType(), ORDER_TYPE_PICKUP)
+                && !Objects.equals(createReqVO.getOrderType(), ORDER_TYPE_DELIVERY)) {
+            throw exception(PHARMACY_WX_ORDER_TYPE_INVALID);
+        }
         // 写入
         WxOrderDO wxOrder = BeanUtils.toBean(createReqVO, WxOrderDO.class);
-        wxOrderMapper.insert(wxOrder);
+        wxOrder.setId(null);
+        int priceFen = WxOrderPaymentAccess.amountFen(wxOrder);
+        // 新订单只能从待支付开始；流程结果由支付、取消和核销等专用方法维护。
+        wxOrder.setPayStatus(PAY_STATUS_WAIT);
+        wxOrder.setStatus(WxOrderStatusEnum.WAIT_PAY.getStatus());
+        wxOrder.setPayNo(null);
+        wxOrder.setPaidAt(null);
+        wxOrder.setPayOrderId(null);
+        wxOrder.setCancelReason(null);
+        wxOrder.setFinishAt(null);
+        wxOrder.setVerifyBy(null);
+        wxOrder.setVerifyAt(null);
+        // 与小程序下单共用可信发码及唯一键冲突重试；待支付状态仍不可核销。
+        insertOrderWithPickupCode(wxOrder);
         // 对接 E：待支付订单创建渠道支付单（金额元→分，业务单号=订单号）。
-        // E 支付服务未实现时降级为不创建支付单，不阻塞下单流程。
-        if (Objects.equals(wxOrder.getPayStatus(), 0)) {
-            String payNo = createChannelPayOrder(wxOrder);
-            if (payNo != null) {
-                wxOrder.setPayNo(payNo);
-                wxOrderMapper.updateById(wxOrder);
-            }
+        String payNo = createChannelPayOrder(wxOrder, priceFen);
+        WxOrderDO paymentLink = new WxOrderDO();
+        paymentLink.setId(wxOrder.getId());
+        paymentLink.setPayNo(payNo);
+        if (wxOrderMapper.updateById(paymentLink) != 1) {
+            throw exception(PAY_ORDER_CREATE_FAIL);
         }
         return wxOrder.getId();
     }
 
     @Override
-    public void updateWxOrder(WxOrderSaveReqVO updateReqVO) {
+    public void updateWxOrder(WxOrderUpdateReqVO updateReqVO) {
         // 校验存在
         validateWxOrderExists(updateReqVO.getId());
-        // 校验订单号唯一
-        validateOrderNoUnique(updateReqVO.getId(), updateReqVO.getOrderNo());
-        // 校验状态合法
-        validateStatus(updateReqVO.getStatus());
-        // 更新
-        WxOrderDO updateObj = BeanUtils.toBean(updateReqVO, WxOrderDO.class);
+        // 通用编辑仅允许备注；支付、状态和核销等字段由专用流程维护。
+        WxOrderDO updateObj = new WxOrderDO();
+        updateObj.setId(updateReqVO.getId());
+        updateObj.setRemark(updateReqVO.getRemark());
         wxOrderMapper.updateById(updateObj);
     }
 
@@ -596,17 +614,47 @@ public class WxOrderServiceImpl implements WxOrderService {
         if (!Objects.equals(wxOrder.getStatus(), WxOrderStatusEnum.PICKING.getStatus())) {
             throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
         }
-        WxOrderDO updateObj = new WxOrderDO();
-        updateObj.setStatus(WxOrderStatusEnum.WAIT_VERIFY.getStatus());
-        wxOrderMapper.update(updateObj, new LambdaUpdateWrapper<WxOrderDO>()
-                .eq(WxOrderDO::getId, id)
-                .eq(WxOrderDO::getStatus, WxOrderStatusEnum.PICKING.getStatus()));
+        boolean pickup = Objects.equals(wxOrder.getOrderType(), ORDER_TYPE_PICKUP);
+        if (pickup && !Objects.equals(wxOrder.getPayStatus(), PAY_STATUS_PAID)) {
+            throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
+        }
+        // 历史后台自提单可能没有取货码，进入待自提前原子补齐。
+        boolean needsCode = pickup
+                && (wxOrder.getPickupCode() == null || wxOrder.getPickupCode().isBlank());
+        for (int attempt = 0; attempt < (needsCode ? PICKUP_CODE_RETRIES : 1); attempt++) {
+            WxOrderDO updateObj = new WxOrderDO();
+            updateObj.setStatus(WxOrderStatusEnum.WAIT_VERIFY.getStatus());
+            if (needsCode) {
+                updateObj.setPickupCode(generatePickupCode());
+            }
+            try {
+                LambdaUpdateWrapper<WxOrderDO> condition = new LambdaUpdateWrapper<WxOrderDO>()
+                        .eq(WxOrderDO::getId, id)
+                        .eq(WxOrderDO::getStatus, WxOrderStatusEnum.PICKING.getStatus());
+                if (pickup) {
+                    condition.eq(WxOrderDO::getOrderType, ORDER_TYPE_PICKUP)
+                            .eq(WxOrderDO::getPayStatus, PAY_STATUS_PAID);
+                }
+                if (wxOrderMapper.update(updateObj, condition) != 1) {
+                    throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
+                }
+                return;
+            } catch (DuplicateKeyException ex) {
+                if (!needsCode || !isPickupCodeCollision(ex) || attempt == PICKUP_CODE_RETRIES - 1) {
+                    throw ex;
+                }
+            }
+        }
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void verifyWxOrder(Long id, String pickupCode, Long verifyBy) {
         WxOrderDO wxOrder = validateWxOrderExists(id);
+        if (!Objects.equals(wxOrder.getOrderType(), ORDER_TYPE_PICKUP)
+                || !Objects.equals(wxOrder.getPayStatus(), PAY_STATUS_PAID)) {
+            throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
+        }
         // 幂等：已核销（完成）直接返回
         if (Objects.equals(wxOrder.getStatus(), WxOrderStatusEnum.COMPLETED.getStatus())) {
             return;
@@ -616,7 +664,8 @@ public class WxOrderServiceImpl implements WxOrderService {
             throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
         }
         // 校验取货码
-        if (pickupCode == null || wxOrder.getPickupCode() == null
+        if (pickupCode == null || pickupCode.isBlank()
+                || wxOrder.getPickupCode() == null || wxOrder.getPickupCode().isBlank()
                 || !pickupCode.trim().equalsIgnoreCase(wxOrder.getPickupCode().trim())) {
             throw exception(PHARMACY_WX_ORDER_PICKUP_CODE_ERROR);
         }
@@ -763,7 +812,7 @@ public class WxOrderServiceImpl implements WxOrderService {
         if (payableAmount.signum() < 0) {
             payableAmount = BigDecimal.ZERO;
         }
-        // 7. 生成订单号与一次性取货码
+        // 7. 生成订单号；自提取货码在插单时由服务端生成
         LocalDateTime now = LocalDateTime.now();
         WxOrderDO order = new WxOrderDO();
         order.setOrderNo(generateOrderNo(storeId, now));
@@ -783,10 +832,9 @@ public class WxOrderServiceImpl implements WxOrderService {
         order.setPrescId(prescId);
         order.setAddressSnapshot(addressSnapshot);
         order.setRemark(remark);
-        order.setPickupCode(generatePickupCode());
         // 未支付截止时间：下单后 30 分钟
         order.setExpireAt(now.plusMinutes(ORDER_EXPIRE_MINUTES));
-        wxOrderMapper.insert(order);
+        insertOrderWithPickupCode(order);
         // 8. 写入订单明细
         for (WxOrderLineDO line : lines) {
             line.setWxOrderId(order.getId());
@@ -832,10 +880,30 @@ public class WxOrderServiceImpl implements WxOrderService {
         return sb.toString();
     }
 
-    private void validateStatus(Integer status) {
-        if (!WxOrderStatusEnum.isValid(status)) {
-            throw exception(PHARMACY_WX_ORDER_STATUS_INVALID);
+    private void insertOrderWithPickupCode(WxOrderDO order) {
+        order.setDeleted(false);
+        boolean pickup = Objects.equals(order.getOrderType(), ORDER_TYPE_PICKUP);
+        for (int attempt = 0; attempt < (pickup ? PICKUP_CODE_RETRIES : 1); attempt++) {
+            order.setPickupCode(pickup ? generatePickupCode() : null);
+            try {
+                wxOrderMapper.insert(order);
+                return;
+            } catch (DuplicateKeyException ex) {
+                if (!pickup || !isPickupCodeCollision(ex) || attempt == PICKUP_CODE_RETRIES - 1) {
+                    throw ex;
+                }
+                order.setId(null);
+            }
         }
+    }
+
+    private boolean isPickupCodeCollision(DuplicateKeyException ex) {
+        Throwable cause = ex;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        return message != null && message.toLowerCase(Locale.ROOT).contains("uk_pickup_code");
     }
 
     private void validateOrderNoUnique(Long id, String orderNo) {
@@ -1258,27 +1326,26 @@ public class WxOrderServiceImpl implements WxOrderService {
      * 对接 E：创建渠道支付单。
      *
      * 业务单号用订单号（orderNo），金额用应付金额元转分。
-     * E 支付服务未实现时降级返回 null（不阻塞下单），支付回调时仍可走 payWxOrder 手工标记。
+     * 创建或关联失败时由后台创建事务一并回滚订单和支付单。
      */
-    private String createChannelPayOrder(WxOrderDO wxOrder) {
+    private String createChannelPayOrder(WxOrderDO wxOrder, int priceFen) {
         PayOrderDTO req = new PayOrderDTO();
         req.setBizNo(wxOrder.getOrderNo());
-        req.setPriceFen(yuanToFen(wxOrder.getPayableAmount()));
+        req.setPriceFen(priceFen);
         req.setMemberId(wxOrder.getMemberId());
         req.setSubject("药店线上订单");
-        try {
-            return paymentFacade.createPayOrder(req);
-        } catch (UnsupportedOperationException ex) {
-            // E 支付服务未就绪，降级：不创建支付单，后续支付回调仍可手工标记已支付
-            return null;
+        String payNo = paymentFacade.createPayOrder(req);
+        if (payNo == null || payNo.isBlank()) {
+            throw exception(PAY_ORDER_CREATE_FAIL);
         }
+        return payNo;
     }
 
     /**
      * 对接 E：渠道退款。
      *
      * 退款单号用 WXR-{订单号}（退款幂等键），金额用应付金额元转分。
-     * E 未就绪或订单没有支付单时降级不阻塞（与下单时创建支付单的降级策略一致），
+     * E 未就绪或订单没有支付单时降级不阻塞，
      * 订单侧的退款状态与库存回补仍会完成，渠道对账由后续人工/对账处理。
      */
     private void refundChannelPayOrder(WxOrderDO wxOrder) {

@@ -20,11 +20,11 @@ import java.util.List;
 @Mapper
 public interface PurchaseReceiptMapper extends BaseMapperX<PurchaseReceiptDO> {
 
-    default PageResult<PurchaseReceiptDO> selectPage(PurchaseReceiptPageReqVO reqVO) {
+    default PageResult<PurchaseReceiptDO> selectPage(PurchaseReceiptPageReqVO reqVO, Long scopedStoreId) {
         return selectPage(reqVO, new LambdaQueryWrapperX<PurchaseReceiptDO>()
                 .likeIfPresent(PurchaseReceiptDO::getReceiptNo, reqVO.getReceiptNo())
                 .eqIfPresent(PurchaseReceiptDO::getOrderId, reqVO.getOrderId())
-                .eqIfPresent(PurchaseReceiptDO::getStoreId, reqVO.getStoreId())
+                .eqIfPresent(PurchaseReceiptDO::getStoreId, scopedStoreId)
                 .eqIfPresent(PurchaseReceiptDO::getWarehouseId, reqVO.getWarehouseId())
                 .eqIfPresent(PurchaseReceiptDO::getStatus, reqVO.getStatus())
                 .eqIfPresent(PurchaseReceiptDO::getDiffType, reqVO.getDiffType())

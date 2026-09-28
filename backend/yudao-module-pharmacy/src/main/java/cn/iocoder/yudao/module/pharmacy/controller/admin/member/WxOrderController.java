@@ -8,11 +8,11 @@ import cn.iocoder.yudao.framework.excel.core.util.ExcelUtils;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderPageReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderRespVO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderSaveReqVO;
+import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderUpdateReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.orderline.WxOrderLineRespVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderLineDO;
-import cn.iocoder.yudao.module.pharmacy.service.member.WxOrderLineService;
-import cn.iocoder.yudao.module.pharmacy.service.member.WxOrderService;
+import cn.iocoder.yudao.module.pharmacy.service.member.AdminWxOrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,24 +36,21 @@ import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 public class WxOrderController {
 
     @Resource
-    private WxOrderService wxOrderService;
-
-    @Resource
-    private WxOrderLineService wxOrderLineService;
+    private AdminWxOrderService adminWxOrderService;
 
     @PostMapping("/create")
     @Operation(summary = "创建小程序订单")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:create')")
     public CommonResult<Long> createWxOrder(@Valid @RequestBody WxOrderSaveReqVO createReqVO) {
-        Long id = wxOrderService.createWxOrder(createReqVO);
+        Long id = adminWxOrderService.createWxOrder(createReqVO);
         return success(id);
     }
 
     @PutMapping("/update")
     @Operation(summary = "更新小程序订单")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
-    public CommonResult<Boolean> updateWxOrder(@Valid @RequestBody WxOrderSaveReqVO updateReqVO) {
-        wxOrderService.updateWxOrder(updateReqVO);
+    public CommonResult<Boolean> updateWxOrder(@Valid @RequestBody WxOrderUpdateReqVO updateReqVO) {
+        adminWxOrderService.updateWxOrder(updateReqVO);
         return success(true);
     }
 
@@ -62,7 +59,7 @@ public class WxOrderController {
     @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:delete')")
     public CommonResult<Boolean> deleteWxOrder(@RequestParam("id") Long id) {
-        wxOrderService.deleteWxOrder(id);
+        adminWxOrderService.deleteWxOrder(id);
         return success(true);
     }
 
@@ -71,7 +68,7 @@ public class WxOrderController {
     @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:query')")
     public CommonResult<WxOrderRespVO> getWxOrder(@RequestParam("id") Long id) {
-        WxOrderDO wxOrder = wxOrderService.getWxOrder(id);
+        WxOrderDO wxOrder = adminWxOrderService.getWxOrder(id);
         return success(BeanUtils.toBean(wxOrder, WxOrderRespVO.class));
     }
 
@@ -79,7 +76,7 @@ public class WxOrderController {
     @Operation(summary = "获得小程序订单分页")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:query')")
     public CommonResult<PageResult<WxOrderRespVO>> getWxOrderPage(@Validated WxOrderPageReqVO pageReqVO) {
-        PageResult<WxOrderDO> pageResult = wxOrderService.getWxOrderPage(pageReqVO);
+        PageResult<WxOrderDO> pageResult = adminWxOrderService.getWxOrderPage(pageReqVO);
         return success(BeanUtils.toBean(pageResult, WxOrderRespVO.class));
     }
 
@@ -88,7 +85,7 @@ public class WxOrderController {
     @Parameter(name = "wxOrderId", description = "订单编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:query')")
     public CommonResult<List<WxOrderLineRespVO>> getWxOrderLineList(@RequestParam("wxOrderId") Long wxOrderId) {
-        List<WxOrderLineDO> list = wxOrderLineService.getWxOrderLineListByWxOrderId(wxOrderId);
+        List<WxOrderLineDO> list = adminWxOrderService.getWxOrderLineList(wxOrderId);
         return success(BeanUtils.toBean(list, WxOrderLineRespVO.class));
     }
 
@@ -98,7 +95,7 @@ public class WxOrderController {
     @ApiAccessLog(operateType = EXPORT)
     public void exportWxOrder(HttpServletResponse response, @Validated WxOrderPageReqVO reqVO) throws IOException {
         reqVO.setPageSize(cn.iocoder.yudao.framework.common.pojo.PageParam.PAGE_SIZE_NONE);
-        List<WxOrderDO> list = wxOrderService.getWxOrderPage(reqVO).getList();
+        List<WxOrderDO> list = adminWxOrderService.getWxOrderPage(reqVO).getList();
         ExcelUtils.write(response, "小程序订单.xls", "订单列表", WxOrderRespVO.class,
                 BeanUtils.toBean(list, WxOrderRespVO.class));
     }
@@ -111,7 +108,7 @@ public class WxOrderController {
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
     public CommonResult<Boolean> payWxOrder(@RequestParam("id") Long id,
                                             @RequestParam(value = "payNo", required = false) String payNo) {
-        wxOrderService.payWxOrder(id, payNo);
+        adminWxOrderService.payWxOrder(id, payNo);
         return success(true);
     }
 
@@ -121,7 +118,7 @@ public class WxOrderController {
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:cancel')")
     public CommonResult<Boolean> cancelWxOrder(@RequestParam("id") Long id,
                                                @RequestParam(value = "cancelReason", required = false) String cancelReason) {
-        wxOrderService.cancelWxOrder(id, cancelReason);
+        adminWxOrderService.cancelWxOrder(id, cancelReason);
         return success(true);
     }
 
@@ -131,7 +128,7 @@ public class WxOrderController {
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
     public CommonResult<Boolean> refundWxOrder(@RequestParam("id") Long id,
                                                @RequestParam(value = "refundReason", required = false) String refundReason) {
-        wxOrderService.refundWxOrder(id, refundReason);
+        adminWxOrderService.refundWxOrder(id, refundReason);
         return success(true);
     }
 
@@ -140,7 +137,7 @@ public class WxOrderController {
     @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
     public CommonResult<Boolean> reserveWxOrder(@RequestParam("id") Long id) {
-        wxOrderService.reserveWxOrder(id);
+        adminWxOrderService.reserveWxOrder(id);
         return success(true);
     }
 
@@ -150,7 +147,7 @@ public class WxOrderController {
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
     public CommonResult<Integer> closeExpiredWxOrders(@RequestParam("storeId") Long storeId,
                                                       @RequestParam(value = "limit", required = false) Integer limit) {
-        return success(wxOrderService.closeExpiredWxOrders(storeId, limit));
+        return success(adminWxOrderService.closeExpiredWxOrders(storeId, limit));
     }
 
     @PutMapping("/release-frozen")
@@ -159,7 +156,7 @@ public class WxOrderController {
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
     public CommonResult<Integer> releaseFrozenStock(@RequestParam("storeId") Long storeId,
                                                     @RequestParam(value = "limit", required = false) Integer limit) {
-        return success(wxOrderService.releaseFrozenStockOfClosedOrders(storeId, limit));
+        return success(adminWxOrderService.releaseFrozenStockOfClosedOrders(storeId, limit));
     }
 
     @PutMapping("/start-picking")
@@ -167,7 +164,7 @@ public class WxOrderController {
     @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
     public CommonResult<Boolean> startPicking(@RequestParam("id") Long id) {
-        wxOrderService.startPicking(id);
+        adminWxOrderService.startPicking(id);
         return success(true);
     }
 
@@ -176,7 +173,7 @@ public class WxOrderController {
     @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:update')")
     public CommonResult<Boolean> finishPicking(@RequestParam("id") Long id) {
-        wxOrderService.finishPicking(id);
+        adminWxOrderService.finishPicking(id);
         return success(true);
     }
 
@@ -185,9 +182,8 @@ public class WxOrderController {
     @Parameter(name = "id", description = "订单编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('pharmacy:member:order:verify')")
     public CommonResult<Boolean> verifyWxOrder(@RequestParam("id") Long id,
-                                               @RequestParam("pickupCode") String pickupCode,
-                                               @RequestParam("verifyBy") Long verifyBy) {
-        wxOrderService.verifyWxOrder(id, pickupCode, verifyBy);
+                                               @RequestParam("pickupCode") String pickupCode) {
+        adminWxOrderService.verifyWxOrder(id, pickupCode);
         return success(true);
     }
 

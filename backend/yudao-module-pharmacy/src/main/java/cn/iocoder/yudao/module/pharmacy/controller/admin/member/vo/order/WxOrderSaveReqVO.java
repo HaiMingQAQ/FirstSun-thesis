@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@Schema(description = "管理后台 - 小程序订单创建/修改 Request VO")
+@Schema(description = "管理后台 - 小程序订单创建 Request VO")
 @Data
 public class WxOrderSaveReqVO {
 
@@ -56,8 +56,7 @@ public class WxOrderSaveReqVO {
     @Schema(description = "微信支付交易号", example = "4200001234202401011234567890")
     private String payNo;
 
-    @Schema(description = "支付状态 0待支付/1已支付/2已退款", requiredMode = Schema.RequiredMode.REQUIRED, example = "0")
-    @NotNull(message = "支付状态不能为空")
+    @Schema(description = "支付状态 0待支付/1已支付/2已退款；创建时由服务端设置", example = "0")
     private Integer payStatus;
 
     @Schema(description = "支付时间")
@@ -66,8 +65,7 @@ public class WxOrderSaveReqVO {
     @Schema(description = "处方案编号", example = "1")
     private Long prescId;
 
-    @Schema(description = "订单状态 0待支付/1待拣货/2拣货中/3待自提/4完成/-1取消", requiredMode = Schema.RequiredMode.REQUIRED, example = "0")
-    @NotNull(message = "订单状态不能为空")
+    @Schema(description = "订单状态 0待支付/1待拣货/2拣货中/3待自提/4完成/-1取消；创建时由服务端设置", example = "0")
     private Integer status;
 
     @Schema(description = "取消原因", example = "用户主动取消")
@@ -92,7 +90,7 @@ public class WxOrderSaveReqVO {
     @NotNull(message = "未支付截止时间不能为空")
     private LocalDateTime expireAt;
 
-    @Schema(description = "一次性取货码", example = "ABC123")
+    @Schema(description = "一次性取货码；创建时由服务端生成", example = "ABC123")
     private String pickupCode;
 
     @Schema(description = "核销员工编号", example = "1")

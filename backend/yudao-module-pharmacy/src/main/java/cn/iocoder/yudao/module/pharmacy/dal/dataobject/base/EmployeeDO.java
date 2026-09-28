@@ -2,7 +2,9 @@ package cn.iocoder.yudao.module.pharmacy.dal.dataobject.base;
 
 import cn.iocoder.yudao.framework.mybatis.core.dataobject.BaseDO;
 import cn.iocoder.yudao.module.pharmacy.enums.EmployeeStatusEnum;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.KeySequence;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -31,6 +33,10 @@ import java.time.LocalDate;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class EmployeeDO extends BaseDO {
+
+    /** 查询时用于核对员工租户；写入仍由租户拦截器维护。 */
+    @TableField(value = "tenant_id", insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private Long tenantId;
 
     /**
      * 主键

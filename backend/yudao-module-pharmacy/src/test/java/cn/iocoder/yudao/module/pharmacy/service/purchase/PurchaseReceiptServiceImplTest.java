@@ -1,12 +1,14 @@
 package cn.iocoder.yudao.module.pharmacy.service.purchase;
 
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.pharmacy.api.DrugApi;
 import cn.iocoder.yudao.module.pharmacy.api.dto.DrugRespDTO;
 import cn.iocoder.yudao.module.pharmacy.api.inventory.InventoryFacade;
 import cn.iocoder.yudao.module.pharmacy.api.inventory.dto.ReceiveItem;
 import cn.iocoder.yudao.module.pharmacy.api.inventory.dto.ReceiveResult;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.purchase.vo.receipt.PurchaseReceiptLineSaveReqVO;
+import cn.iocoder.yudao.module.pharmacy.controller.admin.purchase.vo.receipt.PurchaseReceiptPageReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.purchase.vo.receipt.PurchaseReceiptSaveReqVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.EmployeeDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.StoreDO;
@@ -21,6 +23,7 @@ import cn.iocoder.yudao.module.pharmacy.enums.PurchaseOrderStatusEnum;
 import cn.iocoder.yudao.module.pharmacy.enums.PurchaseReceiptStatusEnum;
 import cn.iocoder.yudao.module.pharmacy.service.base.EmployeeService;
 import cn.iocoder.yudao.module.pharmacy.service.base.StoreService;
+import cn.iocoder.yudao.module.pharmacy.service.permission.PharmacyStoreDataAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -30,6 +33,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -41,6 +45,7 @@ import java.util.List;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.INV_SERVICE_UNAVAILABLE;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PURCHASE_RECEIPT_LINE_EMPTY;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PURCHASE_RECEIPT_LOCATION_REQUIRED;
+import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PURCHASE_RECEIPT_ORDER_LINE_MISMATCH;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PURCHASE_RECEIPT_POST_DUP;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PURCHASE_RECEIPT_STATUS_INVALID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -49,6 +54,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -76,6 +82,10 @@ class PurchaseReceiptServiceImplTest {
     private SupplierLicenseService supplierLicenseService;
     @Mock
     private StoreService storeService;
+    @Mock
+    private PharmacyStoreDataAccess storeDataAccess;
+    @Mock
+    private PurchaseInventoryReferenceAccess inventoryReferences;
     @Mock
     private EmployeeService employeeService;
     @Mock
@@ -208,6 +218,117 @@ class PurchaseReceiptServiceImplTest {
         verify(receiptMapper, never()).deleteById(anyLong());
     }
 
+    @Test
+    void getReceiptPage_shouldApplyEmployeeStoreBeforeQuery() {
+        PurchaseReceiptPageReqVO reqVO = new PurchaseReceiptPageReqVO();
+        when(storeDataAccess.scopeStoreId(null)).thenReturn(407L);
+        when(receiptMapper.selectPage(reqVO, 407L)).thenReturn(new PageResult<>(List.of(), 0L));
+
+        receiptService.getReceiptPage(reqVO);
+
+        verify(receiptMapper).selectPage(reqVO, 407L);
+    }
+
+    @Test
+    void getReceipt_shouldRejectGuessedOtherStoreId() {
+        PurchaseReceiptDO otherStore = receipt(2L, PurchaseReceiptStatusEnum.DRAFT.getStatus());
+        otherStore.setStoreId(408L);
+        when(receiptMapper.selectById(2L)).thenReturn(otherStore);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> receiptService.getReceipt(2L));
+        verify(receiptLineMapper, never()).selectListByReceiptId(2L);
+    }
+
+    @Test
+    void createReceipt_shouldRejectOtherStoreBeforeInsert() {
+        PurchaseReceiptSaveReqVO reqVO = createReqVO();
+        reqVO.setStoreId(408L);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> receiptService.createReceipt(reqVO));
+        verify(receiptMapper, never()).insert(any(PurchaseReceiptDO.class));
+    }
+
+    @Test
+    void createReceipt_shouldRejectCrossWarehouseLocationBeforeInsert() {
+        mockCreatableReceipt();
+        PurchaseReceiptSaveReqVO reqVO = createReqVO();
+        reqVO.getLines().get(0).setLocationId(901L);
+        doThrow(new AccessDeniedException("location outside warehouse"))
+                .when(inventoryReferences).validateReceiptReferences(407L, 1L, List.of(901L));
+
+        assertThrows(AccessDeniedException.class, () -> receiptService.createReceipt(reqVO));
+        verify(receiptMapper, never()).insert(any(PurchaseReceiptDO.class));
+    }
+
+    @Test
+    void updateReceipt_shouldRejectChangingToOtherStore() {
+        when(receiptMapper.selectById(1L)).thenReturn(receipt(PurchaseReceiptStatusEnum.DRAFT.getStatus()));
+        PurchaseReceiptSaveReqVO reqVO = createReqVO();
+        reqVO.setId(1L);
+        reqVO.setStoreId(408L);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> receiptService.updateReceipt(reqVO));
+        verify(receiptMapper, never()).updateById(any(PurchaseReceiptDO.class));
+    }
+
+    @Test
+    void updateReceipt_shouldRejectForeignWarehouseBeforeWrite() {
+        when(receiptMapper.selectById(1L)).thenReturn(receipt(PurchaseReceiptStatusEnum.DRAFT.getStatus()));
+        mockCreatableReceipt();
+        PurchaseReceiptSaveReqVO reqVO = createReqVO();
+        reqVO.setId(1L);
+        reqVO.setWarehouseId(902L);
+        doThrow(new AccessDeniedException("warehouse outside store"))
+                .when(inventoryReferences).validateReceiptReferences(407L, 902L, java.util.Arrays.asList((Long) null));
+
+        assertThrows(AccessDeniedException.class, () -> receiptService.updateReceipt(reqVO));
+        verify(receiptMapper, never()).updateById(any(PurchaseReceiptDO.class));
+        verify(receiptLineMapper, never()).physicalDeleteByReceiptId(1L);
+    }
+
+    @Test
+    void submitReceipt_shouldRejectOtherStoreBeforeUpdate() {
+        PurchaseReceiptDO otherStore = receipt(2L, PurchaseReceiptStatusEnum.DRAFT.getStatus());
+        otherStore.setStoreId(408L);
+        when(receiptMapper.selectById(2L)).thenReturn(otherStore);
+        doThrow(new AccessDeniedException("other store")).when(storeDataAccess).requireStore(408L);
+
+        assertThrows(AccessDeniedException.class, () -> receiptService.submitReceipt(2L));
+        verify(receiptMapper, never()).updateById(any(PurchaseReceiptDO.class));
+    }
+
+    @Test
+    void createReceipt_shouldRejectOrderFromDifferentStore() {
+        mockCreatableReceipt();
+        PurchaseOrderDO otherStoreOrder = new PurchaseOrderDO();
+        otherStoreOrder.setId(5L);
+        otherStoreOrder.setStoreId(408L);
+        otherStoreOrder.setStatus(PurchaseOrderStatusEnum.ISSUED.getStatus());
+        when(purchaseOrderService.validateOrderExists(5L)).thenReturn(otherStoreOrder);
+
+        ServiceException ex = assertThrows(ServiceException.class,
+                () -> receiptService.createReceipt(createReqVO()));
+        assertEquals(PURCHASE_RECEIPT_ORDER_LINE_MISMATCH.getCode(), ex.getCode());
+        verify(receiptMapper, never()).insert(any(PurchaseReceiptDO.class));
+    }
+
+    @Test
+    void postReceipt_shouldRejectStoredOrderFromDifferentStoreBeforeInventory() {
+        mockPostableReceipt();
+        PurchaseOrderDO otherStoreOrder = new PurchaseOrderDO();
+        otherStoreOrder.setId(5L);
+        otherStoreOrder.setStoreId(408L);
+        otherStoreOrder.setStatus(PurchaseOrderStatusEnum.ISSUED.getStatus());
+        when(purchaseOrderService.validateOrderExists(5L)).thenReturn(otherStoreOrder);
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> receiptService.postReceipt(1L));
+        assertEquals(PURCHASE_RECEIPT_ORDER_LINE_MISMATCH.getCode(), ex.getCode());
+        verify(inventoryFacade, never()).receive(anyLong(), anyString(), any());
+    }
+
     /**
      * 取号改为序列表原子分配后的回归：单号必须由 allocateSeq 的返回值决定。
      *
@@ -318,6 +439,7 @@ class PurchaseReceiptServiceImplTest {
         when(receiptMapper.selectById(1L)).thenReturn(receipt);
         PurchaseOrderDO order = new PurchaseOrderDO();
         order.setId(5L);
+        order.setStoreId(407L);
         order.setSupplierId(9L);
         order.setStatus(PurchaseOrderStatusEnum.ISSUED.getStatus());
         when(purchaseOrderService.validateOrderExists(5L)).thenReturn(order);

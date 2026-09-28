@@ -86,18 +86,18 @@ class MemberControllerContractTest {
         assertFalse(hasRequestBody(method), "取消订单必须走 Query 参数，不能改成 JSON Body");
     }
 
-    /** 核销订单：PUT /pharmacy/member/order/verify，Query 参数 id + pickupCode + verifyBy，权限 order:verify */
+    /** 核销订单：PUT /pharmacy/member/order/verify，只接收 id + pickupCode；核销员工由服务端解析 */
     @Test
     void testOrderVerifyContract() {
         Method method = method(WxOrderController.class, "verifyWxOrder");
 
         assertEquals("/verify", putPath(method));
-        assertEquals(List.of("id", "pickupCode", "verifyBy"), requestParamNames(method));
+        assertEquals(List.of("id", "pickupCode"), requestParamNames(method));
         assertEquals("pharmacy:member:order:verify", permission(method));
-        // 类型锁死：id / verifyBy 为 Long，pickupCode 为 String
+        // 类型锁死：不接收客户端提交的 verifyBy，即使旧请求多传也不能影响核销人。
+        assertEquals(2, method.getParameterCount());
         assertEquals(Long.class, method.getParameterTypes()[0]);
         assertEquals(String.class, method.getParameterTypes()[1]);
-        assertEquals(Long.class, method.getParameterTypes()[2]);
     }
 
     /** 订单查询仍使用 query 权限 */

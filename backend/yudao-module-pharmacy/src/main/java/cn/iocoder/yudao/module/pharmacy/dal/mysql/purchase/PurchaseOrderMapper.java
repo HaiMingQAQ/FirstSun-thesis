@@ -20,10 +20,10 @@ import java.util.List;
 @Mapper
 public interface PurchaseOrderMapper extends BaseMapperX<PurchaseOrderDO> {
 
-    default PageResult<PurchaseOrderDO> selectPage(PurchaseOrderPageReqVO reqVO) {
+    default PageResult<PurchaseOrderDO> selectPage(PurchaseOrderPageReqVO reqVO, Long scopedStoreId) {
         return selectPage(reqVO, new LambdaQueryWrapperX<PurchaseOrderDO>()
                 .likeIfPresent(PurchaseOrderDO::getOrderNo, reqVO.getOrderNo())
-                .eqIfPresent(PurchaseOrderDO::getStoreId, reqVO.getStoreId())
+                .eqIfPresent(PurchaseOrderDO::getStoreId, scopedStoreId)
                 .eqIfPresent(PurchaseOrderDO::getSupplierId, reqVO.getSupplierId())
                 .eqIfPresent(PurchaseOrderDO::getStatus, reqVO.getStatus())
                 .eqIfPresent(PurchaseOrderDO::getIsAuto, reqVO.getIsAuto())
@@ -46,8 +46,10 @@ public interface PurchaseOrderMapper extends BaseMapperX<PurchaseOrderDO> {
     @Select("SELECT MAX(order_no) FROM ph_po_order WHERE order_no LIKE CONCAT(#{prefix}, '%')")
     String selectMaxOrderNo(@Param("prefix") String prefix);
 
-    default List<PurchaseOrderDO> selectListByIds(Collection<Long> ids) {
-        return selectBatchIds(ids);
+    default List<PurchaseOrderDO> selectListByIds(Collection<Long> ids, Long scopedStoreId) {
+        return selectList(new LambdaQueryWrapperX<PurchaseOrderDO>()
+                .in(PurchaseOrderDO::getId, ids)
+                .eqIfPresent(PurchaseOrderDO::getStoreId, scopedStoreId));
     }
 
 }
