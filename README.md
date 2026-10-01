@@ -161,8 +161,7 @@ docker compose -p firstsun-admin-delivery -f deploy/docker-compose.prod.yml --en
 
 开始开发前请先阅读：
 
-- [团队开发须知](docs/团队开发须知.md)
-- [六人全栈开发方案](docs/六人全栈开发方案.md)
+- [文档导航与跨模块契约](docs/README.md)
 - [开发规范与 AI 协作规则](docs/开发规范与AI协作规则.md)
 - [前端界面统一规范](docs/前端界面统一规范.md)
 
