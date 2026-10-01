@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class PrescRecordRespVO extends PhPrescRecordDO {
+    private java.util.List<cn.iocoder.yudao.module.pharmacy.controller.app.prescription.vo.AppPrescRecordRespVO.Use> uses;
 
     @Schema(description = "门店名称（冗余展示）", example = "FirstSun 旗舰店")
     private String storeName;

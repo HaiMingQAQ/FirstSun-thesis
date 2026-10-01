@@ -32,11 +32,15 @@ public class PrescRecordController {
 
     @Resource
     private PrescRecordService prescRecordService;
+    @Resource private cn.iocoder.yudao.module.pharmacy.service.permission.PharmacyStoreDataAccess storeAccess;
+    @Resource private cn.iocoder.yudao.module.pharmacy.service.prescription.PrescriptionStaffAccess staffAccess;
 
     @PostMapping("/create")
     @Operation(summary = "登记处方")
     @PreAuthorize("@ss.hasPermission('pharmacy:prescription:create')")
     public CommonResult<Long> createPrescRecord(@Valid @RequestBody PrescRecordSaveReqVO createReqVO) {
+        storeAccess.requireStore(createReqVO.getStoreId());
+        if(createReqVO.getWxMemberId()!=null)staffAccess.requirePharmacist(createReqVO.getStoreId());
         return success(prescRecordService.createPrescRecord(createReqVO));
     }
 

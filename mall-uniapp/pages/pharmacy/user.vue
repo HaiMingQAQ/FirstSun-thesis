@@ -48,7 +48,7 @@
       <view class="fs-menu" @tap="open('prescription-upload')">
         <view class="fs-row">
           <uni-icons type="paperclip" size="22" color="#526b5b" />
-          <text>处方资料</text><text class="fs-tag">提交暂未开放</text>
+          <text>处方资料</text>
         </view>
         <uni-icons type="right" size="16" color="#8b968f" />
       </view>
@@ -61,8 +61,9 @@
       </view>
     </view>
     <view class="fs-section">
-      <view class="fs-menu"><view class="fs-row"><uni-icons type="chat" size="22" color="#62756c" /><text>消息中心</text></view><text class="fs-muted">暂未开放</text></view>
-      <view class="fs-menu"><view class="fs-row"><uni-icons type="chatbubble" size="22" color="#62756c" /><text>AI 购药助手</text></view><text class="fs-muted">暂未开放</text></view>
+      <view class="fs-menu" @tap="open('notifications')"><view class="fs-row"><uni-icons type="chat" size="22" color="#62756c" /><text>业务通知</text></view><uni-icons type="right" size="16" color="#62756c" /></view>
+      <view class="fs-menu" @tap="open('consultation')"><view class="fs-row"><uni-icons type="chatbubble" size="22" color="#62756c" /><text>门店文字咨询</text></view><uni-icons type="right" size="16" color="#62756c" /></view>
+      <view class="fs-menu" @tap="open('ai')"><view class="fs-row"><uni-icons type="chatbubble" size="22" color="#62756c" /><text>AI 购药助手</text></view><uni-icons type="right" size="16" color="#62756c" /></view>
     </view>
     <view v-if="profile" class="fs-pad">
       <button class="fs-outline" @tap="logout">退出登录</button>

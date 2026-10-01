@@ -381,7 +381,8 @@ public class GlobalExceptionHandler {
         errorLog.setTraceId(TracerUtils.getTraceId());
         errorLog.setApplicationName(applicationName);
         errorLog.setRequestUrl(request.getRequestURI());
-        boolean authentication = ApiAccessLogSanitizer.isAuthenticationPath(request.getRequestURI());
+        boolean authentication = (ApiAccessLogSanitizer.isAuthenticationPath(request.getRequestURI())
+                    || ApiAccessLogSanitizer.isPrivateBusinessPath(request.getRequestURI()));
         Map<String, Object> requestParams = MapUtil.<String, Object>builder()
                 .put("query", authentication ? ApiAccessLogSanitizer.REDACTED
                         : ApiAccessLogSanitizer.query(ServletUtils.getParamMap(request), null))

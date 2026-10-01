@@ -17,6 +17,11 @@ export const yuan = (cents) => Number(Number(cents || 0) / 100).toFixed(2);
 /** 后端 LocalDateTime（如 2026-09-19T10:30:00） → 本地文本 */
 export const formatDate = (value) => {
   if (!value) return '';
+  if (typeof value === 'number') {
+    const date = new Date(value), pad = n => String(n).padStart(2, '0');
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
   const text = String(value).replace('T', ' ').replace(/\..*$/, '');
   return text.length >= 16 ? text.slice(0, 16) : text;
 };

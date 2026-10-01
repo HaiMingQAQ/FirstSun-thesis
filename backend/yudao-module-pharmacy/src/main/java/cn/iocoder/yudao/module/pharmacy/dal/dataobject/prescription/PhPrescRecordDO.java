@@ -99,4 +99,8 @@ public class PhPrescRecordDO extends BaseDO {
 
     /** 药品 ID、核准数量与用法（JSON 字符串），购药累计在事务内核验 */
     private String prescribedItems;
+    /** Customer submission digest; no raw consultation text. */
+    private String submissionHash;
+    private String approvedItems;
+    private LocalDateTime approvedUntil;
 }

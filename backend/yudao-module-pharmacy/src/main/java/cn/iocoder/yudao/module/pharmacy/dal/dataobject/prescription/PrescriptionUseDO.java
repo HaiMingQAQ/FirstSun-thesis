@@ -1,0 +1,14 @@
+package cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription;
+import cn.iocoder.yudao.framework.tenant.core.db.TenantBaseDO;
+import com.baomidou.mybatisplus.annotation.*;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+@Data @EqualsAndHashCode(callSuper=true) @TableName("ph_prescription_use")
+public class PrescriptionUseDO extends TenantBaseDO {
+    @TableId(type=IdType.AUTO) private Long id;
+    private Long prescId;
+    private Long wxOrderId;
+    private String status;
+    private String itemsSnapshot;
+    private String releaseReason;
+}

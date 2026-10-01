@@ -12,6 +12,8 @@
 | POS 数据模型、退货与交班设计 | [POS 销售域设计](./superpowers/specs/2026-09-08-pos-sales-domain-design.md) |
 | 会员与线上订单库存契约 | [生命周期与接口需求](./F-member/线上订单库存生命周期与接口需求.md)、[冻结闭环自测](./F-member/F-自测记录-线上订单冻结闭环.md) |
 | AI 助手设计及运行 | [可行性与实现方案](./AI助手可行性分析与实现方案.md)、[原型运行与验证](./AI助手技术原型运行与验证.md) |
+| 毕设顾客业务实施及验收 | [只读 AI 查询](./customer-ai-development.md)、[私有处方购药](./prescription-business-development.md)、[门店人工咨询](./store-consultation-development.md) |
+| GitHub 首次上传准备及阻塞 | [远端、提交与历史令牌说明](./first-upload-preparation.md) |
 | 全项目验收 | [验收方案](./全项目自动化功能验收方案.md)、[验收提示词](./ai-prompts/全项目自动化功能验收AI提示词.md)、[历史报告](./acceptance/reports/) |
 | 数据库初始化与增量迁移 | [迁移执行说明](../sql/migrations/README.md) |
 | 小程序构建与支付环境边界 | [构建说明](../mall-uniapp/README.deploy.md) |

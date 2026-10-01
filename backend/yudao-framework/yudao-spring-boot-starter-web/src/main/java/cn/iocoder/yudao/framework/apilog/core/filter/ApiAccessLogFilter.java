@@ -123,7 +123,8 @@ public class ApiAccessLogFilter extends ApiRequestFilter {
         String[] sanitizeKeys = accessLogAnnotation != null ? accessLogAnnotation.sanitizeKeys() : null;
         Boolean requestEnable = accessLogAnnotation != null ? accessLogAnnotation.requestEnable() : Boolean.TRUE;
         if (!BooleanUtil.isFalse(requestEnable)) { // 默认记录，所以判断 !false
-            boolean authentication = ApiAccessLogSanitizer.isAuthenticationPath(request.getRequestURI());
+            boolean authentication = (ApiAccessLogSanitizer.isAuthenticationPath(request.getRequestURI())
+                    || ApiAccessLogSanitizer.isPrivateBusinessPath(request.getRequestURI()));
             Map<String, Object> requestParams = MapUtil.<String, Object>builder()
                     .put("query", authentication ? ApiAccessLogSanitizer.REDACTED
                             : ApiAccessLogSanitizer.query(queryString, sanitizeKeys))

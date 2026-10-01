@@ -60,6 +60,9 @@ services:
       - ./sql/migrations/20260918_a_ai_menu_fix.sql:/docker-entrypoint-initdb.d/37-pharmacy-ai-menu-fix.sql:ro
       - ./sql/migrations/20260922_p_admin_delivery_demo_data.sql:/docker-entrypoint-initdb.d/38-admin-delivery-demo-data.sql:ro
       - ./sql/migrations/20260922_f_pharmacy_wechat_identity.sql:/docker-entrypoint-initdb.d/39-pharmacy-wechat-identity.sql:ro
+      - ./sql/migrations/20261001_a_customer_ai_consult.sql:/docker-entrypoint-initdb.d/40-customer-ai-consult.sql:ro
+      - ./sql/migrations/20261001_b_prescription_private_flow.sql:/docker-entrypoint-initdb.d/41-prescription-private-flow.sql:ro
+      - ./sql/migrations/20261001_c_store_consultation.sql:/docker-entrypoint-initdb.d/42-store-consultation.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s

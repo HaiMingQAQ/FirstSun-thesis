@@ -27,10 +27,10 @@
       </view>
     </view>
     <view class="assistant-entry fs-pad fs-white">
-      <view class="assistant-panel">
+      <view class="assistant-panel" @tap="go('ai')">
         <uni-icons type="chatbubble" size="28" color="#176b5b" />
-        <view class="fs-grow"><view class="fs-title">购药智能助手</view><view class="fs-muted">顾客咨询能力建设中，暂未开放</view></view>
-        <text class="fs-tag">待接通</text>
+        <view class="fs-grow"><view class="fs-title">购药智能助手</view><view class="fs-muted">查询药品档案与门店有货商品</view></view>
+        <uni-icons type="right" size="18" color="#176b5b" />
       </view>
     </view>
     <view class="shortcuts fs-white">
@@ -104,7 +104,7 @@
       storeInfo.value = api.store;
     });
   const add = (p) => {
-    if (p.rx) return toast('处方购买暂未开放，请联系门店');
+    if (p.rx) { if (requireLogin()) go('prescription-upload?drugId=' + p.id); return; }
     if (requireLogin())
       act(async () => {
         await api.add(p.id);

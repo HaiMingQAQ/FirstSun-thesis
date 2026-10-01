@@ -30,6 +30,17 @@ public final class ApiAccessLogSanitizer {
         return uri != null && uri.contains("/auth/");
     }
 
+    /** Medical consultation text must stay out of logs, including failures before controller dispatch. */
+    public static boolean isPrivateBusinessPath(String uri) {
+        // Servlet matrix parameters can occur on any path segment, before dispatch/authentication.
+        if (uri != null) uri = uri.replaceAll(";[^/]*", "");
+        return "/app-api/pharmacy/ai/consult".equals(uri) || "/app-api/pharmacy/ai/consult/".equals(uri)
+                || (uri != null && (uri.startsWith("/app-api/member/prescription/")
+                  || uri.startsWith("/admin-api/pharmacy/prescription/")
+                  || uri.startsWith("/app-api/member/consultation/")
+                  || uri.startsWith("/admin-api/pharmacy/consultation/")));
+    }
+
     public static String query(Map<String, ?> query, String[] extraKeys) {
         if (query == null || query.isEmpty()) {
             return null;

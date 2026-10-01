@@ -39,7 +39,7 @@
         <view class="fs-gap fs-small">{{ product.specification }}</view>
       </view>
       <view v-if="product.rx" class="fs-notice">
-        处方药须经药师审核后购买。在线处方私有上传及审核购药链路暂未开放，请联系门店办理。
+        处方药须经药师审核后购买。请先提交私有处方材料，审核通过后按核准明细结算。
       </view>
       <view v-if="!product.rx" class="fs-section">
         <view class="fs-title">药品信息</view>
@@ -71,7 +71,7 @@
         <s-pharmacy-stepper v-model="qty" :max="product.stock" :disabled="!product.stock || busy" />
       </view>
       <view v-if="product.rx" class="fs-dock">
-        <button class="fs-primary fs-grow" disabled>在线处方购药暂未开放</button>
+        <button class="fs-primary fs-grow" @tap="requireLogin() && go('prescription-upload?drugId=' + product.id)">提交处方申请</button>
       </view>
       <view v-else class="fs-dock">
         <button class="fs-text-btn" aria-label="查看购物车" @tap="go('cart')">

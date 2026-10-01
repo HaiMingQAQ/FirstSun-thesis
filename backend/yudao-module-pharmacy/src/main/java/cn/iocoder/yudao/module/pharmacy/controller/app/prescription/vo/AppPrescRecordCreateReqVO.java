@@ -16,26 +16,32 @@ public class AppPrescRecordCreateReqVO {
 
     @Schema(description = "履约门店编号", requiredMode = Schema.RequiredMode.REQUIRED, example = "407")
     @NotNull(message = "门店不能为空")
+    @jakarta.validation.constraints.Positive
     private Long storeId;
 
     @Schema(description = "患者姓名", requiredMode = Schema.RequiredMode.REQUIRED, example = "顾晨")
-    @NotEmpty(message = "患者姓名不能为空")
+    @jakarta.validation.constraints.NotBlank(message = "患者姓名不能为空")
+    @Size(max = 32)
     private String patientName;
 
     @Schema(description = "开具医院", example = "厦门市第一医院")
+    @Size(max = 100)
     private String hospital;
 
     @Schema(description = "医师姓名", example = "张医生")
+    @Size(max = 32)
     private String doctorName;
 
-    @Schema(description = "处方影像 URL 列表（最多 5 张）", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotEmpty(message = "请上传处方图片")
-    @Size(max = 5, message = "处方图片最多 5 张")
-    private List<String> images;
+    @NotEmpty @Size(max = 3)
+    private List<@NotNull @jakarta.validation.constraints.Positive Long> materialIds;
+
+    @jakarta.validation.constraints.NotBlank @Size(max = 64)
+    @jakarta.validation.constraints.Pattern(regexp = "[a-zA-Z0-9_-]+")
+    private String clientRequestId;
 
     @Schema(description = "处方药品明细（药品 ID 与核准数量）", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotEmpty(message = "处方药品明细不能为空")
-    @Valid
-    private List<PrescItemVO> items;
+    @Valid @Size(max = 20)
+    private List<@NotNull PrescItemVO> items;
 
 }

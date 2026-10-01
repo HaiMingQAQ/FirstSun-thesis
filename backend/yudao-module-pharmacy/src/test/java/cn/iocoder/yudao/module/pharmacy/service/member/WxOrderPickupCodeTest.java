@@ -43,6 +43,9 @@ class WxOrderPickupCodeTest {
         ReflectionTestUtils.setField(service, "paymentFacade", payments);
         when(orders.updateById(any(WxOrderDO.class))).thenReturn(1);
         ReflectionTestUtils.setField(service, "memberPointSettlementService", mock(MemberPointSettlementService.class));
+        var paymentAccess = mock(WxOrderPaymentAccess.class);
+        when(paymentAccess.lockOrder(anyLong())).thenAnswer(call -> orders.selectById((Long) call.getArgument(0)));
+        ReflectionTestUtils.setField(service, "orderPaymentAccess", paymentAccess);
     }
 
     @Test

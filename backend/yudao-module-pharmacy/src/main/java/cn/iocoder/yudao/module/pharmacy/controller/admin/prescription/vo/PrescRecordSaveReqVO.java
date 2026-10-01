@@ -66,4 +66,5 @@ public class PrescRecordSaveReqVO {
     @Schema(description = "处方药品明细（药品 ID、核准数量与用法，JSON 存储）", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotEmpty(message = "处方药品明细不能为空")
     private List<PrescItemVO> items;
+    private String submissionHash;
 }
