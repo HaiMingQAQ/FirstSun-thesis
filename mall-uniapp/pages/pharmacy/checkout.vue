@@ -10,10 +10,10 @@
     <template v-else>
       <view class="fs-section">
         <view class="fs-choice">
+          <button :class="{ active: mode === 'pickup' }" @tap="mode = 'pickup'">到店自提</button>
           <button :class="{ active: mode === 'delivery' }" @tap="mode = 'delivery'">
             门店配送
           </button>
-          <button :class="{ active: mode === 'pickup' }" @tap="mode = 'pickup'">到店自提</button>
         </view>
         <view v-if="mode === 'delivery'" class="fs-menu" @tap="go('address?select=1')">
           <view class="fs-grow">
@@ -42,6 +42,7 @@
           v-for="row in data.items"
           :key="row.drugId"
           :product="row.product"
+          compact
           hide-stock
           :qty="row.qty"
         />
@@ -56,10 +57,10 @@
           <text class="fs-muted">{{ data.prescriptions.length }}/3 张</text>
         </view>
         <view class="fs-notice fs-gap">
-          需上传处方并经药师审核。提交订单后进入待审核状态，审核结果以药师实际处理为准。
+          在线处方上传及审核购买暂未开放。请返回购物车移除处方药后结算普通商品。
         </view>
-        <button class="fs-outline fs-gap" @tap="go('prescription-upload?checkout=1')">
-          {{ data.prescriptions.length ? '查看 / 修改处方' : '上传处方图片' }}
+        <button class="fs-outline fs-gap" disabled>
+          处方提交暂未开放
         </button>
       </view>
       <view class="fs-section">
@@ -110,8 +111,8 @@
           <text class="fs-small">合计</text>
           <text class="fs-price">¥{{ money(total) }}</text>
         </view>
-        <button class="fs-primary" :disabled="loading || busy || submitted" :loading="busy" @tap="submit">
-          {{ submitted ? '已提交' : busy ? '提交中…' : hasRx ? '提交审核订单' : '提交订单' }}
+        <button class="fs-primary" :disabled="loading || busy || submitted || hasRx" :loading="busy" @tap="submit">
+          {{ submitted ? '已提交' : busy ? '提交中…' : hasRx ? '处方购买暂未开放' : '提交订单' }}
         </button>
       </view>
     </template>
@@ -146,7 +147,7 @@
       data.value = await api.checkout();
     });
   const submit = () => {
-    if (submitted.value) return;
+    if (submitted.value || hasRx.value || !data.value) return;
     act(async () => {
       const order = await api.createOrder({
         mode: mode.value,

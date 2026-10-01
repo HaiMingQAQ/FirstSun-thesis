@@ -48,7 +48,7 @@
       <view class="fs-menu" @tap="open('prescription-upload')">
         <view class="fs-row">
           <uni-icons type="paperclip" size="22" color="#526b5b" />
-          <text>我的处方</text>
+          <text>处方资料</text><text class="fs-tag">提交暂未开放</text>
         </view>
         <uni-icons type="right" size="16" color="#8b968f" />
       </view>
@@ -59,6 +59,10 @@
         </view>
         <uni-icons type="right" size="16" color="#8b968f" />
       </view>
+    </view>
+    <view class="fs-section">
+      <view class="fs-menu"><view class="fs-row"><uni-icons type="chat" size="22" color="#62756c" /><text>消息中心</text></view><text class="fs-muted">暂未开放</text></view>
+      <view class="fs-menu"><view class="fs-row"><uni-icons type="chatbubble" size="22" color="#62756c" /><text>AI 购药助手</text></view><text class="fs-muted">暂未开放</text></view>
     </view>
     <view v-if="profile" class="fs-pad">
       <button class="fs-outline" @tap="logout">退出登录</button>
@@ -106,7 +110,7 @@
       });
   };
   const logout = async () => {
-    if (await confirm('退出登录', '确定退出当前测试账户？')) {
+    if (await confirm('退出登录', '确定退出当前账户？')) {
       await api.logout();
       profile.value = null;
       error.value = '';
@@ -122,13 +126,13 @@
 </script>
 <style scoped>
   .member-head {
-    padding: 28px 20px 24px;
-    background: #fff;
+    padding: 24px 16px;
+    background: #f3f7f1;
   }
   .avatar {
-    width: 58px;
-    height: 58px;
-    border-radius: 8px;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
     background: #eaf2ed;
     display: flex;
     align-items: center;
@@ -146,7 +150,7 @@
     font-size: 14px;
   }
   .points {
-    font-size: 24px;
+    font-size: 25px;
     font-weight: 600;
     margin-left: 8px;
     color: #176b5b;

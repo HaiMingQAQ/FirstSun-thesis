@@ -398,7 +398,7 @@ const api = {
   async selectAll(checked) {
     const rows = await api.cart();
     for (const r of rows) {
-      const valid = r.product.active && r.product.stock >= r.qty;
+      const valid = !r.product.rx && r.product.active && r.product.stock >= r.qty;
       const target = checked && valid ? 1 : 0;
       if ((r.checked ? 1 : 0) !== target) {
         await via(CartApi.updateCartSelected(r.id, target));
@@ -432,6 +432,7 @@ const api = {
     // 结算前逐项复核最新库存与价格（库存 / 价格可能已变化）
     for (const r of items) {
       const p = await api.product(r.drugId);
+      if (p.rx) throw new Error('在线处方购买暂未开放，请联系门店办理');
       if (!p.active) throw new Error(`「${p.name}」已下架，请移除后重试`);
       if (r.qty > p.stock) throw new Error(`「${p.name}」库存不足，当前最多可购 ${p.stock} 件`);
       r.product = p;
@@ -499,7 +500,6 @@ const api = {
       const s = await ensureStore();
       if (!['delivery', 'pickup'].includes(mode)) throw new Error('请选择配送或自提');
       // 立即购买：后端按「购物车已勾选商品」创建订单，先把该商品放入购物车并勾选
-      if (draft.buy) await api.ensureBuyInCart(s, draft.buy);
       const data = await api.checkout();
       const orderType = mode === 'delivery' ? 1 : 0;
       let addressId = null;
@@ -515,6 +515,7 @@ const api = {
       }
       // 使用积分：只表达「是否用满服务端试算的最大可用积分」，具体抵扣由后端 calcSalePoints 校验
       const use = usePoints ? data.maxUsablePoints : 0;
+      if (draft.buy) await api.ensureBuyInCart(s, draft.buy);
       const id = await via(
         OrderApi.createOrder({
           storeId: s.id,
@@ -560,6 +561,10 @@ const api = {
   // 立即购买：保证购物车中存在该商品（数量一致且勾选）
   async ensureBuyInCart(s, buy) {
     const rows = await api.cart();
+    for (const r of rows) {
+      if (r.checked && r.drugId !== Number(buy.id))
+        await via(CartApi.updateCartSelected(r.id, 0));
+    }
     const row = rows.find((r) => r.drugId === Number(buy.id));
     if (row) {
       if (row.qty !== buy.qty) await via(CartApi.updateCartQty(row.id, buy.qty));
@@ -670,7 +675,8 @@ async function mapOrder(raw) {
     items.push({
       drugId: line.drugId,
       qty: line.qty,
-      product: p || {
+      // 历史订单使用服务端订单行价格，不能用当前目录价覆盖。
+      product: p ? { ...p, price: fen(line.price) } : {
         id: line.drugId,
         name: line.drugName,
         specification: line.specification,

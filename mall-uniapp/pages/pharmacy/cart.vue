@@ -1,13 +1,13 @@
 <template>
   <s-pharmacy-page :tab="2" dock>
     <view class="fs-pad fs-white">
-      <view class="fs-heading">购物车</view>
-      <view class="fs-muted">{{ api.store.name }} · 下单前为您核对库存</view>
+      <view class="fs-title">{{ api.store.name }}</view>
+      <view class="fs-muted">下单前为您核对价格与库存</view>
     </view>
     <s-pharmacy-state
       v-if="!loggedIn"
       title="登录后查看购物车"
-      description="选好的药品会保存在您的测试账户中"
+      description="选好的药品会保存在您的账户中"
       action="去登录"
       @retry="go('login')"
     />
@@ -40,7 +40,9 @@
               <s-pharmacy-product :product="row.product" compact />
               <view v-if="invalid(row)" class="fs-danger fs-small">
                 {{
-                  !row.product.active
+                  row.product.rx
+                    ? '在线处方购药暂未开放'
+                    : !row.product.active
                     ? '商品已失效，请删除'
                     : row.qty > row.product.stock
                     ? '库存不足，请减少数量或删除'
@@ -54,7 +56,7 @@
                 <s-pharmacy-stepper
                   :model-value="row.qty"
                   :max="row.product.stock"
-                  :disabled="busy || !row.product.active"
+                  :disabled="busy || row.product.rx || !row.product.active"
                   @update:model-value="change(row, { qty: $event })"
                 />
               </view>
@@ -62,7 +64,7 @@
           </view>
         </view>
       </view>
-      <view class="fs-footer">处方药需上传处方并经药师审核</view>
+      <view class="fs-footer">处方药须审核后购买，在线处方购药暂未开放</view>
       <view class="fs-dock above-tabs">
         <button
           class="fs-check cart-select-all"
@@ -94,7 +96,7 @@
     loggedIn = ref(false);
   const { loading, error, run } = useRequest();
   const { busy, act } = useAction();
-  const invalid = (r) => !r.product.active || !r.product.stock || r.qty > r.product.stock;
+  const invalid = (r) => r.product.rx || !r.product.active || !r.product.stock || r.qty > r.product.stock;
   const selected = computed(() => items.value.filter((r) => r.checked && !invalid(r)));
   const allSelected = computed(
     () =>
@@ -141,6 +143,7 @@
     flex-direction: column;
     font-size: 11px;
     gap: 3px;
+    white-space: nowrap;
   }
   .cart-item:last-child {
     border-bottom: 0;
@@ -151,7 +154,7 @@
     gap: 4px;
   }
   .cart-main > button {
-    margin-top: 38px;
+    margin-top: 28px;
     margin-left: -8px;
   }
   .cart-actions {
@@ -160,4 +163,8 @@
   .cart-item {
     border-bottom: 1px solid #e5ebe8;
   }
+  .cart-main :deep(.compact .product-image) { width: 74px; height: 83px; }
+  .cart-main :deep(.fs-product) { border-bottom: 0; }
+  .cart-actions { padding-top: 0; }
+  @media (max-width: 340px) { .cart-main :deep(.compact .product-image) { width: 62px; height: 72px; } }
 </style>

@@ -7,7 +7,7 @@
       :class="{ active: index === current }"
       @tap="switchTab(index, item)"
     >
-      <uni-icons :type="item.icon" size="23" :color="index === current ? '#176b5b' : '#758078'" />
+      <uni-icons :type="item.icon" size="22" :color="index === current ? '#176b5b' : '#62756c'" />
       <text>{{ item.text }}</text>
     </button>
   </view>
@@ -34,7 +34,7 @@
     z-index: 40;
     display: flex;
     background: #fff;
-    border-top: 1px solid #e5ebe8;
+    border-top: 1px solid #e2e9e4;
     padding-bottom: env(safe-area-inset-bottom);
   }
   .pharmacy-tabbar .tab {
@@ -47,11 +47,12 @@
     padding: 5px 0;
     background: #fff;
     border-radius: 0;
-    color: #758078;
+    color: #62756c;
     font-size: 12px;
   }
   .pharmacy-tabbar .active {
     color: #176b5b;
     font-weight: 600;
+    box-shadow: inset 0 3px 0 #176b5b;
   }
 </style>

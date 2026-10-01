@@ -5,9 +5,8 @@
         <view>
           <view class="brand">
             FirstSun
-            <text>药店</text>
           </view>
-          <view class="fs-muted">身边的药店，安心的选择</view>
+          <view class="fs-muted">您的身边药店</view>
         </view>
         <uni-icons type="shop" size="30" color="#176b5b" />
       </view>
@@ -25,6 +24,13 @@
       <view class="fs-search fs-gap" @tap="go('category')">
         <uni-icons type="search" size="21" color="#64716c" />
         <text class="fs-muted">搜索药品名称、通用名、条码</text>
+      </view>
+    </view>
+    <view class="assistant-entry fs-pad fs-white">
+      <view class="assistant-panel">
+        <uni-icons type="chatbubble" size="28" color="#176b5b" />
+        <view class="fs-grow"><view class="fs-title">购药智能助手</view><view class="fs-muted">顾客咨询能力建设中，暂未开放</view></view>
+        <text class="fs-tag">待接通</text>
       </view>
     </view>
     <view class="shortcuts fs-white">
@@ -51,8 +57,8 @@
     <view class="fs-section home-products">
       <view class="fs-between">
         <view>
-          <view class="fs-title">家庭常备</view>
-          <view class="fs-muted">常用药品，一目了然</view>
+          <view class="fs-title">常备好药</view>
+          <view class="fs-muted">按需选购，遵循用药指导</view>
         </view>
         <button class="fs-text-btn" @tap="go('category')">
           全部
@@ -98,6 +104,7 @@
       storeInfo.value = api.store;
     });
   const add = (p) => {
+    if (p.rx) return toast('处方购买暂未开放，请联系门店');
     if (requireLogin())
       act(async () => {
         await api.add(p.id);
@@ -121,7 +128,8 @@
   .brand {
     color: #176b5b;
     font-size: 25px;
-    font-weight: 750;
+    font-family: Georgia, serif;
+    font-weight: 700;
     letter-spacing: -0.7px;
   }
   .brand text {
@@ -193,4 +201,8 @@
   .home-products {
     margin-top: 0;
   }
+  .assistant-entry { padding-top: 0; }
+  .assistant-panel { display: flex; align-items: center; gap: 12px; padding: 16px 12px; background: #edf5f0; border: 1px solid #dce9df; border-radius: 10px; }
+  .assistant-panel .fs-title { font-size: 17px; }
+  .assistant-panel .fs-muted { font-size: 12px; }
 </style>

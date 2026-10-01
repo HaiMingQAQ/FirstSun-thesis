@@ -460,6 +460,12 @@ async function loadStubConfig() {
   assert.equal((await api.orders()).length, 1);
   assert.equal((await api.createOrder(options)).id, one.id, '同草稿重复下单幂等');
 
+  const snapshotLine = members['13900001611'].orders.find(o => o.id === one.id).lines[0];
+  const oldPrice = snapshotLine.price;
+  snapshotLine.price = 12.34;
+  assert.equal((await api.order(one.id)).items[0].product.price, 1234, '订单商品金额使用订单行价格快照');
+  snapshotLine.price = oldPrice;
+
   // Stub adapter tests only: unsafe mock payment must propagate a rejection.
   await assert.rejects(api.orderAction(one.id, 'pay'), /未启用|尚未接通/);
   assert.equal((await api.order(one.id)).status, 'unpaid');
@@ -485,6 +491,27 @@ async function loadStubConfig() {
   await api.orderAction(order2.id, 'cancel');
   assert.equal((await api.order(order2.id)).status, 'cancelled');
   assert.equal((await api.profile()).points, pointsBeforeCancel, '取消订单不产生积分变化（未用积分）');
+
+  // Immediate buy displays and submits exactly one item even when unrelated rows are selected.
+  await api.add(163101, 1);
+  await api.add(163102, 2);
+  api.beginCheckout({ id: 163104, qty: 3 });
+  assert.equal((await api.checkout()).items.length, 1);
+  const buyOrder = await api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' });
+  assert.equal(buyOrder.items.length, 1, '立即购买不得提交其他已勾选商品');
+  assert.equal(buyOrder.items[0].drugId, 163104);
+  assert.equal(buyOrder.items[0].qty, 3);
+  assert.equal(buyOrder.subtotal, 2380 * 3);
+  assert.ok((await api.cart()).filter(r => [163101, 163102].includes(r.drugId)).every(r => !r.checked));
+  await api.selectAll(true);
+  const cartBeforeRx = JSON.stringify(members['13900001611'].cart);
+  api.beginCheckout({ id: 163103, qty: 1 });
+  await assert.rejects(api.checkout(), /处方购买暂未开放/);
+  await assert.rejects(api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' }), /处方购买暂未开放/);
+  assert.equal(JSON.stringify(members['13900001611'].cart), cartBeforeRx, '受限商品在修改购物车前拦截');
+  await api.add(163103, 1); // Existing cart contracts still support reading/removing historic Rx rows.
+  await api.selectAll(true);
+  assert.equal((await api.cart()).find(r => r.drugId === 163103).checked, false, '全选排除处方商品');
 
   // Private upload is blocked until authenticated file access exists.
   api.beginCheckout({ id: 163103, qty: 1 });

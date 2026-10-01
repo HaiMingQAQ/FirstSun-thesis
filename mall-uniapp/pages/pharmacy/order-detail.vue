@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page>
+  <s-pharmacy-page :dock="!!order && ['unpaid', 'review', 'ready'].includes(order.status)">
     <s-pharmacy-state
       v-if="!loggedIn"
       title="登录后查看订单"
@@ -51,6 +51,7 @@
           v-for="row in order.items"
           :key="row.drugId"
           :product="row.product"
+          compact
           hide-stock
           :qty="row.qty"
         />
@@ -106,6 +107,8 @@
           <text>订单备注</text>
           <text>{{ order.remark || '无' }}</text>
         </view>
+      </view>
+      <view v-if="['unpaid', 'review', 'ready'].includes(order.status)" class="fs-dock order-dock">
         <s-pharmacy-order-actions :order="order" :mock-payment-available="mockPaymentAvailable" @change="load" />
       </view>
     </template>
@@ -131,7 +134,7 @@
             ? '订单已支付，等待门店备货'
             : '订单已支付，等待门店配送',
         completed: '感谢您的信任，请按说明书使用药品',
-        cancelled: '订单已取消，使用的测试积分已退回',
+        cancelled: '订单已取消，积分返还以门店记录为准',
       }[order.value?.status]),
   );
   const load = () =>
@@ -152,8 +155,8 @@
 </script>
 <style scoped>
   .status-head {
-    padding: 28px 20px;
-    background: #eef5f0;
+    padding: 24px 16px;
+    background: #edf5f0;
   }
   .meta-row {
     display: flex;
@@ -171,4 +174,6 @@
     min-width: 0;
     text-align: right;
   }
+  .meta-row text:last-child { overflow-wrap: anywhere; }
+  .order-dock :deep(.order-actions) { width: 100%; margin-top: 0; }
 </style>

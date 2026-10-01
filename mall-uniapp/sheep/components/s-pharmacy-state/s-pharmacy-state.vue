@@ -1,6 +1,6 @@
 <template>
   <view class="fs-state">
-    <uni-icons :type="loading ? 'loop' : error ? 'wifi' : 'info'" size="36" color="#8b9e94" />
+    <view class="state-symbol"><uni-icons :type="loading ? 'loop' : 'info'" size="36" color="#62756c" /></view>
     <view class="fs-title fs-gap">
       {{ loading ? '正在加载…' : error ? '暂时无法加载' : title }}
     </view>
@@ -29,4 +29,5 @@
     flex-direction: column;
     align-items: center;
   }
+  .state-symbol { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #edf5f0; }
 </style>
