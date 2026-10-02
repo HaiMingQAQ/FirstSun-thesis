@@ -23,6 +23,7 @@ node_modules/
 # Local AI workspace
 .trae/
 .tmp/
+/.local/
 
 # 系统文件
 Thumbs.db
