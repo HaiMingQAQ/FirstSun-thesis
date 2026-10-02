@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page :tab="1">
+  <s-pharmacy-page tab="category">
     <view class="fs-pad fs-white">
       <view class="fs-search">
         <uni-icons type="search" size="20" color="#64716c" />

@@ -34,7 +34,8 @@ public final class ApiAccessLogSanitizer {
     public static boolean isPrivateBusinessPath(String uri) {
         // Servlet matrix parameters can occur on any path segment, before dispatch/authentication.
         if (uri != null) uri = uri.replaceAll(";[^/]*", "");
-        return "/app-api/pharmacy/ai/consult".equals(uri) || "/app-api/pharmacy/ai/consult/".equals(uri)
+        return (uri != null && uri.startsWith("/app-api/pharmacy/ai/")) || "/app-api/pharmacy/ai/consult".equals(uri) || "/app-api/pharmacy/ai/consult/".equals(uri)
+                || "/app-api/pharmacy/ai/consult/stream".equals(uri) || "/app-api/pharmacy/ai/consult/stream/".equals(uri)
                 || (uri != null && (uri.startsWith("/app-api/member/prescription/")
                   || uri.startsWith("/admin-api/pharmacy/prescription/")
                   || uri.startsWith("/app-api/member/consultation/")

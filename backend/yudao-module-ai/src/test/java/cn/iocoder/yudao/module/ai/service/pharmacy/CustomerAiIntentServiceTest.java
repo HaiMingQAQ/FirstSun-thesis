@@ -28,7 +28,7 @@ class CustomerAiIntentServiceTest {
     }
     @Test void rejectsSensitiveActionsBeforeModelCall() {
         assertEquals("refuse", service.resolve("帮我下单并支付").action());
-        assertEquals("refuse", service.resolve("这些症状该吃什么").action());
+        assertEquals("refuse", service.resolve("请给我开方").action());
         verifyNoInteractions(models);
     }
     void output(String content) {
@@ -49,5 +49,24 @@ class CustomerAiIntentServiceTest {
     @Test void acceptsExplicitKeyword() {
         output("{\"action\":\"searchDrugs\",\"keyword\":\"板蓝根\"}");
         assertEquals("板蓝根", service.resolve("查询板蓝根").keyword());
+    }
+    @Test void symptomsCanRequestAdviceAndUrgentSymptomsAreNotSentToModel() {
+        output("{\"action\":\"advice\",\"keyword\":\"感冒\"}");
+        assertEquals("advice",service.resolve("我感冒了有什么用药建议").action());
+        assertEquals("urgent",service.resolve("我突然剧烈腹痛").action());
+    }
+    @Test void ungroundedSymptomCanOnlyContinueWithoutCatalogueQuery() {
+        output("{\"action\":\"advice\",\"keyword\":\"胃炎\"}");
+        var intent = service.resolve("肚子疼");
+        assertEquals("chat", intent.action());
+        assertNull(intent.keyword());
+        assertNull(intent.drugId());
+    }
+    @Test void malformedFollowupIntentCanOnlyContinueWithoutCatalogueQuery() {
+        output("not allowed JSON");
+        var context = List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "我感冒了"));
+        var intent = service.resolve("成人，刚开始，没有过敏", context);
+        assertEquals("chat", intent.action()); assertNull(intent.keyword()); assertNull(intent.drugId());
+        assertThrows(IllegalArgumentException.class, () -> service.resolve("成人，刚开始，没有过敏"));
     }
 }

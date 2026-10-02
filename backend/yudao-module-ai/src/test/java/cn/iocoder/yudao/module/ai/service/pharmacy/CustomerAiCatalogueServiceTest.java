@@ -17,6 +17,11 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 class CustomerAiCatalogueServiceTest {
+    @Test void showsGenericNameAndBrandTogether() {
+        var drug=new DrugDO();drug.setGenericName("板蓝根颗粒");drug.setTradeName("青叶");
+        assertEquals("板蓝根颗粒（青叶）",CustomerAiCatalogueService.displayName(drug));
+        drug.setTradeName(" ");assertEquals("板蓝根颗粒",CustomerAiCatalogueService.displayName(drug));
+    }
     @Test void whiteListAllowsOnlyOtcTypesBeforeCandidateLimit() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(),"catalogue-test"),DrugDO.class);
         var drugs=mock(DrugMapper.class); var inventory=mock(AppAvailableInventoryMapper.class); var stores=mock(StoreService.class);

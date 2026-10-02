@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page :tab="2" dock>
+  <s-pharmacy-page tab="cart" dock>
     <view class="fs-pad fs-white">
       <view class="fs-title">{{ api.store.name }}</view>
       <view class="fs-muted">下单前为您核对价格与库存</view>

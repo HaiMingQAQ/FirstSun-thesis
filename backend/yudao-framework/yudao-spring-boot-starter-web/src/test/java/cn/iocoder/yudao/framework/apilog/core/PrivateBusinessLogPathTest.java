@@ -5,6 +5,9 @@ class PrivateBusinessLogPathTest {
     @Test void consultationLogsAreRedactedWithoutAControllerAnnotation() {
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/pharmacy/ai/consult"));
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/pharmacy/ai/consult/"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/pharmacy/ai/consult/stream"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/pharmacy/ai/topics/1"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/pharmacy/ai/consult/stream;foo=1"));
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/pharmacy/ai/consult;foo=1"));
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api;foo=1/pharmacy/ai/consult"));
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/member/prescription;foo=1/material/upload"));

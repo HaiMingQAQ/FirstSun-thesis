@@ -20,7 +20,7 @@ class CustomerAiConsultServiceTest {
     final CustomerAiConsultMapper mapper = mock(CustomerAiConsultMapper.class);
     final CustomerAiIntentService intent = mock(CustomerAiIntentService.class);
     final CustomerAiCatalogueService catalogue = mock(CustomerAiCatalogueService.class);
-    final CustomerAiConsultService service = new CustomerAiConsultService(mapper, intent, catalogue, new ObjectMapper().findAndRegisterModules());
+    final CustomerAiConsultService service = new CustomerAiConsultService(mapper, intent, catalogue, new ObjectMapper().findAndRegisterModules(), mock(CustomerAiAnswerService.class), mock(CustomerAiHistoryService.class));
     final CustomerAiConsultReqVO req = new CustomerAiConsultReqVO();
     @BeforeEach void setup() {
         req.setClientMessageId("request_1"); req.setContent("查询板蓝根"); req.setStoreId(1L);
@@ -51,6 +51,17 @@ class CustomerAiConsultServiceTest {
     @Test void changedPayloadCannotReuseRequestId() {
         var row = pending(); row.setRequestHash("other"); when(mapper.find(2L,"request_1")).thenReturn(row);
         assertEquals(400, assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class,() -> service.consult(req)).getCode()); verifyNoInteractions(intent);
+    }
+    @Test void changedContextCannotReuseRequestId() {
+        when(mapper.find(2L,"request_1")).thenReturn(pending());
+        req.setContext(List.of(new CustomerAiConsultReqVO.Turn("user","我正在服用其他药")));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class,()->service.consult(req));
+        verifyNoInteractions(intent);
+    }
+    @Test void streamingAlsoRejectsAdminBeforeSchedulingWork() {
+        login(UserTypeEnum.ADMIN.getValue(),7L);
+        assertThrows(AccessDeniedException.class,()->service.stream(req));
+        verifyNoInteractions(mapper,catalogue,intent);
     }
     @Test void expiredPendingBecomesFailure() {
         var row=pending(); row.setExpiresAt(LocalDateTime.now().minusSeconds(1)); when(mapper.find(2L,"request_1")).thenReturn(row);

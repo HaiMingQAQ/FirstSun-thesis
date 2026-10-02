@@ -5,6 +5,7 @@
 // 所有金额统一为「分」，状态统一为客户端状态机，后端原始结构只在本文件内出现。
 // =====================================================
 import request, { clearLoginState } from '@/sheep/request';
+import { streamConsult } from './sse';
 import { baseUrl, apiPath, tenantId } from '@/sheep/config';
 import DrugApi from './drug';
 import StoreApi from './store';
@@ -78,6 +79,20 @@ async function memberCall(task) {
   const result = await task();
   if (!api.session() || owner !== draftOwner()) throw new Error('登录账号已变化，请重新加载');
   return result;
+}
+async function accountCall(config) {
+  const owner = draftOwner(), token = uni.getStorageSync('token'), tenant = uni.getStorageSync('tenant-id') || tenantId;
+  requireOwner(owner);
+  try {
+    const result = await call({ ...config, header: { Authorization: token, 'tenant-id': tenant },
+      custom: { isToken: false, skipTenant: true, skipRefresh: true } });
+    requireOwner(owner);
+    if (token !== uni.getStorageSync('token')) throw new Error('登录令牌已变化，请重试');
+    return result;
+  } catch (e) {
+    if (e.code === 401 && owner === draftOwner() && token === uni.getStorageSync('token')) clearAuthSession();
+    throw e;
+  }
 }
 function requireOwner(owner) {
   if (!api.session() || owner !== draftOwner()) throw new Error('登录账号已变化，请重新加载');
@@ -297,20 +312,42 @@ const api = {
     uni.removeStorageSync(ADDRESS_KEY);
   },
   async profile(options = {}) {
-    const raw = await call({
+    const token = uni.getStorageSync('token');
+    const raw = await accountCall({
       url: '/member/user/get',
       method: 'GET',
       custom: { skipRefresh: options.skipRefresh === true },
     });
+    if (token !== uni.getStorageSync('token')) throw new Error('登录账号已变化');
     const profile = {
       userId: raw.id,
       name: raw.nickname || 'FirstSun 会员',
+      avatar: raw.avatar || '',
       mobile: raw.mobile,
       level: raw.levelName || '普通会员',
       points: Number(raw.point) || 0,
     };
     uni.setStorageSync(SESSION_KEY, profile);
     return profile;
+  },
+  async updateProfile({ nickname, avatarFile }) {
+    const owner = draftOwner(), token = uni.getStorageSync('token');
+    requireOwner(owner);
+    const data = { nickname: nickname.trim() };
+    if (!data.nickname || data.nickname.length > 30) throw new Error('昵称须为 1–30 个字符');
+    if (avatarFile) {
+      data.avatar = await new Promise((resolve, reject) => uni.uploadFile({
+        url: `${baseUrl}${apiPath}/infra/file/upload`, filePath: avatarFile, name: 'file',
+        header: { Authorization: token, 'tenant-id': uni.getStorageSync('tenant-id') || tenantId },
+        formData: { directory: 'member-avatar' },
+        success(r) { try { const body = JSON.parse(r.data); if (r.statusCode !== 200 || body.code !== 0 || typeof body.data !== 'string') throw new Error(); resolve(body.data); } catch { reject(new Error('头像上传失败，请重试')); } },
+        fail: () => reject(new Error('头像上传失败，请检查网络')),
+      }));
+    }
+    requireOwner(owner);
+    await accountCall({ url: '/member/user/update', method: 'PUT', data });
+    requireOwner(owner);
+    return api.profile();
   },
   // 页面契约：api.categories 为同步数组（首页 slice(1)、分类页 v-for 直接消费）。
   // 真实数据异步加载，先占位「全部药品」，loadCategories 完成后填充，模板重渲染时自动读取。
@@ -355,12 +392,29 @@ const api = {
     uni.setStorageSync(HISTORY_KEY, []);
   },
 
-  async consult({ clientMessageId, content }) {
+  async consult({ clientMessageId, content, context }) {
     if (!api.session()) throw new Error('请先登录');
     const store = await ensureStore();
     return call({ url: '/pharmacy/ai/consult', method: 'POST', timeout: 45000,
-      data: { clientMessageId, content, storeId: store.id } });
+      data: { clientMessageId, content, context, storeId: store.id } });
   },
+
+  async consultStream({ clientMessageId, content, context, topicId, storeId }, onEvent, signal) {
+    if (!api.session()) throw new Error('请先登录');
+    const owner = draftOwner(), store = storeId ? { id: storeId } : await ensureStore();
+    if (owner !== draftOwner() || !api.session()) throw new Error('登录账号已变化');
+    const token = uni.getStorageSync('token');
+    return streamConsult(`${baseUrl}${apiPath}/pharmacy/ai/consult/stream`,
+      { clientMessageId, content, context, topicId, storeId: store.id },
+      { 'Content-Type': 'application/json', Accept: 'text/event-stream',
+        Authorization: token, 'tenant-id': uni.getStorageSync('tenant-id') || tenantId }, onEvent, signal)
+      .catch(error => { if (error.code === 401 && owner === draftOwner() && token === uni.getStorageSync('token')) clearAuthSession(); throw error; });
+  },
+  async createAiTopic() { return memberCall(async () => { const store = await ensureStore(); return accountCall({ url: '/pharmacy/ai/topics', method: 'POST', data: { storeId: store.id } }); }); },
+  async aiTopics(beforeId) { return accountCall({ url: '/pharmacy/ai/topics', method: 'GET', params: { beforeId } }); },
+  async aiTopic(id, beforeId) { return accountCall({ url: `/pharmacy/ai/topics/${id}`, method: 'GET', params: { beforeId } }); },
+  async deleteAiTopic(id) { return accountCall({ url: `/pharmacy/ai/topics/${id}`, method: 'DELETE' }); },
+  async clearAiTopics() { return accountCall({ url: '/pharmacy/ai/topics', method: 'DELETE' }); },
 
   async prescriptions() { return memberCall(() => via(PrescriptionApi.getMyPrescriptions())); },
   async prescription(id) { return memberCall(() => via(PrescriptionApi.getPrescription(id))); },

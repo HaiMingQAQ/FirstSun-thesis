@@ -63,6 +63,7 @@ services:
       - ./sql/migrations/20261001_a_customer_ai_consult.sql:/docker-entrypoint-initdb.d/40-customer-ai-consult.sql:ro
       - ./sql/migrations/20261001_b_prescription_private_flow.sql:/docker-entrypoint-initdb.d/41-prescription-private-flow.sql:ro
       - ./sql/migrations/20261001_c_store_consultation.sql:/docker-entrypoint-initdb.d/42-store-consultation.sql:ro
+      - ./sql/migrations/20261001_d_customer_ai_history.sql:/docker-entrypoint-initdb.d/43-customer-ai-history.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s

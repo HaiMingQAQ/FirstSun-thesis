@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page :tab="0">
+  <s-pharmacy-page tab="index">
     <view class="home-head fs-pad fs-white">
       <view class="fs-between">
         <view>
@@ -29,7 +29,7 @@
     <view class="assistant-entry fs-pad fs-white">
       <view class="assistant-panel" @tap="go('ai')">
         <uni-icons type="chatbubble" size="28" color="#176b5b" />
-        <view class="fs-grow"><view class="fs-title">购药智能助手</view><view class="fs-muted">查询药品档案与门店有货商品</view></view>
+        <view class="fs-grow"><view class="fs-title">购药智能助手</view><view class="fs-muted">问药参考、症状追问与本店药品查询</view></view>
         <uni-icons type="right" size="18" color="#176b5b" />
       </view>
     </view>

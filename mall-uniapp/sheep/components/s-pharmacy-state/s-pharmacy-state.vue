@@ -1,6 +1,6 @@
 <template>
   <view class="fs-state">
-    <view class="state-symbol"><uni-icons :type="loading ? 'loop' : 'info'" size="36" color="#62756c" /></view>
+    <view class="state-symbol"><view v-if="loading" class="loading-spinner" /><uni-icons v-else type="info" size="36" color="#62756c" /></view>
     <view class="fs-title fs-gap">
       {{ loading ? '正在加载…' : error ? '暂时无法加载' : title }}
     </view>
@@ -30,4 +30,6 @@
     align-items: center;
   }
   .state-symbol { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #edf5f0; }
+  .loading-spinner { width: 30px; height: 30px; border: 3px solid #d7e6dd; border-top-color: #176b5b; border-radius: 50%; animation: pharmacy-loading 0.9s linear infinite; }
+  @keyframes pharmacy-loading { to { transform: rotate(360deg); } }
 </style>

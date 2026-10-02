@@ -1,5 +1,5 @@
 <template>
-  <view class="fs-page" :class="{ 'has-tabs': tab >= 0, 'has-dock': dock }">
+  <view class="fs-page" :class="{ 'has-tabs': !!tab, 'has-dock': dock }">
     <slot />
     <view class="fs-footer fs-demo">
       {{
@@ -8,11 +8,11 @@
           : '受限演示 · 商品价格及库存来自演示环境'
       }}
     </view>
-    <s-pharmacy-tabbar v-if="tab >= 0" :current="tab" />
+    <s-pharmacy-tabbar v-if="!!tab" :current="tab" />
   </view>
 </template>
 <script setup>
   import { PHARMACY_DEMO } from '@/sheep/api/pharmacy/config';
   defineOptions({ options: { styleIsolation: 'apply-shared' } });
-  defineProps({ tab: { type: Number, default: -1 }, dock: Boolean });
+  defineProps({ tab: { type: String, default: '' }, dock: Boolean });
 </script>

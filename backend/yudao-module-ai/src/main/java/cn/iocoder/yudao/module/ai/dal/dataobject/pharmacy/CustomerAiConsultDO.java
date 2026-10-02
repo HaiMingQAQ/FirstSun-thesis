@@ -14,5 +14,7 @@ public class CustomerAiConsultDO extends TenantBaseDO {
     private String requestHash;
     private String status;
     private String resultJson;
+    private Long topicId;
+    private String question;
     private LocalDateTime expiresAt;
 }
