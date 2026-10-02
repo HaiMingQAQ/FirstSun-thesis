@@ -17,11 +17,16 @@ public class PrescRecordReviewReqVO {
     private Integer reviewStatus;
 
     @Schema(description = "审方意见（驳回必填）", example = "处方超量，需复查")
+    @jakarta.validation.constraints.Size(max = 300)
     private String reviewOpinion;
 
     @Schema(description = "电子签名信息", example = "sign:xxxx")
+    @jakarta.validation.constraints.Size(max = 255)
     private String reviewSnapshot;
 
     @Schema(description = "双人复核人（特管处方必填）", example = "2")
     private Long dblCheckBy;
+    @jakarta.validation.Valid @jakarta.validation.constraints.Size(max = 20)
+    private java.util.List<@NotNull PrescItemVO> approvedItems;
+    private java.time.LocalDateTime approvedUntil;
 }

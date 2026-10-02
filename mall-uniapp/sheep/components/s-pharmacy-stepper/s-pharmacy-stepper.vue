@@ -27,17 +27,18 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    border: 1px solid #e5ebe8;
+    border: 1px solid #e2e9e4;
     border-radius: 6px;
   }
   .fs-stepper button {
-    width: 40px;
+    width: 44px;
     min-height: 44px;
     padding: 0;
     background: #f6f8f7;
   }
   .count {
-    width: 40px;
+    min-width: 28px;
+    padding: 0 4px;
     text-align: center;
     font-size: 15px;
     font-variant-numeric: tabular-nums;

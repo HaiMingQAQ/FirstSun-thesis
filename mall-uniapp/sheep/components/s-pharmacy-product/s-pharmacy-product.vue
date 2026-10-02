@@ -1,6 +1,10 @@
 <template>
   <view class="fs-product" :class="{ compact }">
-    <image
+    <view v-if="product.rx" class="product-image rx-image" @tap="open">
+      <uni-icons type="locked" size="24" color="#62756c" />
+      <text>审核前不展示</text>
+    </view>
+    <image v-else
       class="product-image"
       :src="failed || !product.image ? '/static/pharmacy/medicine-placeholder.png' : product.image"
       mode="aspectFit"
@@ -31,7 +35,7 @@
         <button
           v-if="add"
           class="add-button"
-          :disabled="busy || !product.stock || !product.active"
+          :disabled="busy || product.rx || !product.stock || !product.active"
           aria-label="加入购物车"
           @tap.stop="$emit('add', product)"
         >
@@ -46,7 +50,7 @@
 </template>
 <script setup>
   defineOptions({ options: { styleIsolation: 'apply-shared' } });
-  import { ref } from 'vue';
+  import { ref, watch } from 'vue';
   import { money } from '@/sheep/api/pharmacy/client';
   const props = defineProps({
     product: Object,
@@ -58,21 +62,23 @@
   });
   defineEmits(['add']);
   const failed = ref(false);
+  watch(() => props.product.image, () => (failed.value = false));
   const open = () => uni.navigateTo({ url: `/pages/pharmacy/detail?id=${props.product.id}` });
 </script>
 <style scoped>
   .fs-product {
     display: flex;
-    gap: 14px;
+    gap: 13px;
     padding: 18px 0;
-    border-bottom: 1px solid #edf0ee;
+    border-bottom: 1px solid #e2e9e4;
   }
   .product-image {
-    width: 94px;
-    height: 100px;
+    width: 90px;
+    height: 99px;
     flex-shrink: 0;
     background: #fafbf9;
-    border-radius: 6px;
+    border-radius: 8px;
+    border: 1px solid #e2e9e4;
   }
   .product-content {
     flex: 1;
@@ -89,7 +95,7 @@
   }
   .stock {
     color: #64796e;
-    font-size: 12px;
+    font-size: 13px;
     margin-top: 5px;
   }
   .low {
@@ -103,7 +109,8 @@
     width: 44px;
     min-height: 44px;
     padding: 0;
-    background: #edf5f1;
+    border-radius: 50%;
+    background: #edf5f0;
     border: 1px solid #d7e6dd;
   }
   .compact {
@@ -111,9 +118,16 @@
   }
   .compact .product-image {
     width: 62px;
-    height: 76px;
+    height: 68px;
   }
   .compact .fs-price {
     font-size: 19px;
+  }
+  .rx-image { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; color: #62756c; font-size: 11px; text-align: center; }
+  .specification { font-size: 14px; }
+  .price-line { flex-wrap: wrap; }
+  @media (max-width: 340px) {
+    .product-image { width: 76px; height: 88px; }
+    .compact .product-image { width: 62px; height: 68px; }
   }
 </style>

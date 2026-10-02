@@ -47,6 +47,7 @@ class AppMiniappSecurityTest {
         var prescriptions = mock(cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescRecordMapper.class);
         var app = new cn.iocoder.yudao.module.pharmacy.controller.app.prescription.AppPrescRecordController();
         ReflectionTestUtils.setField(app, "prescRecordMapper", prescriptions);
+        ReflectionTestUtils.setField(app, "uses", mock(cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescriptionUseMapper.class));
         assertThrows(AccessDeniedException.class, () -> app.getPrescRecord(1L));
         verifyNoInteractions(prescriptions);
         var login = new cn.iocoder.yudao.framework.security.core.LoginUser();
@@ -59,10 +60,14 @@ class AppMiniappSecurityTest {
         record.setWxMemberId(2L); when(prescriptions.selectById(1L)).thenReturn(record);
         assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> app.getPrescRecord(1L));
         record.setWxMemberId(1L); record.setImages("[\"https://public.example/prescription.jpg\"]");
+        record.setApprovedItems("[{\"drugId\":5,\"qty\":2,\"usage\":\"合成测试\",\"dosage\":\"合成测试\"}]");
         assertTrue(app.getPrescRecord(1L).getData().getImages().isEmpty());
+        assertEquals(5L,app.getPrescRecord(1L).getData().getApprovedItems().get(0).getDrugId());
         var request = new cn.iocoder.yudao.module.pharmacy.controller.app.prescription.vo.AppPrescRecordCreateReqVO();
-        request.setImages(List.of("https://public.example/prescription.jpg"));
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
         assertThrows(AccessDeniedException.class, () -> app.createPrescRecord(request));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+            new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(login, null, List.of()));
         TenantContextHolder.setTenantId(8L);
         assertThrows(AccessDeniedException.class, () -> app.getPrescRecord(1L));
     }

@@ -496,4 +496,12 @@ SELECT (SELECT COUNT(*) FROM ph_supplier WHERE supplier_name LIKE '%接口自测
 8. `ph_supplier.credit_code` 数据库层无唯一键，重复校验在 Service 层完成（并发写入存在极小概率穿透），如需补唯一索引需与 A 确认后另加迁移脚本；
 9. 证照影像仅保存 URL，未接入 OCR 或有效期自动识别；到期提醒为手动触发的接口，未接入定时任务。
 
+## 十、采购 UI 与历史回归证据补充
 
+采购列表采用 `pharmacy-page pharmacy-modern-page`、`PharmacyPageHeader`、两个 `ContentWrap.pharmacy-panel` 与 `Pagination`；高频条件默认展示，低频条件收进“更多筛选”。状态使用 `dict-tag`，操作权限由 `v-hasPermi` 与 `checkPermi` 控制，后端仍独立校验权限。
+
+供应商（12 字段）、采购订单和收货单（含明细表格）使用 `el-drawer size="min(1000px,92vw)"` 和 `el-divider` 连续分区；证照（5 字段）使用 `Dialog`，详情使用 `Dialog`、`el-descriptions` 和明细分表。
+
+历史采购回归原件保留于[最终回归日志](./最终回归-14项全通过.log)：记录 14/14 项检查通过（接口检查 5 项、并发 1 项、导出深度校验 1 项、静态检查 7 项）。用例与 102 项接口断言、45 项单元测试的记录见[自测记录](./B-自测记录.md)。这些是原交付阶段证据，本次文档整理没有重跑测试；原回归脚本的个人绝对路径不作为当前可复现入口。
+
+第 8.10 节及 `screenshots/第2轮-*.png` 保留 1440 宽列表验收，第 1 轮截图保留为缺陷对照。原 PR 附件中供应商、订单、收货抽屉及详情弹窗的交互截图仍标记“待补”，不能由列表截图或本次整理推定已通过。

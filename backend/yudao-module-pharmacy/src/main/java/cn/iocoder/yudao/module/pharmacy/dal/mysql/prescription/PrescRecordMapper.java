@@ -15,6 +15,10 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface PrescRecordMapper extends BaseMapperX<PhPrescRecordDO> {
 
+    default PhPrescRecordDO lock(Long id) {
+        return selectOne(new LambdaQueryWrapperX<PhPrescRecordDO>().eq(PhPrescRecordDO::getId,id).last("FOR UPDATE"));
+    }
+
     default PhPrescRecordDO selectByPrescNo(String prescNo) {
         return selectOne(PhPrescRecordDO::getPrescNo, prescNo);
     }

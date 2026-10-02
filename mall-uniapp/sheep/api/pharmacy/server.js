@@ -5,6 +5,8 @@
 // 所有金额统一为「分」，状态统一为客户端状态机，后端原始结构只在本文件内出现。
 // =====================================================
 import request, { clearLoginState } from '@/sheep/request';
+import { streamConsult } from './sse';
+import { baseUrl, apiPath, tenantId } from '@/sheep/config';
 import DrugApi from './drug';
 import StoreApi from './store';
 import CartApi from './cart';
@@ -60,16 +62,47 @@ const normalizeAuthError = (error, stage) => {
   return new Error('微信登录服务暂时不可用，请重试');
 };
 
+const draftOwner = () => `${uni.getStorageSync('tenant-id') || tenantId}:${api.session()?.userId || api.session()?.id || api.session()?.mobile || uni.getStorageSync('token') || ''}`;
 const getDraft = () => {
   const draft = uni.getStorageSync(CHECKOUT_KEY);
   if (!draft) return null;
   const user = api.session();
-  if (!user || draft.mobile !== user.mobile) return null;
+  if (!user || draft.mobile !== user.mobile || (draft.owner && draft.owner !== draftOwner())) return null;
   return draft;
 };
 const setDraft = (draft) => uni.setStorageSync(CHECKOUT_KEY, draft);
 
 // ---------- 请求封装：统一抛业务错误（页面用 useRequest/useAction 捕获并 toast） ----------
+async function memberCall(task) {
+  if (!api.session()) throw new Error('请先登录');
+  const owner = draftOwner();
+  const result = await task();
+  if (!api.session() || owner !== draftOwner()) throw new Error('登录账号已变化，请重新加载');
+  return result;
+}
+async function accountCall(config) {
+  const owner = draftOwner(), token = uni.getStorageSync('token'), tenant = uni.getStorageSync('tenant-id') || tenantId;
+  requireOwner(owner);
+  try {
+    const result = await call({ ...config, header: { Authorization: token, 'tenant-id': tenant },
+      custom: { isToken: false, skipTenant: true, skipRefresh: true } });
+    requireOwner(owner);
+    if (token !== uni.getStorageSync('token')) throw new Error('登录令牌已变化，请重试');
+    return result;
+  } catch (e) {
+    if (e.code === 401 && owner === draftOwner() && token === uni.getStorageSync('token')) clearAuthSession();
+    throw e;
+  }
+}
+function requireOwner(owner) {
+  if (!api.session() || owner !== draftOwner()) throw new Error('登录账号已变化，请重新加载');
+}
+async function ownerStep(owner, task) {
+  requireOwner(owner);
+  const result = await task();
+  requireOwner(owner);
+  return result;
+}
 async function call(config) {
   const res = await request({
     ...config,
@@ -279,20 +312,42 @@ const api = {
     uni.removeStorageSync(ADDRESS_KEY);
   },
   async profile(options = {}) {
-    const raw = await call({
+    const token = uni.getStorageSync('token');
+    const raw = await accountCall({
       url: '/member/user/get',
       method: 'GET',
       custom: { skipRefresh: options.skipRefresh === true },
     });
+    if (token !== uni.getStorageSync('token')) throw new Error('登录账号已变化');
     const profile = {
       userId: raw.id,
       name: raw.nickname || 'FirstSun 会员',
+      avatar: raw.avatar || '',
       mobile: raw.mobile,
       level: raw.levelName || '普通会员',
       points: Number(raw.point) || 0,
     };
     uni.setStorageSync(SESSION_KEY, profile);
     return profile;
+  },
+  async updateProfile({ nickname, avatarFile }) {
+    const owner = draftOwner(), token = uni.getStorageSync('token');
+    requireOwner(owner);
+    const data = { nickname: nickname.trim() };
+    if (!data.nickname || data.nickname.length > 30) throw new Error('昵称须为 1–30 个字符');
+    if (avatarFile) {
+      data.avatar = await new Promise((resolve, reject) => uni.uploadFile({
+        url: `${baseUrl}${apiPath}/infra/file/upload`, filePath: avatarFile, name: 'file',
+        header: { Authorization: token, 'tenant-id': uni.getStorageSync('tenant-id') || tenantId },
+        formData: { directory: 'member-avatar' },
+        success(r) { try { const body = JSON.parse(r.data); if (r.statusCode !== 200 || body.code !== 0 || typeof body.data !== 'string') throw new Error(); resolve(body.data); } catch { reject(new Error('头像上传失败，请重试')); } },
+        fail: () => reject(new Error('头像上传失败，请检查网络')),
+      }));
+    }
+    requireOwner(owner);
+    await accountCall({ url: '/member/user/update', method: 'PUT', data });
+    requireOwner(owner);
+    return api.profile();
   },
   // 页面契约：api.categories 为同步数组（首页 slice(1)、分类页 v-for 直接消费）。
   // 真实数据异步加载，先占位「全部药品」，loadCategories 完成后填充，模板重渲染时自动读取。
@@ -336,6 +391,85 @@ const api = {
   clearHistory() {
     uni.setStorageSync(HISTORY_KEY, []);
   },
+
+  async consult({ clientMessageId, content, context }) {
+    if (!api.session()) throw new Error('请先登录');
+    const store = await ensureStore();
+    return call({ url: '/pharmacy/ai/consult', method: 'POST', timeout: 45000,
+      data: { clientMessageId, content, context, storeId: store.id } });
+  },
+
+  async consultStream({ clientMessageId, content, context, topicId, storeId }, onEvent, signal) {
+    if (!api.session()) throw new Error('请先登录');
+    const owner = draftOwner(), store = storeId ? { id: storeId } : await ensureStore();
+    if (owner !== draftOwner() || !api.session()) throw new Error('登录账号已变化');
+    const token = uni.getStorageSync('token');
+    return streamConsult(`${baseUrl}${apiPath}/pharmacy/ai/consult/stream`,
+      { clientMessageId, content, context, topicId, storeId: store.id },
+      { 'Content-Type': 'application/json', Accept: 'text/event-stream',
+        Authorization: token, 'tenant-id': uni.getStorageSync('tenant-id') || tenantId }, onEvent, signal)
+      .catch(error => { if (error.code === 401 && owner === draftOwner() && token === uni.getStorageSync('token')) clearAuthSession(); throw error; });
+  },
+  async createAiTopic() { return memberCall(async () => { const store = await ensureStore(); return accountCall({ url: '/pharmacy/ai/topics', method: 'POST', data: { storeId: store.id } }); }); },
+  async aiTopics(beforeId) { return accountCall({ url: '/pharmacy/ai/topics', method: 'GET', params: { beforeId } }); },
+  async aiTopic(id, beforeId) { return accountCall({ url: `/pharmacy/ai/topics/${id}`, method: 'GET', params: { beforeId } }); },
+  async deleteAiTopic(id) { return accountCall({ url: `/pharmacy/ai/topics/${id}`, method: 'DELETE' }); },
+  async clearAiTopics() { return accountCall({ url: '/pharmacy/ai/topics', method: 'DELETE' }); },
+
+  async prescriptions() { return memberCall(() => via(PrescriptionApi.getMyPrescriptions())); },
+  async prescription(id) { return memberCall(() => via(PrescriptionApi.getPrescription(id))); },
+  async uploadMaterial(filePath) {
+    if (!api.session()) throw new Error('请先登录');
+    const token = uni.getStorageSync('token'), store = await ensureStore();
+    if (token !== uni.getStorageSync('token')) throw new Error('登录账号已变化');
+    return new Promise((resolve, reject) => uni.uploadFile({
+      url: `${baseUrl}${apiPath}/member/prescription/material/upload`, filePath, name: 'file',
+      formData: { storeId: store.id }, timeout: 60000,
+      header: { Authorization: `Bearer ${token}`, 'tenant-id': String(uni.getStorageSync('tenant-id') || tenantId) },
+      success: response => {
+        if (token !== uni.getStorageSync('token')) return reject(new Error('登录账号已变化，请重新操作'));
+        try { const result = JSON.parse(response.data);
+          if (response.statusCode !== 200 || result.code !== 0 || !Number.isSafeInteger(result.data) || result.data <= 0)
+            throw new Error(result.msg || '材料上传失败');
+          resolve(result.data);
+        } catch (error) { reject(error); }
+      }, fail: () => reject(new Error('材料上传失败，请检查网络后重试')),
+    }));
+  },
+  async materialImage(id) {
+    if (!api.session()) throw new Error('请先登录');
+    const token = uni.getStorageSync('token');
+    const file = await new Promise((resolve, reject) => uni.downloadFile({
+      url: `${baseUrl}${apiPath}/member/prescription/material/get?id=${encodeURIComponent(id)}`,
+      header: { Authorization: `Bearer ${token}`, 'tenant-id': String(uni.getStorageSync('tenant-id') || tenantId) },
+      success: r => r.statusCode === 200 ? resolve(r.tempFilePath) : reject(new Error('无材料访问权限')),
+      fail: () => reject(new Error('材料加载失败')),
+    }));
+    if (token !== uni.getStorageSync('token')) throw new Error('登录账号已变化');
+    await new Promise((resolve, reject) => uni.getImageInfo({ src: file, success: resolve, fail: () => reject(new Error('材料不可读取，请刷新登录后重试')) }));
+    return file;
+  },
+  async submitPrescription({ clientRequestId, patientName, hospital, doctorName, materialIds, items }) {
+    if (!api.session()) throw new Error('请先登录');
+    const store = await ensureStore();
+    return via(PrescriptionApi.createPrescription({ clientRequestId, patientName, hospital, doctorName, materialIds,
+      items: items.map(i => ({ drugId: i.drugId, qty: i.qty })), storeId: store.id }));
+  },
+  async beginPrescriptionCheckout(id) {
+    const user = api.session(); if (!user) throw new Error('请先登录');
+    const record = await api.prescription(id);
+    if (record.reviewStatus !== 1 || record.status !== 0 || !record.approvedItems?.length)
+      throw new Error('请等待药师核准后再结算');
+    setDraft({ mobile: user.mobile, owner: draftOwner(), buy: null, prescId: id, token: `${Date.now()}-${Math.random()}`, prescriptions: [] });
+  },
+  async notifications(pageNo = 1) { return memberCall(() => call({ url: '/member/business-notification/page', method: 'GET', params: { pageNo } })); },
+  async unreadNotifications() { return memberCall(() => call({ url: '/member/business-notification/unread', method: 'GET' })); },
+  async openConsultation(kind) { return memberCall(async () => { const store = await ensureStore(); return call({ url: '/member/consultation/open', method: 'POST', data: { storeId: store.id, kind } }); }); },
+  async consultationPage(pageNo = 1) { return memberCall(() => call({ url: '/member/consultation/page', method: 'GET', params: { pageNo } })); },
+  async consultationMessages(id, params = {}) { return memberCall(() => call({ url: '/member/consultation/messages', method: 'GET', params: { id, ...params } })); },
+  async sendConsultation(data) { return memberCall(() => call({ url: '/member/consultation/send', method: 'POST', data })); },
+  async readConsultation(conversationId, throughId) { return memberCall(() => call({ url: '/member/consultation/read', method: 'PUT', data: { conversationId, throughId } })); },
+  async readNotification(id) { return memberCall(() => call({ url: '/member/business-notification/read', method: 'PUT', params: { id } })); },
 
   // ---------- 购物车 ----------
   // drugId -> 购物车记录 id（后端以记录 id 做数量/勾选/删除）
@@ -398,7 +532,7 @@ const api = {
   async selectAll(checked) {
     const rows = await api.cart();
     for (const r of rows) {
-      const valid = r.product.active && r.product.stock >= r.qty;
+      const valid = !r.product.rx && r.product.active && r.product.stock >= r.qty;
       const target = checked && valid ? 1 : 0;
       if ((r.checked ? 1 : 0) !== target) {
         await via(CartApi.updateCartSelected(r.id, target));
@@ -417,21 +551,28 @@ const api = {
     if (!user) throw new Error('请先登录');
     setDraft({
       mobile: user.mobile,
+      owner: draftOwner(),
       buy,
       token: `${Date.now()}-${Math.random()}`,
       prescriptions: [],
     });
   },
   async checkout() {
+    return memberCall(async () => {
     const draft = getDraft();
     if (!draft) throw new Error('结算已失效，请重新选择商品');
-    const items = draft.buy
+    const prescription = draft.prescId ? await api.prescription(draft.prescId) : null;
+    if (prescription && (prescription.reviewStatus !== 1 || prescription.status !== 0 || !prescription.approvedItems?.length
+      || !Number.isFinite(new Date(prescription.approvedUntil).getTime())
+      || new Date(prescription.approvedUntil).getTime() <= Date.now())) throw new Error('处方未核准或已超过有效期，请联系药师');
+    const items = prescription ? await Promise.all(prescription.approvedItems.map(async i => ({ drugId: i.drugId, qty: i.qty, product: await api.product(i.drugId) }))) : draft.buy
       ? [{ drugId: draft.buy.id, qty: draft.buy.qty, product: await api.product(draft.buy.id) }]
       : (await api.cart()).filter((r) => r.checked);
     if (!items.length) throw new Error('请先选择要结算的商品');
     // 结算前逐项复核最新库存与价格（库存 / 价格可能已变化）
     for (const r of items) {
       const p = await api.product(r.drugId);
+      if (p.rx && !prescription) throw new Error('处方药需先提交申请并经药师审核');
       if (!p.active) throw new Error(`「${p.name}」已下架，请移除后重试`);
       if (r.qty > p.stock) throw new Error(`「${p.name}」库存不足，当前最多可购 ${p.stock} 件`);
       r.product = p;
@@ -470,10 +611,12 @@ const api = {
       pointsRule: `${pointsPerYuan} 积分抵 ¥1`,
       maxDeductNote: maxDeductPoints ? `每单最多抵 ¥${(maxDeductPoints / pointsPerYuan).toFixed(0)}` : '',
       address: await api.defaultAddress(),
-      prescriptions: draft.prescriptions || [],
+      prescriptions: prescription?.materialIds || draft.prescriptions || [],
+      prescription,
       shipping,
       draft,
     };
+    });
   },
   prescriptionDraft() {
     const draft = getDraft();
@@ -493,29 +636,32 @@ const api = {
     // 并发/连点保护：同一时刻只允许一笔下单在途，后续调用复用同一结果
     if (api.createLock) return api.createLock;
     api.createLock = (async () => {
+      const owner = draftOwner();
+      requireOwner(owner);
       const draft = getDraft();
       if (!draft) throw new Error('结算已失效，请重新选择商品');
-      if (draft.orderId) return api.order(draft.orderId);
-      const s = await ensureStore();
+      if (draft.orderId) return ownerStep(owner, () => api.order(draft.orderId));
+      const s = await ownerStep(owner, () => ensureStore());
       if (!['delivery', 'pickup'].includes(mode)) throw new Error('请选择配送或自提');
       // 立即购买：后端按「购物车已勾选商品」创建订单，先把该商品放入购物车并勾选
-      if (draft.buy) await api.ensureBuyInCart(s, draft.buy);
-      const data = await api.checkout();
+      const data = await ownerStep(owner, () => api.checkout());
       const orderType = mode === 'delivery' ? 1 : 0;
       let addressId = null;
       if (orderType === 1) {
         if (!address || !address.id) throw new Error('请选择收货地址');
         addressId = address.id;
       }
-      const hasRx = data.items.some((r) => r.product.rx);
-      let prescId = null;
-      if (hasRx) {
-        if (!data.prescriptions.length) throw new Error('处方药需上传处方并经药师审核');
-        prescId = await api.ensurePrescRecord(draft, data.items);
-      }
+      const prescId = draft.prescId || null;
+      if (data.items.some(r => r.product.rx) && !prescId) throw new Error('处方药需经药师审核');
       // 使用积分：只表达「是否用满服务端试算的最大可用积分」，具体抵扣由后端 calcSalePoints 校验
       const use = usePoints ? data.maxUsablePoints : 0;
-      const id = await via(
+      if (prescId) {
+        // Only fixed approved items are selected; final exact-match and single-use checks remain server-side.
+        const old = (await ownerStep(owner, () => via(CartApi.getCartList()))) || [];
+        for (const row of old) if (row.selectedFlag === 1) await ownerStep(owner, () => via(CartApi.updateCartSelected(row.id, 0)));
+        for (const row of data.items) await api.ensureBuyInCart(s, { id: row.drugId, qty: row.qty }, true, owner);
+      } else if (draft.buy) await api.ensureBuyInCart(s, draft.buy, false, owner);
+      const id = await ownerStep(owner, () => via(
         OrderApi.createOrder({
           storeId: s.id,
           orderType,
@@ -524,51 +670,29 @@ const api = {
           remark: (remark || '').trim(),
           usePoints: use,
         }),
-      );
+      ));
       setDraft({ ...draft, orderId: id });
-      return api.order(id);
+      return ownerStep(owner, () => api.order(id));
     })().finally(() => {
       api.createLock = null;
     });
     return api.createLock;
   },
-  async ensurePrescRecord(draft, items) {
-    if (draft.prescId) return draft.prescId;
-    const s = await ensureStore();
-    const user = await api.profile();
-    const rxItems = items
-      .filter((r) => r.product.rx)
-      .map((r) => ({
-        drugId: r.drugId,
-        qty: r.qty,
-        usage: '',
-        dosage: '',
-        drugName: r.product.name,
-        specification: r.product.specification || '',
-      }));
-    const prescId = await via(
-      PrescriptionApi.createPrescription({
-        storeId: s.id,
-        patientName: user.name || user.mobile || '患者',
-        images: draft.prescriptions,
-        items: rxItems,
-      }),
-    );
-    setDraft({ ...draft, prescId });
-    return prescId;
-  },
-  // 立即购买：保证购物车中存在该商品（数量一致且勾选）
-  async ensureBuyInCart(s, buy) {
-    const rows = await api.cart();
+  async ensureBuyInCart(s, buy, keepOtherSelected = false, owner = draftOwner()) {
+    const rows = await ownerStep(owner, () => api.cart());
+    for (const r of rows) {
+      if (!keepOtherSelected && r.checked && r.drugId !== Number(buy.id))
+        await ownerStep(owner, () => via(CartApi.updateCartSelected(r.id, 0)));
+    }
     const row = rows.find((r) => r.drugId === Number(buy.id));
     if (row) {
-      if (row.qty !== buy.qty) await via(CartApi.updateCartQty(row.id, buy.qty));
-      if (!row.checked) await via(CartApi.updateCartSelected(row.id, 1));
+      if (row.qty !== buy.qty) await ownerStep(owner, () => via(CartApi.updateCartQty(row.id, buy.qty)));
+      if (!row.checked) await ownerStep(owner, () => via(CartApi.updateCartSelected(row.id, 1)));
     } else {
-      await via(CartApi.addCart({ storeId: s.id, drugId: buy.id, qty: buy.qty }));
-      const fresh = (await via(CartApi.getCartList())) || [];
+      await ownerStep(owner, () => via(CartApi.addCart({ storeId: s.id, drugId: buy.id, qty: buy.qty })));
+      const fresh = (await ownerStep(owner, () => via(CartApi.getCartList()))) || [];
       const added = fresh.find((r) => r.drugId === Number(buy.id));
-      if (added && added.selectedFlag !== 1) await via(CartApi.updateCartSelected(added.id, 1));
+      if (added && added.selectedFlag !== 1) await ownerStep(owner, () => via(CartApi.updateCartSelected(added.id, 1)));
     }
   },
 
@@ -670,7 +794,8 @@ async function mapOrder(raw) {
     items.push({
       drugId: line.drugId,
       qty: line.qty,
-      product: p || {
+      // 历史订单使用服务端订单行价格，不能用当前目录价覆盖。
+      product: p ? { ...p, price: fen(line.price) } : {
         id: line.drugId,
         name: line.drugName,
         specification: line.specification,

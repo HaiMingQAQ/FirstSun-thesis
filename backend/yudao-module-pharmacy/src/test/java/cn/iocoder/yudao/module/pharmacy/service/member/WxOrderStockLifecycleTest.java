@@ -101,6 +101,13 @@ class WxOrderStockLifecycleTest {
 
     @InjectMocks
     private WxOrderServiceImpl wxOrderService;
+    @Mock
+    private WxOrderPaymentAccess orderPaymentAccess;
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubLockedOrder() {
+        when(orderPaymentAccess.lockOrder(anyLong())).thenAnswer(call -> wxOrderMapper.selectById((Long) call.getArgument(0)));
+    }
 
     /**
      * 纯 Mockito 单测没有 Spring/MyBatis 上下文，这里显式注册实体的 TableInfo，
@@ -126,6 +133,9 @@ class WxOrderStockLifecycleTest {
         when(inventoryFacade.deduct(anyLong(), anyList())).thenReturn(buildDeductResult(1, 1));
 
         wxOrderService.payWxOrder(ORDER_ID, "PAY-0001");
+        var locked = org.mockito.Mockito.inOrder(orderPaymentAccess, inventoryFacade);
+        locked.verify(orderPaymentAccess).lockOrder(ORDER_ID);
+        locked.verify(inventoryFacade).deduct(anyLong(), anyList());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<DeductItem>> itemCaptor = ArgumentCaptor.forClass(List.class);

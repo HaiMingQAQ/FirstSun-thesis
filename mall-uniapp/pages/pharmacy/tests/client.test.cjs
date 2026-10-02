@@ -67,7 +67,15 @@ function fenOf(order) {
   return Math.round(order.goodsAmount * 100);
 }
 
+const aiRequests = [];
+let beforeRequest;
 async function backend(config) {
+  if (beforeRequest) await beforeRequest(config);
+  if (config.url === '/pharmacy/ai/consult') {
+    aiRequests.push(config);
+    if (state.forceFail.has(config.url)) return false;
+    return { code: 0, data: { clientMessageId: config.data.clientMessageId, status: 'SUCCESS', answer: '只读测试响应', products: [] } };
+  }
   const url = config.url;
   const fail = [...state.forceFail].find((p) => url.startsWith(p));
   if (fail) return false; // 模拟 HTTP 层失败（拦截器返回 false）
@@ -175,7 +183,7 @@ async function backend(config) {
     return { code: 0, data: true };
   }
   if (url === '/member/prescription/create') {
-    const presc = { id: ++state.seq, prescNo: `PX-407-20260919-${String(prescriptions.length + 1).padStart(4, '0')}`, storeId: config.data.storeId, patientName: config.data.patientName, hospital: '', doctorName: '', diagnosis: '', usageDesc: '', prescDate: '2026-09-19', images: config.data.images || [], reviewStatus: 0, status: 0, createTime: now(), items: config.data.items || [] };
+    const presc = { id: ++state.seq, prescNo: `PX-407-20260919-${String(prescriptions.length + 1).padStart(4, '0')}`, storeId: config.data.storeId, patientName: config.data.patientName, hospital: '', doctorName: '', diagnosis: '', usageDesc: '', prescDate: '2026-09-19', images: [], materialIds: config.data.materialIds || [], reviewStatus: 0, status: 0, createTime: now(), items: config.data.items || [] };
     prescriptions.push(presc);
     return { code: 0, data: presc.id };
   }
@@ -249,7 +257,8 @@ const context = vm.createContext({
     showToast: () => {},
     uploadFile: (options) => {
       options.success({
-        data: JSON.stringify({ code: 0, data: { url: `http://file-server/pharmacy/prescription/p${++state.seq}.jpg` } }),
+        statusCode: 200,
+        data: JSON.stringify({ code: 0, data: ++state.seq }),
       });
       options.complete && options.complete();
     },
@@ -345,6 +354,11 @@ async function loadStubConfig() {
   const api = clientMod.namespace.default;
   const { money, statusNames, normalizeDrug } = clientMod.namespace;
 
+  const commonModule = await load(path.join(PHARMACY_ROOT, '../../sheep/api/pharmacy/common.js'));
+  await commonModule.evaluate();
+  const timestamp = new Date(2026, 9, 1, 12, 30).getTime();
+  assert.equal(commonModule.namespace.formatDate(timestamp), '2026-10-01 12:30');
+  assert.equal(commonModule.namespace.formatDate('2026-10-01T12:30:59'), '2026-10-01 12:30');
   assert.equal(money(1990), '19.90');
   assert.equal(statusNames.unpaid, '待支付');
   const mapped = normalizeDrug({ id: 11, genericName: '测试药品', retailPrice: '19.90', memberPrice: '17.80', isRx: 1, drugType: 0 }, { stock: 5, approval: '国药准字H1' });
@@ -373,6 +387,7 @@ async function loadStubConfig() {
 
   // ---------- 闭环三：登录 → 会员中心 → 地址 → 订单 ----------
   assert.equal(api.prescriptionDraft().length, 0);
+
   await assert.rejects(api.cart(), /账号未登录/);
   await assert.rejects(api.login('100', '123456'), /手机号/);
   await assert.rejects(api.login('13900001611', '000000'), /测试验证码不正确/);
@@ -460,6 +475,12 @@ async function loadStubConfig() {
   assert.equal((await api.orders()).length, 1);
   assert.equal((await api.createOrder(options)).id, one.id, '同草稿重复下单幂等');
 
+  const snapshotLine = members['13900001611'].orders.find(o => o.id === one.id).lines[0];
+  const oldPrice = snapshotLine.price;
+  snapshotLine.price = 12.34;
+  assert.equal((await api.order(one.id)).items[0].product.price, 1234, '订单商品金额使用订单行价格快照');
+  snapshotLine.price = oldPrice;
+
   // Stub adapter tests only: unsafe mock payment must propagate a rejection.
   await assert.rejects(api.orderAction(one.id, 'pay'), /未启用|尚未接通/);
   assert.equal((await api.order(one.id)).status, 'unpaid');
@@ -486,7 +507,28 @@ async function loadStubConfig() {
   assert.equal((await api.order(order2.id)).status, 'cancelled');
   assert.equal((await api.profile()).points, pointsBeforeCancel, '取消订单不产生积分变化（未用积分）');
 
-  // Private upload is blocked until authenticated file access exists.
+  // Immediate buy displays and submits exactly one item even when unrelated rows are selected.
+  await api.add(163101, 1);
+  await api.add(163102, 2);
+  api.beginCheckout({ id: 163104, qty: 3 });
+  assert.equal((await api.checkout()).items.length, 1);
+  const buyOrder = await api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' });
+  assert.equal(buyOrder.items.length, 1, '立即购买不得提交其他已勾选商品');
+  assert.equal(buyOrder.items[0].drugId, 163104);
+  assert.equal(buyOrder.items[0].qty, 3);
+  assert.equal(buyOrder.subtotal, 2380 * 3);
+  assert.ok((await api.cart()).filter(r => [163101, 163102].includes(r.drugId)).every(r => !r.checked));
+  await api.selectAll(true);
+  const cartBeforeRx = JSON.stringify(members['13900001611'].cart);
+  api.beginCheckout({ id: 163103, qty: 1 });
+  await assert.rejects(api.checkout(), /需先提交申请并经药师审核/);
+  await assert.rejects(api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' }), /处方/);
+  assert.equal(JSON.stringify(members['13900001611'].cart), cartBeforeRx, '受限商品在修改购物车前拦截');
+  await api.add(163103, 1); // Existing cart contracts still support reading/removing historic Rx rows.
+  await api.selectAll(true);
+  assert.equal((await api.cart()).find(r => r.drugId === 163103).checked, false, '全选排除处方商品');
+
+  // Legacy checkout attachment API cannot bypass the separate pharmacist approval workflow.
   api.beginCheckout({ id: 163103, qty: 1 });
   await assert.rejects(api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' }), /处方/);
   await assert.rejects(api.savePrescriptions(['a', 'b', 'c', 'd']), /最多/);
@@ -509,9 +551,55 @@ async function loadStubConfig() {
   await api.refreshStore();
   assert.ok(api.store.id > 0, '门店恢复后可重新加载');
 
+  // Synthetic approval fixtures only: production approvals are exclusively pharmacist APIs.
+  const material = await api.uploadMaterial('/test-only/material.png');
+  const prescId = await api.submitPrescription({ clientRequestId: 'test_presc_1', patientName: '测试', materialIds: [material], items: [{ drugId: 163103, qty: 1 }, { drugId: 163102, qty: 2 }] });
+  const presc = members['13900001611'].presc.find(v => v.id === prescId);
+  assert.deepEqual(Array.from(presc.materialIds), [material]);
+  await assert.rejects(api.beginPrescriptionCheckout(prescId), /等待药师核准/);
+  presc.reviewStatus = 1; presc.approvedItems = presc.items; presc.approvedUntil = Date.now() + 3600000;
+  await api.beginPrescriptionCheckout(prescId);
+  const approvedCheckout = await api.checkout(); assert.equal(approvedCheckout.items.length, 2);
+  const approvedOrder = await api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' });
+  assert.equal(approvedOrder.items.length, 2, '全部核准项保持勾选，不能被逐项加购取消');
+  assert.deepEqual(Array.from(approvedOrder.items, v => [v.drugId,v.qty]).sort((a,b)=>a[0]-b[0]), [[163102,2],[163103,1]]);
+  // Switch after the old prescription response, while later checkout reads are pending.
+  // No old private result may be returned, and no new-account cart write may follow.
+  for (const operation of ['checkout', 'createOrder']) {
+    await api.login('13900001611', '123456');
+    await api.beginPrescriptionCheckout(prescId);
+    const otherCart = JSON.stringify(members['13900001612'].cart);
+    let switched = false;
+    beforeRequest = async config => {
+      if (!switched && config.url === '/member/point/summary') {
+        switched = true; await api.login('13900001612', '123456');
+      }
+    };
+    await assert.rejects(operation === 'checkout' ? api.checkout() : api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' }), /账号已变化/);
+    beforeRequest = null;
+    assert.equal(switched, true);
+    assert.equal(JSON.stringify(members['13900001612'].cart), otherCart, '切号不能按旧处方修改新账号购物车');
+  }
+  await api.login('13900001611', '123456');
+  presc.approvedUntil = 'invalid'; await api.beginPrescriptionCheckout(prescId);
+  await assert.rejects(api.checkout(), /有效期/);
+
+  // Customer AI real adapter contract with stub HTTP (not model/backend integration).
+  const consult = await api.consult({ clientMessageId: 'ai_test_1', content: '查询板蓝根' });
+  assert.equal(consult.status, 'SUCCESS');
+  assert.equal(aiRequests.at(-1).data.storeId, api.store.id);
+  assert.equal(aiRequests.at(-1).data.clientMessageId, 'ai_test_1');
+  assert.equal(aiRequests.at(-1).timeout, 45000);
+  state.forceFail.add('/pharmacy/ai/consult');
+  await assert.rejects(api.consult({ clientMessageId: 'ai_failure', content: '查询板蓝根' }), /网络请求失败/);
+  state.forceFail.clear();
+
   // ---------- 登出与账号隔离 ----------
   await api.logout();
   assert.equal(api.session(), null);
+  const requestsBeforeGuest = aiRequests.length;
+  await assert.rejects(api.consult({ clientMessageId: 'ai_guest', content: '查询板蓝根' }), /请先登录/);
+  assert.equal(aiRequests.length, requestsBeforeGuest);
   await assert.rejects(api.orders(), /账号未登录/);
   await api.login('13900001612', '123456');
   assert.equal((await api.orders()).length, 0, '新账号看不到旧订单');

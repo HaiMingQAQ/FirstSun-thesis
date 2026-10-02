@@ -1,7 +1,7 @@
 # D 成员 POS 销售域设计文档(FirstSun 药店管理系统)
 
 > 日期: 2026-09-08 · 分支: feat/d-pos · 作者: 成员 D(POS 销售域)
-> 依据:《开发规范与 AI 协作规则》《六人全栈开发方案》,数据库基线 `sql/firstsun_pharmacy_init.sql`(46 表已定稿)
+> 开发约束与跨模块边界见[开发规范与 AI 协作规则](../../开发规范与AI协作规则.md)、[文档导航](../../README.md)。本设计的历史数据库基线为 `sql/firstsun_pharmacy_init.sql`(46 表已定稿)。
 
 ## 1. 背景与范围
 

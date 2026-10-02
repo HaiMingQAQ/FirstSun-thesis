@@ -2,14 +2,11 @@ package cn.iocoder.yudao.module.pharmacy.controller.app.prescription;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
-import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.pharmacy.service.member.AppMemberAccess;
-import cn.iocoder.yudao.module.pharmacy.controller.admin.prescription.vo.PrescRecordSaveReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.prescription.vo.AppPrescRecordCreateReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.prescription.vo.AppPrescRecordRespVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription.PhPrescRecordDO;
 import cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescRecordMapper;
-import cn.iocoder.yudao.module.pharmacy.service.prescription.PrescRecordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,7 +25,6 @@ import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
-import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.getLoginUserId;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PRESC_NOT_EXISTS;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PRESC_NOT_OWNER;
 
@@ -46,19 +42,16 @@ import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.PRESC_NO
 public class AppPrescRecordController {
 
     @Resource
-    private PrescRecordService prescRecordService;
-
-    @Resource
     private PrescRecordMapper prescRecordMapper;
+    @Resource private cn.iocoder.yudao.module.pharmacy.service.prescription.AppPrescriptionService appPrescriptions;
+    @Resource private cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescriptionUseMapper uses;
 
     @PostMapping("/create")
-    @Operation(summary = "登记处方（私有文件服务接通前暂停）",
-            description = "不接受公开图片 URL，当前调用返回拒绝，不写入处方")
-    public CommonResult<Long> createPrescRecord(@Valid @RequestBody AppPrescRecordCreateReqVO createReqVO) {
+    @Operation(summary = "提交私有处方材料与申请明细")
+    @cn.iocoder.yudao.framework.apilog.core.annotation.ApiAccessLog(requestEnable=false,responseEnable=false)
+    public CommonResult<Long> createPrescRecord(@Valid @RequestBody AppPrescRecordCreateReqVO req) {
         AppMemberAccess.requireMember();
-        // 通用文件服务返回公开 URL，不能作为医疗影像的私有存储。
-        // 在受鉴权保护的上传、引用校验与药师读取链完成前，不接受任意客户端 URL。
-        throw new org.springframework.security.access.AccessDeniedException("处方私有文件服务尚未接通，暂不可登记");
+        return success(appPrescriptions.submit(req));
     }
 
     @GetMapping("/page")
@@ -88,9 +81,17 @@ public class AppPrescRecordController {
     private List<AppPrescRecordRespVO> toRespVO(List<PhPrescRecordDO> records) {
         return records.stream()
                 .map(record -> {
-                    AppPrescRecordRespVO respVO = BeanUtils.toBean(record, AppPrescRecordRespVO.class);
+                    AppPrescRecordRespVO respVO = new AppPrescRecordRespVO();
+                    org.springframework.beans.BeanUtils.copyProperties(record, respVO);
                     // 历史公开 URL 也不能冒充受鉴权保护的处方影像。
                     respVO.setImages(List.of());
+                    respVO.setMaterialIds(record.getImages() == null ? List.of() : JsonUtils.parseArray(record.getImages(),String.class).stream()
+                            .filter(v->v.matches("private:[0-9]+")) .map(v->Long.valueOf(v.substring(8))).toList());
+                    respVO.setApprovedItems(record.getApprovedItems() == null ? List.of() : JsonUtils.parseArray(record.getApprovedItems(),cn.iocoder.yudao.module.pharmacy.controller.admin.prescription.vo.PrescItemVO.class));
+                    respVO.setApprovedUntil(record.getApprovedUntil());
+                    respVO.setRequestedItems(record.getPrescribedItems() == null ? List.of() : JsonUtils.parseArray(record.getPrescribedItems(),cn.iocoder.yudao.module.pharmacy.controller.admin.prescription.vo.PrescItemVO.class));
+                    respVO.setUses(uses.selectList(cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription.PrescriptionUseDO::getPrescId,record.getId()).stream()
+                            .map(use->new AppPrescRecordRespVO.Use(use.getWxOrderId(),use.getStatus(),use.getReleaseReason(),use.getCreateTime())).toList());
                     return respVO;
                 })
                 .toList();

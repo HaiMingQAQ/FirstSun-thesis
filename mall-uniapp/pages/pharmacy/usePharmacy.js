@@ -2,6 +2,10 @@ import { ref } from 'vue';
 import api from '@/sheep/api/pharmacy/client';
 export const go = (path) => uni.navigateTo({ url: `/pages/pharmacy/${path}` });
 export const toast = (title) => uni.showToast({ title, icon: 'none' });
+export const accountKey = () => {
+  const session = api.session();
+  return session ? `${uni.getStorageSync('tenant-id')}:${session.userId || session.id || session.mobile || uni.getStorageSync('token')}` : '';
+};
 const errorText = (error, fallback) => error?.message || error?.msg || fallback;
 export const confirm = (title, content) =>
   new Promise((resolve) =>

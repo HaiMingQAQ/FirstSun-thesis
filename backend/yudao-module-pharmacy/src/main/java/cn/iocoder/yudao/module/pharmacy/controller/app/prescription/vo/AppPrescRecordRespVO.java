@@ -43,6 +43,12 @@ public class AppPrescRecordRespVO {
 
     @Schema(description = "处方影像 URL 列表")
     private List<String> images;
+    private List<Long> materialIds;
+    private List<cn.iocoder.yudao.module.pharmacy.controller.admin.prescription.vo.PrescItemVO> requestedItems;
+    private List<cn.iocoder.yudao.module.pharmacy.controller.admin.prescription.vo.PrescItemVO> approvedItems;
+    private LocalDateTime approvedUntil;
+    private List<Use> uses;
+    public record Use(Long wxOrderId, String status, String releaseReason, LocalDateTime createTime) { }
 
     @Schema(description = "审方状态：0 待审 / 1 通过 / 2 驳回", requiredMode = Schema.RequiredMode.REQUIRED, example = "0")
     private Integer reviewStatus;

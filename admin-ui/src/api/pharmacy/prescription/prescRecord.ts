@@ -39,6 +39,9 @@ export interface PrescRecordVO {
   wxMemberId?: number // 小程序上传人
   images?: string // JSON: 最多5张影像
   prescribedItems?: string // JSON: 药品明细
+  approvedItems?: string
+  approvedUntil?: number
+  uses?: { wxOrderId: number; status: string; releaseReason?: string }[]
   createTime?: string
 }
 
@@ -70,10 +73,13 @@ export interface PrescRecordReviewReqVO {
   reviewOpinion?: string // 驳回必填
   reviewSnapshot?: string
   dblCheckBy?: number // 特管处方必填
+  approvedItems?: PrescItemVO[]
+  approvedUntil?: number
 }
 
 // 处方 API
 export const PrescRecordApi = {
+  getPrivateMaterial: async (id: number) => request.download<Blob>({ url: '/pharmacy/prescription/material/get', params: { id } }),
   // 登记处方
   createPrescRecord: async (data: PrescRecordSaveReqVO) => {
     return await request.post({ url: '/pharmacy/prescription/create', data })

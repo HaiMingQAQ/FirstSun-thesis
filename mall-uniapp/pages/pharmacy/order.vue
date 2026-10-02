@@ -105,7 +105,7 @@
     flex-shrink: 0;
     border-radius: 0;
     font-size: 14px;
-    color: #64716c;
+    color: #62756c;
   }
   .tabs-inner .active {
     color: #176b5b;
@@ -116,4 +116,5 @@
     color: #176b5b;
     font-size: 14px;
   }
+  .order-tabs { border-bottom: 1px solid #e2e9e4; }
 </style>

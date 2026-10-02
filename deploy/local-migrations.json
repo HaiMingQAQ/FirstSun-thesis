@@ -1,0 +1,174 @@
+[
+  {
+    "id": 1,
+    "path": "backend/sql/mysql/ruoyi-vue-pro.sql"
+  },
+  {
+    "id": 2,
+    "path": "sql/firstsun_pharmacy_init.sql"
+  },
+  {
+    "id": 3,
+    "path": "sql/migrations/20260908_a_pharmacy_module_init.sql"
+  },
+  {
+    "id": 4,
+    "path": "sql/migrations/20260908_b_pharmacy_store_menu.sql"
+  },
+  {
+    "id": 5,
+    "path": "sql/migrations/20260908_c_pharmacy_employee_menu.sql"
+  },
+  {
+    "id": 6,
+    "path": "sql/migrations/20260908_d_pharmacy_drug_menu.sql"
+  },
+  {
+    "id": 7,
+    "path": "sql/migrations/20260908_e_pharmacy_barcode_menu.sql"
+  },
+  {
+    "id": 8,
+    "path": "sql/migrations/20260909_f_pharmacy_menu_path_fix.sql"
+  },
+  {
+    "id": 9,
+    "path": "sql/migrations/20260909_g_pharmacy_role_menu_tenant_fix.sql"
+  },
+  {
+    "id": 10,
+    "path": "sql/migrations/20260909_h_pharmacy_barcode_menu_icon_fix.sql"
+  },
+  {
+    "id": 11,
+    "path": "sql/migrations/20260908_d_pos_menu.sql"
+  },
+  {
+    "id": 12,
+    "path": "sql/migrations/20260908_d_pos_menu_bind_role.sql"
+  },
+  {
+    "id": 13,
+    "path": "sql/migrations/20260909_d_pos_tables_fix.sql"
+  },
+  {
+    "id": 14,
+    "path": "sql/migrations/fix_pos_menu_name.sql"
+  },
+  {
+    "id": 15,
+    "path": "sql/migrations/20260912_b_purchase_supplier_menu.sql"
+  },
+  {
+    "id": 16,
+    "path": "sql/migrations/20260913_b_purchase_order_receipt_menu.sql"
+  },
+  {
+    "id": 17,
+    "path": "sql/migrations/20260917_b_purchase_order_reject.sql"
+  },
+  {
+    "id": 18,
+    "path": "sql/migrations/20260917_b_purchase_doc_seq.sql"
+  },
+  {
+    "id": 19,
+    "path": "sql/migrations/20260914_k_pharmacy_inventory_menu.sql"
+  },
+  {
+    "id": 20,
+    "path": "sql/migrations/20260911_f_pharmacy_member_menu.sql"
+  },
+  {
+    "id": 21,
+    "path": "sql/migrations/20260910_i_firstsun_shared_account.sql"
+  },
+  {
+    "id": 22,
+    "path": "sql/migrations/20260911_j_pos_menu_path_fix.sql"
+  },
+  {
+    "id": 23,
+    "path": "sql/migrations/20260914_l_pharmacy_demo_data.sql"
+  },
+  {
+    "id": 24,
+    "path": "sql/migrations/20260914_m_pharmacy_rx_pay_menu.sql"
+  },
+  {
+    "id": 25,
+    "path": "sql/migrations/20260914_n_pay_app_init.sql"
+  },
+  {
+    "id": 26,
+    "path": "sql/migrations/20260915_c_inventory_facade_flow_ref.sql"
+  },
+  {
+    "id": 27,
+    "path": "sql/migrations/20260916_f_wx_order_line_alloc.sql"
+  },
+  {
+    "id": 28,
+    "path": "sql/migrations/20260916_f_wx_order_alloc_frozen_stage.sql"
+  },
+  {
+    "id": 29,
+    "path": "sql/migrations/20260916_f_wx_order_alloc_out_ref.sql"
+  },
+  {
+    "id": 30,
+    "path": "sql/migrations/20260917_f_member_address_update_menu.sql"
+  },
+  {
+    "id": 31,
+    "path": "sql/migrations/20260918_f_member_sms_code.sql"
+  },
+  {
+    "id": 32,
+    "path": "sql/migrations/20260918_f_wx_order_points.sql"
+  },
+  {
+    "id": 33,
+    "path": "sql/migrations/20260917_c_inventory_shared_role_menu.sql"
+  },
+  {
+    "id": 34,
+    "path": "sql/migrations/20260918_c_inventory_flow_comment_utf8.sql"
+  },
+  {
+    "id": 35,
+    "path": "sql/migrations/20260918_l_fix_demo_location_163032.sql"
+  },
+  {
+    "id": 36,
+    "path": "sql/migrations/20260917_o_pharmacy_ai_prototype.sql"
+  },
+  {
+    "id": 37,
+    "path": "sql/migrations/20260918_a_ai_menu_fix.sql"
+  },
+  {
+    "id": 38,
+    "path": "sql/migrations/20260922_p_admin_delivery_demo_data.sql"
+  },
+  {
+    "id": 39,
+    "path": "sql/migrations/20260922_f_pharmacy_wechat_identity.sql"
+  },
+  {
+    "id": 40,
+    "path": "sql/migrations/20261001_a_customer_ai_consult.sql"
+  },
+  {
+    "id": 41,
+    "path": "sql/migrations/20261001_b_prescription_private_flow.sql"
+  },
+  {
+    "id": 42,
+    "path": "sql/migrations/20261001_c_store_consultation.sql"
+  },
+  {
+    "id": 43,
+    "path": "sql/migrations/20261001_d_customer_ai_history.sql"
+  }
+]

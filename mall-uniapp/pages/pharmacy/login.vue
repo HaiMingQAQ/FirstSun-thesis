@@ -1,7 +1,7 @@
 <template>
   <s-pharmacy-page>
     <view class="login-head">
-      <uni-icons type="shop" size="42" color="#176b5b" />
+      <view class="login-brand">FirstSun</view>
       <view class="fs-heading fs-gap">欢迎来到 FirstSun 药店</view>
       <view class="fs-muted fs-gap">登录后选购药品、查看订单与会员积分</view>
     </view>
@@ -103,7 +103,7 @@
     uni.showModal({
       title: PHARMACY_DEMO ? '测试用户协议与隐私说明' : '用户协议与隐私说明',
       content: PHARMACY_DEMO
-        ? '本版本仅用于功能体验，不提供真实购药服务。测试手机号与测试验证码由后端校验（验证码来自环境变量 PHARMACY_DEV_SMS_CODE）。请勿上传真实处方或填写真实个人信息；处方图片会上传至服务器用于药师审方。正式服务协议将在上线前提供。'
+        ? '本版本仅用于功能体验，不提供真实购药服务。测试手机号与测试验证码由后端校验（验证码来自环境变量 PHARMACY_DEV_SMS_CODE）。请勿上传真实处方或填写真实个人信息；在线处方上传尚未开放。正式服务协议将在上线前提供。'
         : '本版本仅用于受限演示。微信登录凭证由服务端实时校验；请勿上传真实处方或填写真实个人信息。正式服务协议将在上线前提供。',
       showCancel: false,
       confirmColor: '#176b5b',
@@ -130,4 +130,5 @@
   .link {
     color: #176b5b;
   }
+  .login-brand { font-family: Georgia, serif; font-size: 32px; color: #164d43; font-weight: 700; }
 </style>

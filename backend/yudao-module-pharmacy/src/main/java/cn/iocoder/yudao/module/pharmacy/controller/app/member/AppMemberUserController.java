@@ -17,7 +17,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
-import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.getLoginUserId;
+import static cn.iocoder.yudao.module.pharmacy.service.member.AppMemberAccess.requireMember;
 
 /**
  * 用户 APP - 会员个人中心
@@ -40,7 +40,7 @@ public class AppMemberUserController {
     @GetMapping("/get")
     @Operation(summary = "获得会员基本信息")
     public CommonResult<AppMemberUserInfoRespVO> getUserInfo() {
-        MemberUserDO user = memberUserService.validateMemberUserExists(getLoginUserId());
+        MemberUserDO user = memberUserService.validateMemberUserExists(requireMember());
         AppMemberUserInfoRespVO respVO = BeanUtils.toBean(user, AppMemberUserInfoRespVO.class);
         // 补充会员等级名称
         if (user.getLevelId() != null) {
@@ -55,7 +55,7 @@ public class AppMemberUserController {
     @PutMapping("/update")
     @Operation(summary = "修改会员基本信息")
     public CommonResult<Boolean> updateUserInfo(@RequestBody @Valid AppMemberUserUpdateReqVO reqVO) {
-        memberUserService.updateMemberUserProfile(getLoginUserId(),
+        memberUserService.updateMemberUserProfile(requireMember(),
                 reqVO.getNickname(), reqVO.getAvatar(), reqVO.getSex());
         return success(true);
     }

@@ -49,7 +49,8 @@ public class ApiAccessLogInterceptor implements HandlerInterceptor {
             String requestBody = ServletUtils.getBody(request);
             ApiAccessLog accessLog = handlerMethod == null ? null : handlerMethod.getMethodAnnotation(ApiAccessLog.class);
             String[] extraKeys = accessLog == null ? null : accessLog.sanitizeKeys();
-            if (ApiAccessLogSanitizer.isAuthenticationPath(request.getRequestURI())) {
+            if ((ApiAccessLogSanitizer.isAuthenticationPath(request.getRequestURI())
+                    || ApiAccessLogSanitizer.isPrivateBusinessPath(request.getRequestURI()))) {
                 log.info("[preHandle][开始请求 URL({}) 参数({})]", request.getRequestURI(),
                         ApiAccessLogSanitizer.REDACTED);
             } else if (CollUtil.isEmpty(queryString) && StrUtil.isEmpty(requestBody)) {

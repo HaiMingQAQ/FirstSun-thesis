@@ -20,7 +20,10 @@
 				"group": "药店"
 			}
 		},
-		{
+		{ "path": "pages/pharmacy/notifications", "style": { "navigationBarTitleText": "业务通知", "navigationStyle": "default" } },
+		{ "path": "pages/pharmacy/consultation", "style": { "navigationBarTitleText": "门店文字咨询", "navigationStyle": "default" } },
+		{ "path": "pages/pharmacy/ai", "style": { "navigationBarTitleText": "购药智能助手", "navigationStyle": "default", "navigationBarBackgroundColor": "#ffffff", "navigationBarTextStyle": "black" } },
+    {
 			"path": "pages/pharmacy/checkout",
 			"style": {
 				"navigationStyle": "default",

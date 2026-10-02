@@ -1,26 +1,26 @@
 .fs-page {
   --fs-green: #176b5b;
-  --fs-ink: #202d29;
-  --fs-muted: #64716c;
-  --fs-line: #e5ebe8;
+  --fs-ink: #243c34;
+  --fs-muted: #62756c;
+  --fs-line: #e2e9e4;
   min-height: 100vh;
   box-sizing: border-box;
-  background: #f5f7f6;
+  background: #f4f6f3;
   color: var(--fs-ink);
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.7;
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
   word-break: break-word;
   overflow-wrap: anywhere;
   &.has-tabs {
-    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
   }
   &.has-dock {
     padding-bottom: calc(110px + env(safe-area-inset-bottom));
   }
   &.has-tabs.has-dock {
-    padding-bottom: calc(164px + env(safe-area-inset-bottom));
+    padding-bottom: calc(188px + env(safe-area-inset-bottom));
   }
   view,
   button,
@@ -32,7 +32,7 @@
     margin: 0;
     font-size: 15px;
     line-height: 1.4;
-    border-radius: 6px;
+    border-radius: 8px;
     min-height: 44px;
     padding: 10px 16px;
     display: flex;
@@ -47,11 +47,14 @@
     opacity: 0.5;
   }
   .fs-primary {
+    min-height: 48px;
     background: var(--fs-green);
     color: #fff;
   }
   .fs-secondary {
-    background: #edf5f1;
+    min-height: 48px;
+    border: 1px solid #d7e6dd;
+    background: #edf5f0;
     color: var(--fs-green);
   }
   .fs-outline {
@@ -69,9 +72,10 @@
   }
   .fs-section {
     background: #fff;
-    padding: 16px;
-    margin: 12px 16px;
-    border-radius: 8px;
+    padding: 18px 16px;
+    margin: 0;
+    border-radius: 0;
+    border-top: 7px solid #f4f6f3;
   }
   .fs-pad {
     padding: 16px;
@@ -95,7 +99,7 @@
     min-width: 0;
   }
   .fs-title {
-    font-size: 18px;
+    font-size: 19px;
     font-weight: 600;
     line-height: 1.5;
   }
@@ -111,31 +115,31 @@
     font-size: 13px;
   }
   .fs-price {
-    color: #c13c34;
-    font-size: 22px;
+    color: #ae4b23;
+    font-size: 21px;
     font-weight: 650;
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .fs-tag {
     display: inline-block;
     color: var(--fs-green);
-    background: #edf5f1;
+    background: #edf5f0;
     border-radius: 3px;
     padding: 1px 5px;
     font-size: 11px;
     font-weight: 500;
     margin-right: 6px;
     vertical-align: 2px;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .fs-tag-rx {
     color: #a85a14;
     background: #fff1df;
   }
   .fs-notice {
-    background: #fff5e8;
-    color: #855119;
+    background: #fbf1e8;
+    color: #875535;
     padding: 12px 16px;
     font-size: 13px;
   }
@@ -167,13 +171,13 @@
   .fs-input {
     background: #f3f6f4;
     border: 1px solid var(--fs-line);
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 0 12px;
     width: 100%;
   }
   textarea {
     background: #f3f6f4;
-    border-radius: 6px;
+    border-radius: 8px;
     width: 100%;
     padding: 12px;
     font-size: 15px;
@@ -183,14 +187,14 @@
     margin-top: 16px;
   }
   .fs-search {
-    background: #f2f5f3;
-    border: 1px solid #e2e9e5;
-    border-radius: 6px;
+    background: #f3f6f3;
+    border: 1px solid #dfe7df;
+    border-radius: 8px;
     padding: 0 12px;
     display: flex;
     gap: 8px;
     align-items: center;
-    min-height: 46px;
+    min-height: 48px;
   }
   .fs-search input {
     flex: 1;
@@ -210,7 +214,7 @@
     gap: 12px;
   }
   .fs-dock.above-tabs {
-    bottom: calc(60px + env(safe-area-inset-bottom));
+    bottom: calc(64px + env(safe-area-inset-bottom));
     padding-bottom: 12px;
   }
   .fs-dock button {
@@ -220,7 +224,7 @@
     display: flex;
     background: #edf1ee;
     padding: 4px;
-    border-radius: 6px;
+    border-radius: 8px;
     gap: 4px;
   }
   .fs-choice button {
@@ -260,7 +264,7 @@
     height: 88px;
     flex-shrink: 0;
     background: #f8faf9;
-    border-radius: 6px;
+    border-radius: 8px;
   }
 }
 /* #ifdef H5 */
@@ -270,3 +274,13 @@
   }
 }
 /* #endif */
+
+@media (max-width: 340px) {
+  .fs-page {
+    .fs-pad, .fs-section { padding-left: 14px; padding-right: 14px; }
+    .fs-dock { gap: 8px; padding-left: 12px; padding-right: 12px; }
+    .fs-dock button { padding-left: 12px; padding-right: 12px; }
+    .fs-dock .fs-price { font-size: 19px; }
+    .fs-dock .fs-check { padding: 0; }
+  }
+}

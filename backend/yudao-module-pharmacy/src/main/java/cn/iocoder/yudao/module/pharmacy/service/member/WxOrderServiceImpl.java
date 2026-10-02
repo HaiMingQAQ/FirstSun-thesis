@@ -91,8 +91,7 @@ public class WxOrderServiceImpl implements WxOrderService {
     @Resource
     private WxOrderMapper wxOrderMapper;
 
-    @Resource
-    private cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescRecordMapper prescRecordMapper;
+    @Resource private cn.iocoder.yudao.module.pharmacy.service.prescription.PrescriptionPurchaseService prescriptionPurchase;
 
     @Resource
     private org.springframework.core.env.Environment environment;
@@ -248,7 +247,8 @@ public class WxOrderServiceImpl implements WxOrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void payWxOrder(Long id, String payNo) {
-        completePayment(validateWxOrderExists(id), payNo, null);
+        // Same order -> prescription lock order as member payment and cancellation.
+        completePayment(orderPaymentAccess.lockOrder(id), payNo, null);
     }
 
     private void completePayment(WxOrderDO wxOrder, String payNo, Long verifiedPaymentId) {
@@ -263,6 +263,7 @@ public class WxOrderServiceImpl implements WxOrderService {
         if (!Objects.equals(wxOrder.getStatus(), WxOrderStatusEnum.WAIT_PAY.getStatus())) {
             throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
         }
+        if (wxOrder.getPrescId() != null) prescriptionPurchase.requirePayment(wxOrder);
         // 先条件更新抢占状态，再由抢到的请求出库：
         // 并发重复回调 rows=0 直接返回，只有真正把「待支付」翻转为「待拣货」的请求才会扣库，
         // 从而保证「重复回调不重复扣库」。同一事务内扣库失败会整体回滚，不会出现订单已支付但库存未扣。
@@ -281,6 +282,7 @@ public class WxOrderServiceImpl implements WxOrderService {
         }
         // 对接 C：已冻结的订单把冻结转正式出库；未冻结的历史订单退化为按 FEFO 直接出库（同事务）
         consumeReservedOrDeductStock(wxOrder, verifiedPaymentId);
+        if (wxOrder.getPrescId() != null) prescriptionPurchase.paid(wxOrder);
     }
 
     @Override
@@ -325,9 +327,12 @@ public class WxOrderServiceImpl implements WxOrderService {
         }
         int rows = wxOrderMapper.update(updateObj, new LambdaUpdateWrapper<WxOrderDO>()
                 .eq(WxOrderDO::getId, id)
-                .in(WxOrderDO::getStatus, WxOrderStatusEnum.WAIT_PAY.getStatus(), WxOrderStatusEnum.WAIT_PICK.getStatus()));
+                .in(WxOrderDO::getStatus, WxOrderStatusEnum.WAIT_PAY.getStatus(), WxOrderStatusEnum.WAIT_PICK.getStatus())
+                .eq(WxOrderDO::getPayStatus, wxOrder.getPayStatus()));
         if (rows == 0) {
-            // 并发下已被其他请求取消，视为幂等成功
+            // Only an actual canceled state is an idempotent success; a concurrent payment must be reported.
+            if (!Objects.equals(validateWxOrderExists(id).getStatus(),WxOrderStatusEnum.CANCELED.getStatus()))
+                throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
             return;
         }
         if (paid) {
@@ -338,6 +343,7 @@ public class WxOrderServiceImpl implements WxOrderService {
         settleStockOnClose(wxOrder, CANCEL_BIZ_PREFIX, false);
         // 对接 F：取消 / 退款即释放本单预扣的抵扣积分（幂等键 = 订单号，重复取消不重复返还）
         memberPointSettlementService.releaseSalePoints(wxOrder.getMemberId(), wxOrder.getOrderNo());
+        if (wxOrder.getPrescId() != null) prescriptionPurchase.releaseUnpaid(wxOrder,"未支付取消");
     }
 
     @Override
@@ -365,14 +371,18 @@ public class WxOrderServiceImpl implements WxOrderService {
         updateObj.setCancelReason(cancelReason);
         int rows = wxOrderMapper.update(updateObj, new LambdaUpdateWrapper<WxOrderDO>()
                 .eq(WxOrderDO::getId, id)
-                .in(WxOrderDO::getStatus, WxOrderStatusEnum.WAIT_PAY.getStatus(), WxOrderStatusEnum.WAIT_PICK.getStatus()));
+                .in(WxOrderDO::getStatus, WxOrderStatusEnum.WAIT_PAY.getStatus(), WxOrderStatusEnum.WAIT_PICK.getStatus())
+                .eq(WxOrderDO::getPayStatus, wxOrder.getPayStatus()));
         if (rows == 0) {
-            // 并发下已被其他请求取消，视为幂等成功
+            // Only an actual canceled state is an idempotent success; a concurrent payment must be reported.
+            if (!Objects.equals(validateWxOrderExists(id).getStatus(),WxOrderStatusEnum.CANCELED.getStatus()))
+                throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
             return;
         }
         // 对接 F：订单已关闭即释放本单预扣的抵扣积分（幂等键 = 订单号）；
         // 未预扣积分时内部直接跳过，不产生孤立流水。库存仍由门店节点释放 / 回补。
         memberPointSettlementService.releaseSalePoints(wxOrder.getMemberId(), wxOrder.getOrderNo());
+        if (wxOrder.getPrescId() != null) prescriptionPurchase.releaseUnpaid(wxOrder,"未支付取消");
     }
 
     @Override
@@ -401,6 +411,7 @@ public class WxOrderServiceImpl implements WxOrderService {
         if (!paid && order.getExpireAt() != null && !order.getExpireAt().isAfter(LocalDateTime.now())) {
             throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
         }
+        if (!paid && order.getPrescId() != null) prescriptionPurchase.requirePayment(order);
         int amount = WxOrderPaymentAccess.amountFen(order);
         Long paymentId;
         if (order.getPayNo() == null || order.getPayNo().isBlank()) {
@@ -533,13 +544,16 @@ public class WxOrderServiceImpl implements WxOrderService {
             // 条件更新保证并发下只关闭一次
             int updated = wxOrderMapper.update(updateObj, new LambdaUpdateWrapper<WxOrderDO>()
                     .eq(WxOrderDO::getId, order.getId())
-                    .eq(WxOrderDO::getStatus, WxOrderStatusEnum.WAIT_PAY.getStatus()));
+                    .eq(WxOrderDO::getStatus, WxOrderStatusEnum.WAIT_PAY.getStatus())
+                    .eq(WxOrderDO::getPayStatus, PAY_STATUS_WAIT)
+                    .lt(WxOrderDO::getExpireAt,now));
             if (updated == 0) {
                 continue;
             }
             closed += updated;
             // 对接 F：支付超时 = 支付失败，不赠送积分，并释放本单预扣的抵扣积分（幂等）
             memberPointSettlementService.releaseSalePoints(order.getMemberId(), order.getOrderNo());
+            if (order.getPrescId() != null) prescriptionPurchase.releaseUnpaid(order,"未支付超时");
         }
         return closed;
     }
@@ -718,15 +732,8 @@ public class WxOrderServiceImpl implements WxOrderService {
         if (!Objects.equals(orderType, ORDER_TYPE_PICKUP) && !Objects.equals(orderType, ORDER_TYPE_DELIVERY)) {
             throw exception(PHARMACY_WX_ORDER_TYPE_INVALID);
         }
-        if (prescId != null) {
-            var presc = prescRecordMapper.selectById(prescId);
-            if (presc == null) throw exception(PRESC_NOT_EXISTS);
-            if (!Objects.equals(presc.getWxMemberId(), memberId)
-                    || !Objects.equals(presc.getStoreId(), storeId)) throw exception(PRESC_NOT_OWNER);
-            if (!Objects.equals(presc.getStatus(), 0) || !Objects.equals(presc.getReviewStatus(), 1)) {
-                throw exception(PRESC_STATUS_INVALID);
-            }
-        }
+        cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription.PhPrescRecordDO approvedPrescription = prescId == null ? null
+                : prescriptionPurchase.lockApproved(prescId,memberId,storeId);
         // 2. 读取该会员已勾选的购物车记录，并限定本次履约门店
         List<WxCartDO> checkedList = wxCartService.getSelectedCartListByMemberId(memberId).stream()
                 .filter(item -> Objects.equals(item.getStoreId(), storeId))
@@ -734,6 +741,7 @@ public class WxOrderServiceImpl implements WxOrderService {
         if (checkedList.isEmpty()) {
             throw exception(PHARMACY_WX_CART_SELECTED_EMPTY);
         }
+        if (approvedPrescription != null) prescriptionPurchase.checkCart(approvedPrescription,checkedList);
         // 3. 对接 A 商品接口：批量校验药品可销售，并生成明细快照
         List<Long> drugIds = checkedList.stream().map(WxCartDO::getDrugId).distinct()
                 .collect(Collectors.toList());
@@ -835,6 +843,7 @@ public class WxOrderServiceImpl implements WxOrderService {
         // 未支付截止时间：下单后 30 分钟
         order.setExpireAt(now.plusMinutes(ORDER_EXPIRE_MINUTES));
         insertOrderWithPickupCode(order);
+        if (approvedPrescription != null) prescriptionPurchase.hold(approvedPrescription,order.getId());
         // 8. 写入订单明细
         for (WxOrderLineDO line : lines) {
             line.setWxOrderId(order.getId());

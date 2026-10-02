@@ -10,10 +10,10 @@
     <template v-else>
       <view class="fs-section">
         <view class="fs-choice">
+          <button :class="{ active: mode === 'pickup' }" @tap="mode = 'pickup'">到店自提</button>
           <button :class="{ active: mode === 'delivery' }" @tap="mode = 'delivery'">
             门店配送
           </button>
-          <button :class="{ active: mode === 'pickup' }" @tap="mode = 'pickup'">到店自提</button>
         </view>
         <view v-if="mode === 'delivery'" class="fs-menu" @tap="go('address?select=1')">
           <view class="fs-grow">
@@ -42,6 +42,7 @@
           v-for="row in data.items"
           :key="row.drugId"
           :product="row.product"
+          compact
           hide-stock
           :qty="row.qty"
         />
@@ -56,11 +57,9 @@
           <text class="fs-muted">{{ data.prescriptions.length }}/3 张</text>
         </view>
         <view class="fs-notice fs-gap">
-          需上传处方并经药师审核。提交订单后进入待审核状态，审核结果以药师实际处理为准。
+          本单使用药师核准明细与固定数量；提交时由服务器再次核验处方状态、归属及使用资格。
         </view>
-        <button class="fs-outline fs-gap" @tap="go('prescription-upload?checkout=1')">
-          {{ data.prescriptions.length ? '查看 / 修改处方' : '上传处方图片' }}
-        </button>
+        <view class="fs-muted fs-gap">有效期：{{ formatDate(data.prescription?.approvedUntil) }}</view>
       </view>
       <view class="fs-section">
         <view class="fs-between fs-field">
@@ -110,18 +109,19 @@
           <text class="fs-small">合计</text>
           <text class="fs-price">¥{{ money(total) }}</text>
         </view>
-        <button class="fs-primary" :disabled="loading || busy || submitted" :loading="busy" @tap="submit">
-          {{ submitted ? '已提交' : busy ? '提交中…' : hasRx ? '提交审核订单' : '提交订单' }}
+        <button class="fs-primary" :disabled="loading || busy || submitted || (hasRx && !data.prescription)" :loading="busy" @tap="submit">
+          {{ submitted ? '已提交' : busy ? '提交中…' : '提交订单' }}
         </button>
       </view>
     </template>
   </s-pharmacy-page>
 </template>
 <script setup>
+  import { formatDate } from '@/sheep/api/pharmacy/common';
   import { ref, computed } from 'vue';
   import { onShow } from '@dcloudio/uni-app';
   import api, { money } from '@/sheep/api/pharmacy/client';
-  import { go, toast, useRequest, useAction } from './usePharmacy';
+  import { go, toast, accountKey } from './usePharmacy';
   const data = ref(null),
     mode = ref('pickup'),
     usePoints = ref(false),
@@ -129,8 +129,8 @@
     loggedIn = ref(false),
     submitted = ref(false),
     mockPaymentAvailable = ref(false);
-  const { loading, error, run } = useRequest();
-  const { busy, act } = useAction();
+  const loading = ref(false), error = ref(''), busy = ref(false);
+  let owner = '', generation = 0;
   const hasRx = computed(() => data.value?.items.some((r) => r.product.rx));
   const subtotal = computed(
     () => data.value?.items.reduce((s, r) => s + r.product.price * r.qty, 0) || 0,
@@ -138,28 +138,54 @@
   const shipping = computed(() => data.value?.shipping?.[mode.value] ?? 0);
   const discount = computed(() => (usePoints.value ? data.value?.maxDeductFen || 0 : 0));
   const total = computed(() => subtotal.value + shipping.value - discount.value);
-  const load = () =>
-    run(async () => {
+  const load = async () => {
+      if (loading.value) return;
+      loading.value = true; error.value = '';
       mockPaymentAvailable.value = false;
-      mockPaymentAvailable.value = await api.mockPaymentAvailable();
+      const requestOwner = accountKey(), requestGeneration = generation;
+      try {
+      const paymentAvailable = await api.mockPaymentAvailable();
+      if (requestOwner !== accountKey() || requestGeneration !== generation) return;
       // 返回地址/处方页后保留已挂载的表单，避免 H5 ResizeSensor 激活时引用已卸载节点。
-      data.value = await api.checkout();
-    });
+      const result = await api.checkout();
+      if (requestOwner !== accountKey() || requestGeneration !== generation) return;
+      mockPaymentAvailable.value = paymentAvailable;
+      data.value = result;
+      } catch (e) {
+        if (requestOwner === accountKey() && requestGeneration === generation) error.value = e.message || '结算加载失败';
+      } finally {
+        if (requestOwner === accountKey() && requestGeneration === generation) loading.value = false;
+      }
+  };
   const submit = () => {
-    if (submitted.value) return;
-    act(async () => {
+    if (busy.value || submitted.value || !data.value || (hasRx.value && !data.value.prescription)) return;
+    (async () => {
+      const requestOwner = accountKey(), requestGeneration = generation;
+      busy.value = true;
+      try {
       const order = await api.createOrder({
         mode: mode.value,
         address: data.value.address,
         usePoints: usePoints.value,
         remark: remark.value,
       });
+      if (requestOwner !== accountKey() || requestGeneration !== generation) return;
       submitted.value = true;
       toast('订单已提交');
       uni.redirectTo({ url: `/pages/pharmacy/order-detail?id=${order.id}` });
-    });
+      } catch (e) {
+        if (requestOwner === accountKey() && requestGeneration === generation) toast(e.message || '提交失败');
+      } finally {
+        if (requestOwner === accountKey() && requestGeneration === generation) busy.value = false;
+      }
+    })();
   };
   onShow(() => {
+    const account = accountKey();
+    if (account !== owner) {
+      generation++; owner = account; data.value = null; remark.value = ''; usePoints.value = false;
+      submitted.value = false; mockPaymentAvailable.value = false; loading.value = false; busy.value = false; error.value = '';
+    }
     loggedIn.value = !!api.session();
     if (loggedIn.value && !submitted.value) load();
   });

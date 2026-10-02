@@ -1,0 +1,175 @@
+{
+  "name": "firstsun-thesis-local",
+  "services": {
+    "mysql": {
+      "image": "mysql:8.0",
+      "environment": {
+        "MYSQL_ROOT_PASSWORD": "${MYSQL_ROOT_PASSWORD:?Run start-local.bat to prepare local configuration}",
+        "MYSQL_DATABASE": "${MYSQL_DATABASE:?Run start-local.bat to prepare local configuration}",
+        "MYSQL_USER": "${MYSQL_USER:?Run start-local.bat to prepare local configuration}",
+        "MYSQL_PASSWORD": "${MYSQL_PASSWORD:?Run start-local.bat to prepare local configuration}",
+        "TZ": "Asia/Shanghai"
+      },
+      "command": [
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_unicode_ci"
+      ],
+      "ports": [
+        "127.0.0.1:${MYSQL_PORT:-23327}:3306"
+      ],
+      "volumes": [
+        "mysql-data:/var/lib/mysql"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h127.0.0.1 -u\"$$MYSQL_USER\" \"$$MYSQL_DATABASE\" -Nse \"SELECT 1\" >/dev/null 2>&1"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 60,
+        "start_period": "30s"
+      },
+      "restart": "unless-stopped",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "redis": {
+      "image": "redis:7-alpine",
+      "environment": {
+        "REDIS_PASSWORD": "${REDIS_PASSWORD:?Missing REDIS_PASSWORD}",
+        "TZ": "Asia/Shanghai"
+      },
+      "command": [
+        "sh",
+        "-c",
+        "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""
+      ],
+      "ports": [
+        "127.0.0.1:${REDIS_PORT:-26397}:6379"
+      ],
+      "volumes": [
+        "redis-data:/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -qx PONG"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 60,
+        "start_period": "30s"
+      },
+      "restart": "unless-stopped",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "backend": {
+      "image": "firstsun-thesis-local-backend:local",
+      "build": {
+        "context": "../backend",
+        "dockerfile": "Dockerfile"
+      },
+      "depends_on": {
+        "mysql": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "TZ": "Asia/Shanghai",
+        "JAVA_OPTS": "-Xms256m -Xmx768m -Djava.security.egd=file:/dev/./urandom",
+        "ARGS": "--spring.profiles.active=local --yudao.security.mock-enable=false --firstsun.miniapp.mock-payment-enabled=false --firstsun.miniapp.order-expiry-enabled=true --spring.datasource.druid.stat-view-servlet.enabled=false --spring.boot.admin.client.enabled=false --spring.quartz.auto-startup=false --yudao.captcha.enable=false --justauth.enabled=false --wx.miniapp.appid=${WX_MINIAPP_APPID:-} --wx.miniapp.secret=${WX_MINIAPP_SECRET:-} --wx.mp.app-id= --wx.mp.secret= --yudao.tencent-lbs-key= --spring.datasource.dynamic.datasource.master.url=jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true --spring.datasource.dynamic.datasource.master.username=${MYSQL_USER} --spring.datasource.dynamic.datasource.master.password=${MYSQL_PASSWORD} --spring.datasource.dynamic.datasource.slave.url=jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true --spring.datasource.dynamic.datasource.slave.username=${MYSQL_USER} --spring.datasource.dynamic.datasource.slave.password=${MYSQL_PASSWORD} --spring.data.redis.host=redis --spring.data.redis.port=6379 --spring.data.redis.database=0 --spring.data.redis.password=${REDIS_PASSWORD} --yudao.pay.order-notify-url=http://backend:48080/admin-api/pay/notify/order --yudao.pay.refund-notify-url=http://backend:48080/admin-api/pay/notify/refund --yudao.pay.transfer-notify-url=http://backend:48080/admin-api/pay/notify/transfer --logging.file.name=/local-logs/backend.log",
+        "PHARMACY_AI_API_KEY": "${PHARMACY_AI_API_KEY:-}",
+        "PHARMACY_AI_BASE_URL": "${PHARMACY_AI_BASE_URL:-}",
+        "PHARMACY_AI_MODEL": "${PHARMACY_AI_MODEL:-}",
+        "PHARMACY_DEV_SMS_CODE": "${PHARMACY_DEV_SMS_CODE:-}",
+        "PHARMACY_WECHAT_TENANT_ID": "${PHARMACY_WECHAT_TENANT_ID:-}",
+        "PHARMACY_WECHAT_APP_ID": "${PHARMACY_WECHAT_APP_ID:-}"
+      },
+      "ports": [
+        "127.0.0.1:${BACKEND_PORT:-28080}:48080"
+      ],
+      "volumes": [
+        "backend-logs:/local-logs"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:48080/actuator/health >/dev/null"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 60,
+        "start_period": "30s"
+      },
+      "restart": "unless-stopped",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "admin-ui": {
+      "image": "firstsun-thesis-local-admin-ui:local",
+      "build": {
+        "context": "../admin-ui",
+        "dockerfile": "Dockerfile",
+        "args": {
+          "VITE_BASE_URL": "http://127.0.0.1:${BACKEND_PORT:-28080}"
+        }
+      },
+      "depends_on": {
+        "backend": {
+          "condition": "service_healthy"
+        }
+      },
+      "ports": [
+        "127.0.0.1:${ADMIN_PORT:-28081}:80"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1/"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 60,
+        "start_period": "30s"
+      },
+      "restart": "unless-stopped",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    }
+  },
+  "volumes": {
+    "mysql-data": {},
+    "redis-data": {},
+    "backend-logs": {}
+  },
+  "networks": {
+    "default": {
+      "name": "firstsun-thesis-local-network"
+    }
+  }
+}

@@ -58,6 +58,11 @@ public class PrescRecordServiceImpl implements PrescRecordService {
     private StoreService storeService;
     @Resource
     private DrugService drugService;
+    @Resource private PrescriptionStaffAccess prescriptionStaffAccess;
+    @Resource private cn.iocoder.yudao.module.pharmacy.service.permission.PharmacyStoreDataAccess storeAccess;
+    @Resource private PrescriptionNotificationService notifications;
+    @Resource private PrivateMaterialService materials;
+    @Resource private cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescriptionUseMapper uses;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -81,6 +86,11 @@ public class PrescRecordServiceImpl implements PrescRecordService {
         }
         // 3. 影像最多 5 张
         List<String> images = createReqVO.getImages();
+        if(createReqVO.getWxMemberId()!=null) {
+            if(images==null||images.stream().anyMatch(v->v==null||!v.matches("private:[0-9]+")))
+                throw cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException("顾客处方必须使用受鉴权保护的私有材料");
+            materials.requireOwned(images.stream().map(v->Long.valueOf(v.substring(8))).toList(),createReqVO.getWxMemberId(),storeId);
+        }
         if (images != null && images.size() > IMAGES_MAX) {
             throw exception(ErrorCodeConstants.PRESC_IMAGES_EXCEED);
         }
@@ -124,11 +134,12 @@ public class PrescRecordServiceImpl implements PrescRecordService {
         record.setLimitCheck(createReqVO.getLimitCheck() != null ? createReqVO.getLimitCheck() : 0);
         record.setImages(images != null ? JsonUtils.toJsonString(images) : null);
         record.setPrescribedItems(JsonUtils.toJsonString(items));
+        record.setSubmissionHash(createReqVO.getSubmissionHash());
         record.setReviewStatus(0); // 待审
         record.setStatus(0);       // 有效
         record.setWxMemberId(createReqVO.getWxMemberId());
         prescRecordMapper.insert(record);
-        log.info("[createPrescRecord] 处方登记成功, id={}, prescNo={}, patient={}", record.getId(), prescNo, createReqVO.getPatientName());
+        log.info("[createPrescRecord] 处方登记成功, id={}", record.getId());
         return record.getId();
     }
 
@@ -136,11 +147,12 @@ public class PrescRecordServiceImpl implements PrescRecordService {
     @Transactional(rollbackFor = Exception.class)
     public void reviewPrescRecord(PrescRecordReviewReqVO reviewReqVO) {
         // 1. 校验处方存在且待审
-        PhPrescRecordDO record = prescRecordMapper.selectById(reviewReqVO.getId());
+        PhPrescRecordDO record = prescRecordMapper.lock(reviewReqVO.getId());
         if (record == null) {
             throw exception(ErrorCodeConstants.PRESC_NOT_EXISTS);
         }
-        if (!Integer.valueOf(0).equals(record.getReviewStatus())) {
+        storeAccess.requireStore(record.getStoreId());
+        if (!Integer.valueOf(0).equals(record.getStatus()) || !Integer.valueOf(0).equals(record.getReviewStatus())) {
             throw exception(ErrorCodeConstants.PRESC_REVIEW_ALREADY);
         }
         // 2. 校验审核结果与意见
@@ -156,6 +168,14 @@ public class PrescRecordServiceImpl implements PrescRecordService {
         EmployeeDO employee = employeeService.getEmployeeByUserId(loginUserId);
         if (employee == null) {
             throw exception(ErrorCodeConstants.PRESC_REVIEW_AUDITOR_NOT_EMPLOYEE);
+        }
+        if (record.getWxMemberId() != null) {
+            employee = prescriptionStaffAccess.requirePharmacist(record.getStoreId());
+            var refs=JsonUtils.parseArray(record.getImages(),String.class);
+            if(refs==null||refs.stream().anyMatch(v->v==null||!v.matches("private:[0-9]+")))
+                throw cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException("历史处方材料未私有化，请顾客重新提交");
+            materials.requireOwned(refs.stream().map(v->Long.valueOf(v.substring(8))).toList(),record.getWxMemberId(),record.getStoreId());
+            if (reviewStatus == 1) validateCustomerApproval(record, reviewReqVO);
         }
         // 4. 通过时特管/超量复核校验
         if (reviewStatus == 1) {
@@ -175,7 +195,12 @@ public class PrescRecordServiceImpl implements PrescRecordService {
         update.setReviewOpinion(reviewReqVO.getReviewOpinion());
         update.setReviewSnapshot(reviewReqVO.getReviewSnapshot());
         update.setDblCheckBy(reviewReqVO.getDblCheckBy());
+        if (record.getWxMemberId() != null && reviewStatus == 1) {
+            update.setApprovedItems(JsonUtils.toJsonString(reviewReqVO.getApprovedItems()));
+            update.setApprovedUntil(reviewReqVO.getApprovedUntil());
+        }
         prescRecordMapper.updateById(update);
+        notifications.send(record.getWxMemberId(),record.getId(),reviewStatus == 1 ? "处方审核已通过，请查看核准明细" : "处方审核未通过，请查看药师意见");
         log.info("[reviewPrescRecord] 处方审核完成, id={}, prescNo={}, result={}, pharmacist={}",
                 record.getId(), record.getPrescNo(), reviewStatus, employee.getId());
     }
@@ -183,10 +208,11 @@ public class PrescRecordServiceImpl implements PrescRecordService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void invalidatePrescRecord(Long id) {
-        PhPrescRecordDO record = prescRecordMapper.selectById(id);
+        PhPrescRecordDO record = prescRecordMapper.lock(id);
         if (record == null) {
             throw exception(ErrorCodeConstants.PRESC_NOT_EXISTS);
         }
+        storeAccess.requireStore(record.getStoreId());
         if (!Integer.valueOf(0).equals(record.getStatus())) {
             throw exception(ErrorCodeConstants.PRESC_STATUS_INVALID);
         }
@@ -194,11 +220,13 @@ public class PrescRecordServiceImpl implements PrescRecordService {
         update.setId(id);
         update.setStatus(2); // 作废
         prescRecordMapper.updateById(update);
+        notifications.send(record.getWxMemberId(),record.getId(),"处方已作废，请查看记录");
         log.info("[invalidatePrescRecord] 处方作废, id={}, prescNo={}", id, record.getPrescNo());
     }
 
     @Override
     public PageResult<PrescRecordRespVO> getPrescRecordPage(PrescRecordPageReqVO pageReqVO) {
+        pageReqVO.setStoreId(storeAccess.scopeStoreId(pageReqVO.getStoreId()));
         PageResult<PhPrescRecordDO> pageResult = prescRecordMapper.selectPage(pageReqVO);
         List<PrescRecordRespVO> list = pageResult.getList().stream()
                 .map(this::toRespVO)
@@ -208,7 +236,10 @@ public class PrescRecordServiceImpl implements PrescRecordService {
 
     @Override
     public PrescRecordRespVO getPrescRecord(Long id) {
-        return toRespVO(prescRecordMapper.selectById(id));
+        var record = prescRecordMapper.selectById(id);
+        if (record == null) throw exception(ErrorCodeConstants.PRESC_NOT_EXISTS);
+        storeAccess.requireStore(record.getStoreId());
+        return toRespVO(record);
     }
 
     /**
@@ -220,6 +251,8 @@ public class PrescRecordServiceImpl implements PrescRecordService {
         }
         PrescRecordRespVO respVO = new PrescRecordRespVO();
         org.springframework.beans.BeanUtils.copyProperties(record, respVO);
+        respVO.setUses(uses.selectList(cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription.PrescriptionUseDO::getPrescId,record.getId()).stream()
+                .map(use->new cn.iocoder.yudao.module.pharmacy.controller.app.prescription.vo.AppPrescRecordRespVO.Use(use.getWxOrderId(),use.getStatus(),use.getReleaseReason(),use.getCreateTime())).toList());
         if (record.getStoreId() != null) {
             StoreDO store = storeService.getStore(record.getStoreId());
             respVO.setStoreName(store != null ? store.getStoreName() : null);
@@ -233,6 +266,27 @@ public class PrescRecordServiceImpl implements PrescRecordService {
             respVO.setDblCheckByName(dblChecker != null ? dblChecker.getEmpName() : null);
         }
         return respVO;
+    }
+
+    private void validateCustomerApproval(PhPrescRecordDO record, PrescRecordReviewReqVO req) {
+        if (req.getApprovedUntil() == null || !req.getApprovedUntil().isAfter(LocalDateTime.now())
+                || req.getApprovedItems() == null || req.getApprovedItems().isEmpty())
+            throw cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException("请明确核准明细及未来有效截止时间");
+        var requested = parseItems(record.getPrescribedItems()).stream().collect(java.util.stream.Collectors.toMap(PrescItemVO::getDrugId,PrescItemVO::getQty));
+        var seen = new java.util.HashSet<Long>();
+        for (var item : req.getApprovedItems()) {
+            var maximum = requested.get(item.getDrugId());
+            if (!seen.add(item.getDrugId()) || maximum == null || item.getQty() == null || item.getQty()<1 || item.getQty()>maximum
+                    || StrUtil.isBlank(item.getUsage()) || StrUtil.isBlank(item.getDosage())
+                    || item.getUsage().length()>128 || item.getDosage().length()>128)
+                throw cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException("核准药品不得新增、重复或超过申请数量，需填写用法用量");
+            var drug = drugService.getDrug(item.getDrugId());
+            if (drug == null || !Integer.valueOf(1).equals(drug.getStatus()) || !Integer.valueOf(1).equals(drug.getApproveStatus())
+                    || !Integer.valueOf(1).equals(drug.getSaleableOnline()) || Integer.valueOf(3).equals(drug.getDrugType()) || Integer.valueOf(1).equals(drug.getIsSpecial())
+                    || Integer.valueOf(1).equals(drug.getIsPseudoephedrine()))
+                throw cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException("核准商品不支持在线购买");
+            item.setDrugName(drug.getGenericName());item.setSpecification(drug.getSpecification());
+        }
     }
 
     /**
