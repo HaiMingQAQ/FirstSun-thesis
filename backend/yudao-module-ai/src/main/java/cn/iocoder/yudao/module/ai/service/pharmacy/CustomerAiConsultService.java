@@ -42,6 +42,9 @@ public class CustomerAiConsultService {
         try { if (request.getTopicId() == null) mapper.insert(row); else history.attach(row, request); }
         catch (DuplicateKeyException e) { return replay(mapper.find(member, request.getClientMessageId()), hash, request); }
         CustomerAiConsultRespVO response;
+        var verifiedProducts = List.<CustomerAiConsultRespVO.Product>of();
+        var partialAnswer = new StringBuilder();
+        java.util.function.Consumer<String> checkedSink = text -> { partialAnswer.append(text); sink.accept(text); };
         String phase = "intent";
         try {
             var context = request.getTopicId() != null ? history.context(request.getTopicId(), member)
@@ -49,26 +52,57 @@ public class CustomerAiConsultService {
             request.setContext(context);
             var decision = context.isEmpty() ? intent.resolve(request.getContent()) : intent.resolve(request.getContent(), context);
             if ("refuse".equals(decision.action())) {
-                sink.accept(NOTICE);
+                checkedSink.accept(NOTICE);
                 response = response(request, "SUCCESS", NOTICE, List.of(), false);
             } else if ("urgent".equals(decision.action())) {
                 String urgent = "这些描述可能需要及时就医。如果有突发剧烈疼痛、胸痛、呼吸困难或出血，请尽快前往急诊或联系当地急救，不要等待 AI 或模拟医生咨询。";
-                sink.accept(urgent);
+                checkedSink.accept(urgent);
                 response = response(request, "SUCCESS", urgent, List.of(), false);
             } else {
                 CustomerAiCatalogueService.Result result;
-                if ("advice".equals(decision.action())) result = catalogue.adviceCandidates(request.getStoreId(), decision.keyword());
+                if ("browseDrugs".equals(decision.action())) result = catalogue.browseCandidates(request.getStoreId(), decision.keyword());
+                else if ("advice".equals(decision.action())) {
+                    String symptoms = request.getContent() + "\n" + context.stream().filter(t -> "user".equals(t.role()))
+                            .map(CustomerAiConsultReqVO.Turn::content).collect(java.util.stream.Collectors.joining("\n"));
+                    String queryText = CustomerAiCatalogueService.symptomTerms(symptoms).isEmpty() ? decision.keyword() : symptoms;
+                    if (CustomerAiCatalogueService.symptomTerms(symptoms).isEmpty() && !CustomerAiCatalogueService.symptomTerms(queryText).isEmpty()) queryText = null;
+                    result = catalogue.adviceCandidates(request.getStoreId(), queryText);
+                }
                 else if ("chat".equals(decision.action())) result = new CustomerAiCatalogueService.Result(List.of(), false);
                 else result = catalogue.query(request.getStoreId(), decision.keyword(), decision.drugId());
+                verifiedProducts = result.products();
                 phase = "answer";
-                String answer = answers.answer(request, result.products(), sink);
-                if (result.truncated()) { String note = "\n匹配商品较多，请缩小查询范围。"; answer += note; sink.accept(note); }
+                String answer;
+                if ("browseDrugs".equals(decision.action())) {
+                    answer = result.products().isEmpty()
+                            ? "本店暂未查到与“" + decision.keyword() + "”匹配的可售非处方药。您可以换一个药品名称搜索，或联系门店药师查询。"
+                            : "为您找到以下与“" + decision.keyword() + "”相关的店内非处方药，点击商品卡可查看详情。这是商品浏览结果，选择用药前请核对适应症、禁忌和重复成分。";
+                    checkedSink.accept(answer);
+                } else {
+                    String reference = "advice".equals(decision.action()) && !result.products().isEmpty()
+                            ? "以下非处方药的说明与您提到的部分症状相关：" + result.products().stream().map(p -> p.name()).collect(java.util.stream.Collectors.joining("、"))
+                            + "。可作为用药资料参考，具体是否适合您还需核对个人情况。\n" : "";
+                    String stockNotice = !result.products().isEmpty() && result.products().stream().allMatch(p -> p.availableQty() == 0)
+                            ? "匹配说明的商品当前均无货，以下仅供查看用药资料，不能直接购买。\n" : "";
+                    if (!reference.isEmpty()) checkedSink.accept(reference);
+                    if (!stockNotice.isEmpty()) checkedSink.accept(stockNotice);
+                    answer = reference + stockNotice + answers.answer(request, result.products(), checkedSink);
+                }
+                if (result.truncated()) { String note = "\n匹配商品较多，请缩小查询范围。"; answer += note; checkedSink.accept(note); }
                 response = response(request, "SUCCESS", answer, result.products(), result.truncated());
             }
         } catch (Exception e) {
-            log.warn("Customer AI failed: phase={}, category={}", phase, e.getClass().getSimpleName());
+            String reason = "回答过长".equals(e.getMessage()) ? "ANSWER_TOO_LONG"
+                    : "模型未返回回答".equals(e.getMessage()) ? "EMPTY_ANSWER"
+                    : "模型回答未完成".equals(e.getMessage()) ? "INCOMPLETE_ANSWER"
+                    : e.getMessage() != null && e.getMessage().startsWith("Timeout on blocking read") ? "TIMEOUT" : "OTHER";
+            log.warn("Customer AI failed: phase={}, category={}, reason={}", phase, e.getClass().getSimpleName(), reason);
             // Provider errors may contain credentials/URLs. Never return or persist their raw text.
-            response = response(request, "FAILED", "AI 查询暂时不可用，请稍后重试，也可以直接搜索药品。", List.of(), false);
+            String failure = verifiedProducts.isEmpty()
+                    ? "AI 查询暂时不可用，请稍后重试，也可以直接搜索药品。"
+                    : "药品资料已查询，AI 回复未完成，请重试。下方商品仅供查看说明，缺货商品不可购买。";
+            response = response(request, "FAILED", partialAnswer.isEmpty() ? failure
+                    : partialAnswer + "\n\n本次 AI 回复未完成，请重试。", verifiedProducts, false);
         }
         if (mapper.finish(row.getId(), response.status(), write(response)) != 1)
             return response(request, "FAILED", "本次请求已失效，请重新发起咨询。", List.of(), false);

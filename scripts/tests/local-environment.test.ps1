@@ -3,7 +3,7 @@ $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $errors = $null; $tokens = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'scripts/local-environment.ps1'), [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
-foreach ($name in @('Migrate','Configure-LocalFiles','File-Sha256','Quote-Argument','Protect-Output')) {
+foreach ($name in @('Migrate','Configure-LocalFiles','File-Sha256','Quote-Argument','Protect-Output','Write-Step')) {
     $function = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
     Invoke-Expression $function.Extent.Text
 }
@@ -63,6 +63,15 @@ Assert (-not ($queries | Where-Object { $_ -match '^INSERT|^UPDATE' })) 'Unsafe 
 $config = @{ MYSQL_PASSWORD='secret-example-123'; PHARMACY_AI_API_KEY='private-example-456' }
 Assert ((Protect-Output 'secret-example-123 private-example-456') -eq '[REDACTED] [REDACTED]') 'Credential redaction failed'
 Assert ((Quote-Argument 'a b') -eq '"a b"') 'Argument quoting failed'
+
+$stepCount = 5
+$stepOutput = Write-Step 3 'Check service health' 6>&1 | Out-String
+Assert ($stepOutput.Contains('[3/5] Check service health')) 'Stage number or label missing'
+Assert ($stageLabel -eq 'Check service health') 'Failure summary cannot identify the active stage'
+$sourceBytes = [IO.File]::ReadAllBytes((Join-Path $root 'scripts/local-environment.ps1'))
+Assert ($sourceBytes[0] -eq 239 -and $sourceBytes[1] -eq 187 -and $sourceBytes[2] -eq 191) 'Chinese source must be readable by Windows PowerShell 5.1'
+Assert ($ast.Extent.Text.Contains('[Console]::IsOutputRedirected')) 'Animation can pollute redirected logs'
+Assert ($ast.Extent.Text.Contains('$p.WaitForExit(200)')) 'No animated progress cadence'
 
 Reset-Fixture
 $config['BACKEND_PORT'] = '28080'; $script:fileName = ''

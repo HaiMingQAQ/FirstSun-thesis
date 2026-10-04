@@ -48,29 +48,33 @@ export function streamConsult(url, body, headers, onEvent, signal) {
     error.code = code; return error;
   };
   return new Promise((resolve, reject) => {
-    let result, task, settled = false, streamed = false;
+    let result, task, timer, settled = false, streamed = false;
     const finish = (error) => {
       if (settled) return;
-      settled = true; signal?.removeEventListener('abort', abort);
+      settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
       if (error) reject(error); else resolve(result);
     };
     const decoder = createSseDecoder((event, data) => {
-      if (signal?.aborted) return;
+      if (settled || signal?.aborted) return;
       if (event === 'error') throw new Error('咨询暂不可用，请稍后重试');
       if (event === 'done') result = data;
       onEvent(event, data);
+      if (event === 'done') { finish(); task?.abort?.(); }
     });
     const abort = () => { task?.abort?.(); finish(new Error('已停止生成')); };
     if (signal?.aborted) { abort(); return; }
     signal?.addEventListener('abort', abort);
+    timer = setTimeout(() => { finish(new Error('回复等待超时，请重试')); task?.abort?.(); }, 90000);
     // #ifdef H5
+    const requestController = createStreamController();
+    task = { abort: () => requestController.abort() };
     (async () => {
       try {
-        const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
+        const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: requestController.signal });
         if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) { const body = await response.json().catch(() => ({})); throw requestError(body.code || response.status); }
         const reader = response.body.getReader();
         try {
-          while (true) { const { done, value } = await reader.read(); if (done) break; decoder.push(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)); }
+          while (!settled) { const { done, value } = await reader.read(); if (done) break; decoder.push(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)); }
           if (!decoder.finished) {
             let body; try { body = JSON.parse(decoder.pendingText); } catch { }
             if (body?.code) throw requestError(body.code);

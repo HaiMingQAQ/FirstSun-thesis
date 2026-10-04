@@ -61,7 +61,7 @@
           <view class="fs-muted">按需选购，遵循用药指导</view>
         </view>
         <button class="fs-text-btn" @tap="go('category')">
-          全部
+          查看全部
           <uni-icons type="right" size="14" color="#176b5b" />
         </button>
       </view>
@@ -99,7 +99,7 @@
   const { busy, act } = useAction();
   const load = () =>
     run(async () => {
-      list.value = (await api.products()).slice(0, 5);
+      list.value = (await api.products({ pageSize: 5 })).slice(0, 5);
       categories.value = api.categories;
       storeInfo.value = api.store;
     });

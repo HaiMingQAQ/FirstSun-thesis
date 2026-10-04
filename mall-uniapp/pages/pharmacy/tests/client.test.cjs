@@ -126,7 +126,8 @@ async function backend(config) {
     if (config.params.categoryId) list = list.filter((d) => d.categoryId === Number(config.params.categoryId));
     const kw = String(config.params.keyword || '').trim();
     if (kw) list = list.filter((d) => `${d.tradeName}${d.genericName}`.includes(kw));
-    return { code: 0, data: { total: list.length, list } };
+    const total = list.length, pageNo = config.params.pageNo || 1, pageSize = config.params.pageSize || 100;
+    return { code: 0, data: { total, list: list.slice((pageNo - 1) * pageSize, pageNo * pageSize) } };
   }
   if (url === '/pharmacy/drug/get') {
     const drug = state.drugs.find((d) => d.id === Number(config.params.id));
@@ -413,6 +414,12 @@ async function loadStubConfig() {
   assert.equal((await api.products({ category: 163003 })).length, 1, '处方分类只含洛赛克');
   assert.equal((await api.products({ keyword: '感康' })).length, 1, '关键词搜索');
   const home = await api.products();
+  const firstPage = await api.productPage({ pageNo: 1, pageSize: 2 });
+  const secondPage = await api.productPage({ pageNo: 2, pageSize: 2 });
+  const lastPage = await api.productPage({ pageNo: 3, pageSize: 2 });
+  assert.equal(firstPage.total, home.length, '分页保留后端 total');
+  assert.deepEqual([...firstPage.list, ...secondPage.list, ...lastPage.list].map(p => p.id), home.map(p => p.id), '分页续载不漏项');
+  assert.equal((await api.products({ pageSize: 2 })).length, 2, '首页可限制精选请求数量');
   assert.ok(home.every((p) => p.stock >= 0 && Number.isInteger(p.price)), '价格分为整数');
   assert.deepEqual(
     home.map((product) => product.image),
