@@ -357,13 +357,16 @@ const api = {
   async loadCategories() {
     return categories();
   },
-  async products({ keyword = '', category = 'all' } = {}) {
+  async products(options = {}) {
+    return (await api.productPage(options)).list;
+  },
+  async productPage({ keyword = '', category = 'all', pageNo = 1, pageSize = 100 } = {}) {
     const s = await ensureStore();
     await categories();
     const page = await via(
       DrugApi.getDrugPage({
-        pageNo: 1,
-        pageSize: 100,
+        pageNo,
+        pageSize,
         categoryId: category === 'all' ? undefined : category,
         keyword: keyword.trim() || undefined,
       }),
@@ -371,7 +374,9 @@ const api = {
     const list = (page?.list || []).map((raw) =>
       normalizeDrug(raw, { image: raw.imageUrl || '', approval: raw.approvalNo || '' }),
     );
-    return enrichWithStock(list, s.id);
+    const total = Number(page?.total);
+    if (!Number.isSafeInteger(total) || total < 0) throw new Error('药品总数返回异常，请重试');
+    return { list: await enrichWithStock(list, s.id), total };
   },
   async product(id) {
     const s = await ensureStore();

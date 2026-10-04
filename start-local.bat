@@ -1,5 +1,7 @@
 @echo off
 setlocal
+chcp 65001 >nul
+title FirstSun Thesis - Local Startup
 cd /d "%~dp0"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\local-environment.ps1" -Action start
 set "RESULT=%ERRORLEVEL%"

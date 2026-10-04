@@ -17,7 +17,7 @@ test('rejects truncated response, invalid UTF-8 and malformed JSON without expos
   assert.throws(()=>make().push(Uint8Array.of(0xff).buffer),/编码/);
   assert.throws(()=>make().push('data: private-invalid-json\n\n'),error=>!error.message.includes('private-invalid-json'));
 });
-function moduleFor(platform) {
+function moduleFor(platform, timers = { setTimeout, clearTimeout }) {
   const lines=source.split('\n'), output=[];let include=true;
   for(const line of lines){
     if(line.includes('// #ifdef H5')){include=platform==='H5';continue;}
@@ -25,7 +25,7 @@ function moduleFor(platform) {
     if(line.includes('// #endif')){include=true;continue;}
     if(include)output.push(line);
   }
-  return new Function(output.join('\n').replaceAll('export function','function')+';return {streamConsult,createStreamController};')();
+  return new Function('setTimeout', 'clearTimeout', output.join('\n').replaceAll('export function','function')+';return {streamConsult,createStreamController};')(timers.setTimeout, timers.clearTimeout);
 }
 test('WeChat transport sends auth, receives incremental chunks and avoids parsing duplicate final body', async () => {
   const events=[];const {streamConsult}=moduleFor('MP');let handler,aborted=false;
@@ -39,7 +39,7 @@ test('WeChat transport sends auth, receives incremental chunks and avoids parsin
     return {onChunkReceived(fn){handler=fn;},abort(){aborted=true;}};
   }};
   const result=await streamConsult('/test',{content:'问药'},{Authorization:'Bearer test'},(event)=>events.push(event));
-  assert.equal(result.status,'SUCCESS');assert.deepEqual(events,['delta','done']);assert.equal(aborted,false);
+  assert.equal(result.status,'SUCCESS');assert.deepEqual(events,['delta','done']);assert.equal(aborted,true);
 });
 test('WeChat cancellation aborts request and rejects without accepting late data', async () => {
   const {streamConsult,createStreamController}=moduleFor('MP');let aborted=false,handler;
@@ -59,6 +59,28 @@ test('H5 consumes a readable stream incrementally and rejects missing completion
   assert.equal((await streamConsult('/test',{}, {},event=>events.push(event))).status,'SUCCESS');assert.deepEqual(events,['delta','done']);
   global.fetch=async()=>new Response('event: delta\ndata: {"text":"中断"}\n\n',{headers:{'content-type':'text/event-stream'}});
   await assert.rejects(streamConsult('/test',{}, {},()=>{}),/中断/);
+});
+
+test('SSE done completes both transports without waiting for a delayed HTTP close', async () => {
+  let cancelled = false;
+  global.fetch = async () => new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(Uint8Array.from(Buffer.from('event: done\ndata: {"status":"FAILED","answer":"部分回复"}\n\n')));
+  }, cancel() { cancelled = true; } }), { headers: { 'content-type': 'text/event-stream' } });
+  assert.equal((await moduleFor('H5').streamConsult('/test', {}, {}, () => {})).status, 'FAILED');
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(cancelled, true);
+  let receive, aborted = false;
+  global.uni = { request() { return { onChunkReceived(fn) { receive = fn; }, abort() { aborted = true; } }; } };
+  const pending = moduleFor('MP').streamConsult('/test', {}, {}, () => {});
+  receive({ data: Uint8Array.from(Buffer.from('event: done\ndata: {"status":"SUCCESS"}\n\n')).buffer });
+  assert.equal((await pending).status, 'SUCCESS'); assert.equal(aborted, true);
+});
+
+test('H5 hanging stream times out and aborts the network request', async () => {
+  let expire, aborted = false, cleared = false;
+  global.fetch = (_, options) => new Promise((_, reject) => options.signal.addEventListener('abort', () => { aborted = true; reject(new Error('private transport error')); }));
+  const timers = { setTimeout(fn, delay) { assert.equal(delay, 90000); expire = fn; return 1; }, clearTimeout(id) { cleared = id === 1; } };
+  const pending = moduleFor('H5', timers).streamConsult('/test', {}, {}, () => {});
+  expire(); await assert.rejects(pending, /等待超时/); assert.equal(aborted, true); assert.equal(cleared, true);
 });
 
 test('expired login and forbidden access retain safe status codes on H5 and WeChat', async () => {

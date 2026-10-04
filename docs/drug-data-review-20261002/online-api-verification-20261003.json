@@ -1,0 +1,22 @@
+{
+  "tenant": 163,
+  "api_total": 45,
+  "batch_returned": 30,
+  "batch_rx": 10,
+  "detail_checks": [
+    {
+      "id": 163121,
+      "code": 0,
+      "isRx": 0,
+      "price": 29.9
+    },
+    {
+      "id": 163125,
+      "code": 0,
+      "isRx": 1,
+      "price": 12.9
+    }
+  ],
+  "batch_inventory_records": 0,
+  "non_online_fields_unchanged": true
+}

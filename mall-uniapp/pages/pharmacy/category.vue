@@ -40,25 +40,24 @@
         </button>
       </view>
       <view class="category-filters">
-        <button :class="{ active: inStock }" @tap="inStock = !inStock"><uni-icons :type="inStock ? 'checkbox-filled' : 'circle'" color="#176b5b" size="18" />仅看有货</button>
-        <button :class="{ active: otcOnly }" @tap="otcOnly = !otcOnly"><uni-icons :type="otcOnly ? 'checkbox-filled' : 'circle'" color="#176b5b" size="18" />非处方商品</button>
+        <button :class="{ active: inStock }" @tap="toggleFilter('stock')"><uni-icons :type="inStock ? 'checkbox-filled' : 'circle'" color="#176b5b" size="18" />仅看有货</button>
+        <button :class="{ active: otcOnly }" @tap="toggleFilter('otc')"><uni-icons :type="otcOnly ? 'checkbox-filled' : 'circle'" color="#176b5b" size="18" />非处方商品</button>
       </view>
       <view class="category-results">
         <view class="fs-between result-title">
           <text class="fs-small">{{ keyword ? '搜索结果' : categoryName }}</text>
-          <text class="fs-muted">{{ visibleList.length }} 件</text>
+          <text class="fs-muted">{{ inStock || otcOnly ? '已加载匹配 ' + visibleList.length + ' 件' : '已加载 ' + list.length + ' / ' + total + ' 件' }}</text>
         </view>
         <s-pharmacy-state
-          v-if="loading || error || !visibleList.length"
+          v-if="!visibleList.length && (loading || error || !hasMore)"
           :loading="loading"
           :error="error"
           title="没有找到相关药品"
           description="试试通用名，或切换其他分类"
-          action="查看全部"
+          :action="error ? '重试' : '查看全部'"
           @retry="retry"
         />
         <s-pharmacy-product
-          v-else
           v-for="product in visibleList"
           :key="product.id"
           :product="product"
@@ -66,16 +65,18 @@
           :busy="busy"
           @add="add"
         />
-        <view v-if="list.length && !loading && !error" class="fs-footer">已显示全部药品</view>
+        <view v-if="visibleList.length && error" class="fs-footer"><text>{{ error }}</text><button class="fs-text-btn" @tap="loadMore">重试加载</button></view>
+        <button v-if="hasMore && !error" class="fs-outline fs-gap" :disabled="loading" @tap="loadMore">{{ loading ? '加载中…' : '继续加载' }}</button>
+        <view v-if="visibleList.length && !hasMore && !loading && !error" class="fs-footer">{{ inStock || otcOnly ? '已显示全部符合筛选条件的药品' : '已显示全部药品' }}</view>
       </view>
     </view>
   </s-pharmacy-page>
 </template>
 <script setup>
   import { ref, computed } from 'vue';
-  import { onLoad, onShow } from '@dcloudio/uni-app';
+  import { onLoad, onShow, onReachBottom, onUnload } from '@dcloudio/uni-app';
   import api from '@/sheep/api/pharmacy/client';
-  import { toast, requireLogin, useRequest, useAction } from './usePharmacy';
+  import { toast, requireLogin, useAction } from './usePharmacy';
   const keyword = ref(''),
     category = ref('all'),
     list = ref([]),
@@ -83,33 +84,60 @@
   const inStock = ref(false), otcOnly = ref(false);
   const visibleList = computed(() => list.value.filter(p => (!inStock.value || p.active && p.stock > 0) && (!otcOnly.value || !p.rx)));
   const categories = ref(api.categories);
-  const { loading, error, run } = useRequest();
+  const loading = ref(false), error = ref(''), total = ref(0), hasMore = ref(false);
+  const pageSize = 20;
+  let pageNo = 0, generation = 0, query = { keyword: '', category: 'all' };
   const { busy, act } = useAction();
   const categoryName = computed(
     () => categories.value.find((c) => String(c.id) === String(category.value))?.name || '全部药品',
   );
-  const load = () =>
-    run(async () => {
-      list.value = await api.products({ keyword: keyword.value, category: category.value });
-      categories.value = api.categories;
-    });
+  async function load(reset = true) {
+    if (!reset && (loading.value || !hasMore.value && pageNo > 0)) return;
+    if (reset) {
+      generation++; pageNo = 0; list.value = []; total.value = 0; hasMore.value = false;
+      query = { keyword: keyword.value.trim(), category: category.value };
+    }
+    const g = generation, filters = { ...query }, previousVisible = visibleList.value.length;
+    loading.value = true; error.value = '';
+    try {
+      do {
+        const nextPage = pageNo + 1;
+        const page = await api.productPage({ ...filters, pageNo: nextPage, pageSize });
+        if (g !== generation) return;
+        const more = nextPage * pageSize < page.total;
+        if (!page.list.length && more) throw new Error('药品列表发生变化，请重新搜索');
+        const ids = new Set(list.value.map(p => String(p.id)));
+        for (const product of page.list) {
+          if (!ids.has(String(product.id))) { list.value.push(product); ids.add(String(product.id)); }
+        }
+        pageNo = nextPage; total.value = page.total; hasMore.value = more;
+        categories.value = api.categories;
+        // Local stock/OTC filters can hide a whole page; inspect subsequent pages before declaring empty.
+      } while (hasMore.value && visibleList.value.length === previousVisible);
+    } catch (e) { if (g === generation) error.value = e.message || '药品加载失败，请重试'; }
+    finally { if (g === generation) loading.value = false; }
+  }
+  const loadMore = () => load(false);
+  function toggleFilter(type) {
+    if (type === 'stock') inStock.value = !inStock.value; else otcOnly.value = !otcOnly.value;
+    return load();
+  }
   function search() {
-    if (loading.value) return;
     api.remember(keyword.value);
     history.value = api.history();
     category.value = 'all';
-    load();
+    return load();
   }
   function select(id) {
-    if (loading.value) return;
     category.value = id;
-    load();
+    return load();
   }
   function clearHistory() {
     api.clearHistory();
     history.value = [];
   }
   function retry() {
+    if (error.value) return loadMore();
     if (!error.value) {
       inStock.value = false;
       otcOnly.value = false;
@@ -129,7 +157,9 @@
   onLoad((q) => {
     category.value = q.category || 'all';
   });
-  onShow(load);
+  onShow(() => load());
+  onReachBottom(() => { if (hasMore.value && !error.value) loadMore(); });
+  onUnload(() => { generation++; });
 </script>
 <style scoped>
   .history { display: flex; gap: 12px; align-items: center; font-size: 12px; margin-top: 6px; }

@@ -1,4 +1,4 @@
-param([ValidateSet('start','rebuild','stop')][string]$Action = 'start')
+﻿param([ValidateSet('start','rebuild','stop')][string]$Action = 'start')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $runtime = Join-Path $repo '.local'
@@ -9,8 +9,19 @@ $dockerContext = 'desktop-linux'
 $config = @{}
 $lock = $null
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding = $utf8
+$elapsed = [Diagnostics.Stopwatch]::StartNew()
+$stepCount = if ($Action -eq 'stop') { 2 } elseif ($Action -eq 'rebuild') { 6 } else { 5 }
+$stageLabel = '准备环境'
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null
 $logFile = Join-Path $runtime ("{0}-{1}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $Action)
+
+function Write-Step([int]$number, [string]$label) {
+    $script:stageLabel = $label
+    Write-Host ''
+    Write-Host ("  [{0}/{1}] {2}" -f $number,$stepCount,$label) -ForegroundColor Cyan
+    Write-Host ('  ' + ('-' * 56)) -ForegroundColor DarkGray
+}
 
 function Read-Env([string]$path) {
     $values = @{}
@@ -66,10 +77,21 @@ function Docker([string[]]$arguments, [string]$inputText = '', [switch]$Quiet) {
         $p.StandardInput.BaseStream.Flush()
     }
     $p.StandardInput.Close()
-    # Keep progress visible during long image builds, without logging credentials.
-    while (-not $p.WaitForExit(1000)) {
-        if (((Get-Date).Second % 30) -eq 0) { Write-Host 'Docker operation in progress...' }
+    # Animate only interactive output; keep redirected logs readable and credential-free.
+    $animate = -not $Quiet -and -not [Console]::IsOutputRedirected
+    $frames = @('|','/','-','\'); $frame = 0; $lastNotice = 0
+    $waiting = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $p.WaitForExit(200)) {
+        $seconds = [int]$waiting.Elapsed.TotalSeconds
+        if ($animate) {
+            Write-Host (("`r  [{0}] 正在处理... 已等待 {1}s" -f $frames[$frame % 4],$seconds).PadRight(40)) -NoNewline -ForegroundColor Yellow
+            $frame++
+        } elseif (-not $Quiet -and $seconds -ge $lastNotice + 15) {
+            Write-Host ("  ... {0}，已等待 {1}s；详细输出将在完成后写入日志。" -f $stageLabel,$seconds) -ForegroundColor DarkGray
+            $lastNotice = $seconds
+        }
     }
+    if ($animate) { Write-Host ("`r" + (' ' * 50) + "`r") -NoNewline }
     $output = Protect-Output ($outTask.Result + $errTask.Result)
     [IO.File]::AppendAllText($logFile, $output + "`r`n", $utf8)
     $display = $output.Trim()
@@ -77,7 +99,7 @@ function Docker([string[]]$arguments, [string]$inputText = '', [switch]$Quiet) {
         $display = "Full output saved in $logFile`n" + (($display -split "`n" | Select-Object -Last 25) -join "`n")
     }
     if ($p.ExitCode -ne 0) { throw "Docker failed (exit $($p.ExitCode)):`n$display" }
-    if (-not $Quiet -and $display) { Write-Host $display }
+    if (-not $Quiet -and $display) { Write-Host $display -ForegroundColor DarkGray }
     return $outTask.Result.Trim()
 }
 function Compose([string[]]$arguments, [switch]$Quiet) {
@@ -203,9 +225,18 @@ function Configure-LocalFiles {
 }
 
 try {
+    $actionName = @{ start='启动本机环境'; rebuild='重新构建并启动'; stop='停止本机服务' }[$Action]
+    Write-Host ''
+    Write-Host ('  ' + ('=' * 56)) -ForegroundColor Cyan
+    Write-Host '  FirstSun  毕设本机控制台' -ForegroundColor White
+    Write-Host ("  任务：{0}    环境：firstsun-thesis-local" -f $actionName) -ForegroundColor Cyan
+    Write-Host ('  ' + ('=' * 56)) -ForegroundColor Cyan
+    Write-Host '  阶段编号表示执行顺序，不是构建百分比。' -ForegroundColor DarkGray
+    Write-Host '  首次构建可能较久；失败后窗口保留，数据不会被删除。' -ForegroundColor DarkGray
     try { $lock = [IO.File]::Open((Join-Path $runtime 'operation.lock'), 'OpenOrCreate', 'ReadWrite', 'None') }
     catch { throw 'Another local start/rebuild/stop operation is running. Wait for it to finish.' }
     Set-Location $repo
+    Write-Step 1 '检查 Docker 引擎与本机连接'
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker CLI missing. Install/start Docker Desktop with Linux containers.' }
     # Inspect local context metadata before contacting an engine; never inherit DOCKER_HOST.
     $endpoint = Docker @('context','inspect',$dockerContext,'--format','{{.Endpoints.docker.Host}}') -Quiet
@@ -213,30 +244,47 @@ try {
     $osType = Docker @('info','--format','{{.OSType}}') -Quiet
     if ($osType -ne 'linux') { throw 'Docker must use Linux containers. Start Docker Desktop and switch to Linux containers.' }
     if ($Action -eq 'stop') {
+        Write-Step 2 '停止四个服务，保留数据卷与日志'
         if (-not (Test-Path -LiteralPath $envFile)) { throw 'Local configuration missing: nothing was started by these scripts.' }
         $script:config = Read-Env $envFile
         [void](Compose @('stop','--timeout','30'))
-        Write-Host 'Stopped thesis services. Containers, MySQL/Redis data and logs are retained.'
+        Write-Host '  [完成] 服务已停止，MySQL / Redis 数据和日志已保留。' -ForegroundColor Green
     } else {
+        Write-Step 2 '检查端口与必要配置'
         Prepare-Config
+        Write-Step 3 '启动 MySQL / Redis 并等待健康检查'
         [void](Compose @('up','-d','--wait','--wait-timeout','180','mysql','redis'))
         # Stop applications before upgrading an existing database.
+        Write-Step 4 '停止应用，核对增量 SQL 与本机文件存储'
         [void](Compose @('stop','--timeout','30','backend','admin-ui'))
         Migrate
         Configure-LocalFiles
-        if ($Action -eq 'rebuild') { [void](Compose @('build','backend','admin-ui')) }
+        if ($Action -eq 'rebuild') {
+            Write-Step 5 '构建后端与管理后台镜像（可能需要数分钟）'
+            [void](Compose @('build','backend','admin-ui'))
+        }
+        Write-Step $stepCount '启动后端 / 管理后台并等待健康检查'
         [void](Compose @('up','-d','--wait','--wait-timeout','300','backend','admin-ui'))
-        Write-Host "Admin: http://127.0.0.1:$($config['ADMIN_PORT'])"
-        Write-Host "Backend / miniapp development base: http://127.0.0.1:$($config['BACKEND_PORT'])"
-        Write-Host 'Mock payment: OFF. This is an independent local environment, not remote deployment.'
+        Write-Host ''
+        Write-Host '  [完成] 四个服务已启动并通过健康检查。' -ForegroundColor Green
+        Write-Host "  管理后台： http://127.0.0.1:$($config['ADMIN_PORT'])" -ForegroundColor White
+        Write-Host "  小程序后端：http://127.0.0.1:$($config['BACKEND_PORT'])" -ForegroundColor White
+        Write-Host '  模拟支付：关闭    小程序编译：需另行运行' -ForegroundColor Yellow
     }
-    Write-Host "Operation log: $logFile"
+    Write-Host ('  ' + ('=' * 56)) -ForegroundColor Green
+    Write-Host ("  操作成功 | 总用时 {0:mm\:ss}" -f $elapsed.Elapsed) -ForegroundColor Green
+    Write-Host "  日志：$logFile" -ForegroundColor Cyan
+    Write-Host ('  ' + ('=' * 56)) -ForegroundColor Green
     exit 0
 } catch {
     $message = Protect-Output $_.Exception.Message
     [IO.File]::AppendAllText($logFile, "FAILED: $message`r`n", $utf8)
-    Write-Host "FAILED: $message" -ForegroundColor Red
-    Write-Host "Log: $logFile"
+    Write-Host ''
+    Write-Host ('  ' + ('=' * 56)) -ForegroundColor Red
+    Write-Host "  [失败] $stageLabel" -ForegroundColor Red
+    Write-Host "  原因：$message" -ForegroundColor Red
+    Write-Host "  日志：$logFile" -ForegroundColor Cyan
+    Write-Host ('  ' + ('=' * 56)) -ForegroundColor Red
     Write-Host 'If health checks failed: verify saved DB credentials/ports, then inspect the failing service logs; do not remove its data volume.'
     Write-Host 'For service logs: docker --context desktop-linux compose --env-file deploy/.env.thesis.local -f deploy/docker-compose.local.yml logs --tail 100 SERVICE'
     exit 1

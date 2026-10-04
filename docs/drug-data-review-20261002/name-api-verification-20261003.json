@@ -1,0 +1,20 @@
+{
+  "fixed": 24,
+  "genuine_trade_names_preserved": 6,
+  "api_total": 45,
+  "samples": [
+    {
+      "code": "TH26A030",
+      "display_name": "益胆片"
+    },
+    {
+      "code": "TH26A029",
+      "display_name": "精氨酸布洛芬颗粒"
+    },
+    {
+      "code": "TH26A028",
+      "display_name": "硫酸氨基葡萄糖胶囊"
+    }
+  ],
+  "other_fields_unchanged": true
+}

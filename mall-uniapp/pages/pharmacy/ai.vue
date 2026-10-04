@@ -4,18 +4,23 @@
     <view v-if="loggedIn" class="ai-toolbar">
       <text>{{ aiSession.topicId ? '当前话题' : '新话题' }}</text>
       <button class="fs-text-btn" :disabled="historyBusy" @tap="newTopic">新话题</button>
-      <button class="fs-text-btn" :disabled="busy || historyBusy" @tap="showHistory">历史记录</button>
+      <button class="fs-text-btn" :disabled="historyBusy" @tap="showHistory">历史记录</button>
     </view>
-    <view v-if="historyOpen" class="fs-section history-panel">
+    <view v-if="historyOpen" class="history-overlay">
+      <view class="history-backdrop" @tap="historyOpen = false" />
+      <view class="fs-section history-panel" role="dialog" aria-label="我的询问记录">
       <view class="fs-between"><text class="fs-title">我的询问记录</text><button class="fs-text-btn" @tap="historyOpen = false">关闭</button></view>
       <view class="fs-muted">健康问答保存在当前会员账户，可删除；不会用于自动诊断。</view>
+      <scroll-view scroll-y class="history-scroll">
       <s-pharmacy-state v-if="historyBusy || historyError || !topics.length" :loading="historyBusy" :error="historyError" title="还没有询问记录" action="重新加载" @retry="showHistory" />
       <view v-for="topic in topics" :key="topic.id" class="history-row">
         <button class="history-title" :disabled="historyBusy" @tap="openTopic(topic)">{{ topic.title }}<text>{{ formatDate(topic.createTime) }}</text></button>
-        <button class="fs-text-btn" :disabled="historyBusy" @tap="deleteTopic(topic)">删除</button>
+        <button class="fs-text-btn" :disabled="busy || historyBusy" @tap="deleteTopic(topic)">删除</button>
       </view>
       <button v-if="moreTopics" class="fs-outline fs-gap" :disabled="historyBusy" @tap="showHistory(true)">更多历史话题</button>
-      <button v-if="topics.length" class="fs-text-btn fs-gap" :disabled="historyBusy" @tap="clearHistory">清空历史记录</button>
+      <button v-if="topics.length" class="fs-text-btn fs-gap" :disabled="busy || historyBusy" @tap="clearHistory">清空历史记录</button>
+      </scroll-view>
+      </view>
     </view>
     <s-pharmacy-state v-if="!loggedIn" title="登录后使用 AI 助手" action="去登录" @retry="go('login')" />
     <view v-else class="chat-content" :style="keyboardHeight ? { paddingBottom: keyboardHeight + 'px' } : {}">
@@ -60,7 +65,7 @@
   const messages = aiSession.messages;
   const input = ref(''), busy = ref(false), loggedIn = ref(false), keyboardHeight = ref(0);
   const historyOpen = ref(false), historyBusy = ref(false), historyError = ref(''), topics = ref([]), moreTopics = ref(false), moreTurns = ref(false);
-  const displayAnswer = text => (text || '').replace(/\*\*([^*]+)\*\*/g, '$1');
+  const displayAnswer = text => (text || '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\n{3,}/g, '\n\n');
   const prompts = ['我感冒了，有什么用药建议？', '我有点肚子疼，应该怎么办？', '查询板蓝根是否有货'];
   let generation = 0, controller, active, typingTimer, scrollAt = 0;
   const newId = () => `consult_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -75,6 +80,7 @@
   }
   async function showHistory(append = false) {
     if (historyBusy.value) return;
+    uni.hideKeyboard(); keyboardHeight.value = 0;
     const owner = accountKey(), g = generation; historyOpen.value = true; historyBusy.value = true; historyError.value = '';
     try {
       if (!api.aiTopics) throw new Error('历史记录需要连接真实后端');
@@ -87,7 +93,7 @@
   function restoreTurn(turn) {
     const result = turn.response;
     return { id: turn.clientMessageId, recordId: turn.id, content: turn.content, context: [], answer: result?.answer || '', products: productCards(result?.products),
-      status: result?.status || 'PENDING', source: result?.source, queriedAt: formatDate(result?.queriedAt), loading: false };
+      status: result?.status || 'PENDING', error: result?.status === 'FAILED' ? '本次回复未完成，请重试' : '', source: result?.source, queriedAt: formatDate(result?.queriedAt), loading: false };
   }
   async function openTopic(topic, beforeId) {
     if (historyBusy.value) return;
@@ -149,15 +155,19 @@
         if (!current()) return;
         if (event === 'delta') { queue.push(...Array.from(data.text || '')); if (!typingTimer) type(); }
       }, signal);
-      while (queue.length && current() && !signal.aborted) await new Promise(resolve => setTimeout(resolve, 20));
       if (!current() || signal.aborted) return;
-      message.status = result.status; message.answer = result.answer;
+      if (result.status === 'FAILED') { clearTimeout(typingTimer); typingTimer = null; message.answer += queue.splice(0).join(''); }
+      else while (queue.length && current() && !signal.aborted) await new Promise(resolve => setTimeout(resolve, 20));
+      if (!current() || signal.aborted) return;
+      message.status = result.status;
+      if (result.status !== 'FAILED' || !message.answer || result.answer?.startsWith(message.answer)) message.answer = result.answer || message.answer;
       message.error = result.status === 'FAILED' ? '本次回复未完成，请重试' : '';
       message.source = result.source; message.queriedAt = formatDate(result.queriedAt);
       message.products = productCards(result.products);
     } catch (error) {
       if (error.code === 401 && g === generation && (!api.session() || (owner === accountKey() && token === uni.getStorageSync('token')))) { stop(); messages.splice(0); loggedIn.value = false; return; }
       if (!current()) return;
+      message.answer += queue.splice(0).join('');
       message.status = 'NETWORK_ERROR'; message.error = error?.message || '回复中断，请重试';
     } finally {
       if (current()) { clearTimeout(typingTimer); typingTimer = null; message.loading = false; busy.value = false; }
@@ -178,13 +188,18 @@
   onHide(stop); onUnload(stop);
 </script>
 <style scoped>
-  .ai-intro { padding: 12px 16px; font-size: 12px; color: #62756c; background: #eef3f0; }
-  .ai-toolbar { position: sticky; top: var(--window-top, 0px); z-index: 20; padding: 4px 16px; display: flex; align-items: center; background: #fff; border-bottom: 1px solid #e2e9e4; }
+  .ai-intro { margin-top: 48px; padding: 12px 16px; font-size: 12px; color: #62756c; background: #eef3f0; }
+  .ai-toolbar { position: fixed; top: var(--window-top, 0px); left: 0; right: 0; height: 48px; box-sizing: border-box; z-index: 20; padding: 4px 16px; display: flex; align-items: center; background: #fff; border-bottom: 1px solid #e2e9e4; }
   .ai-toolbar > text { flex: 1; color: #62756c; font-size: 12px; }
   .ai-toolbar .fs-text-btn { font-size: 13px; }
+  .history-overlay { position: fixed; top: 0; bottom: 0; left: 0; right: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .history-backdrop { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: rgba(18, 41, 33, 0.45); }
+  .history-panel { position: relative; width: 100%; max-width: 480px; box-sizing: border-box; border-radius: 16px; background: #fff; }
+  .history-scroll { height: 55vh; margin-top: 12px; }
   .history-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e2e9e4; }
   .history-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; text-align: left; background: #fff; }
   .history-title text { font-size: 11px; color: #62756c; }
+  .history-title { overflow-wrap: break-word; white-space: normal; }
   .thinking { display: flex; align-items: center; gap: 5px; color: #62756c; font-size: 13px; }
   .thinking-dot { width: 5px; height: 5px; background: #176b5b; border-radius: 50%; animation: thinking 1.2s infinite ease-in-out; }
   .thinking-dot:nth-child(3) { animation-delay: 0.2s; }

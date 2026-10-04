@@ -1,0 +1,141 @@
+{
+  "tenant": 163,
+  "results": [
+    {
+      "request": "page?pageNo=1&pageSize=5",
+      "code": 0,
+      "message": "",
+      "total": 15,
+      "returned_count": 5,
+      "rx_flags": [
+        {
+          "id": 163120,
+          "isRx": 0,
+          "drugType": 5
+        },
+        {
+          "id": 163118,
+          "isRx": 0,
+          "drugType": 6
+        },
+        {
+          "id": 163117,
+          "isRx": 0,
+          "drugType": 6
+        },
+        {
+          "id": 163116,
+          "isRx": 0,
+          "drugType": 5
+        },
+        {
+          "id": 163115,
+          "isRx": 0,
+          "drugType": 5
+        }
+      ]
+    },
+    {
+      "request": "page?pageNo=1&pageSize=100",
+      "code": 0,
+      "message": "",
+      "total": 15,
+      "returned_count": 15,
+      "rx_flags": [
+        {
+          "id": 163120,
+          "isRx": 0,
+          "drugType": 5
+        },
+        {
+          "id": 163118,
+          "isRx": 0,
+          "drugType": 6
+        },
+        {
+          "id": 163117,
+          "isRx": 0,
+          "drugType": 6
+        },
+        {
+          "id": 163116,
+          "isRx": 0,
+          "drugType": 5
+        },
+        {
+          "id": 163115,
+          "isRx": 0,
+          "drugType": 5
+        },
+        {
+          "id": 163114,
+          "isRx": 0,
+          "drugType": 1
+        },
+        {
+          "id": 163113,
+          "isRx": 0,
+          "drugType": 2
+        },
+        {
+          "id": 163112,
+          "isRx": 0,
+          "drugType": 1
+        },
+        {
+          "id": 163108,
+          "isRx": 0,
+          "drugType": 1
+        },
+        {
+          "id": 163107,
+          "isRx": 0,
+          "drugType": 2
+        },
+        {
+          "id": 163106,
+          "isRx": 0,
+          "drugType": 1
+        },
+        {
+          "id": 163105,
+          "isRx": 0,
+          "drugType": 6
+        },
+        {
+          "id": 163104,
+          "isRx": 0,
+          "drugType": 5
+        },
+        {
+          "id": 163102,
+          "isRx": 0,
+          "drugType": 2
+        },
+        {
+          "id": 163101,
+          "isRx": 0,
+          "drugType": 1
+        }
+      ]
+    },
+    {
+      "request": "page?pageNo=1&pageSize=100&keyword=%E4%B8%89%E4%B9%9D%E8%83%83%E6%B3%B0",
+      "code": 0,
+      "message": "",
+      "total": 0,
+      "returned_count": 0,
+      "rx_flags": []
+    },
+    {
+      "request": "get?id=163121",
+      "code": 1030004010,
+      "message": "药品不可销售：已停用或未审核通过"
+    },
+    {
+      "request": "get?id=163125",
+      "code": 1030004010,
+      "message": "药品不可销售：已停用或未审核通过"
+    }
+  ]
+}

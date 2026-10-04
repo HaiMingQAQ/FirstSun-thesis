@@ -1,7 +1,6 @@
 package cn.iocoder.yudao.module.ai.service.pharmacy;
 import cn.iocoder.yudao.module.ai.service.model.AiModelService;
 import cn.iocoder.yudao.module.ai.enums.model.AiModelTypeEnum;
-import cn.iocoder.yudao.module.ai.enums.model.AiPlatformEnum;
 import cn.iocoder.yudao.module.ai.util.AiUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +19,13 @@ import cn.iocoder.yudao.framework.ratelimiter.core.keyresolver.impl.ExpressionRa
 public class CustomerAiIntentService {
     private final AiModelService models;
     private final ObjectMapper json;
+    private final CustomerAiModelClient customerModels;
     public record Intent(String action, String keyword, Long drugId) { }
     private static final String POLICY = """
             你是顾客药店助手的只读意图解析器。常见症状、药品知识、追问可以正常处理。
             输出唯一 JSON 对象，字段仅 action、keyword、drugId，不输出医学回答或身份信息。
-            action 仅 searchDrugs/getDrugDetail/advice/chat/refuse。
+            action 仅 searchDrugs/browseDrugs/getDrugDetail/advice/chat/refuse。
+            browseDrugs 用于展示某类药品，如“给我看看有哪些感冒药”，keyword 取原话中的类别/症状词“感冒”，不是个人用药建议；不要先追问病情。
             searchDrugs 用于明确名称查药，keyword 必须是用户原话中的药品名称/拼音，不使用品牌替换通用名。
             getDrugDetail 只用于用户明确提供的正整数编号。
             advice 用于问药或症状，keyword 可取用户原话的症状词匹配店内药品说明；没有合适词用 null。
@@ -45,18 +46,22 @@ public class CustomerAiIntentService {
             return new Intent("refuse", null, null);
         if (userText.matches("(?s).*(剧烈腹痛|突然.*腹痛|呼吸困难|呕血|便血|胸痛|昏厥).*"))
             return new Intent("urgent", null, null);
+        var browse = java.util.regex.Pattern.compile("(?:看看有哪些|看看有什么|有哪些|展示|列出)([^，。？！?\\n]{1,30}?)药(?:品)?[？?。！!\\s]*$").matcher(content.trim());
+        if (browse.find()) return new Intent("browseDrugs", browse.group(1).trim(), null);
         var model = models.getRequiredDefaultModel(AiModelTypeEnum.CHAT.getType());
-        var client = models.getChatModel(model.getId());
-        var options = AiUtils.buildChatOptions(AiPlatformEnum.validatePlatform(model.getPlatform()), model.getModel(), 0.0, 256);
-        var prompt = new Prompt(List.of(new SystemMessage(POLICY), new UserMessage(contextText(context) + "\n本次问题：" + content)), options);
-        String output = Mono.fromCallable(() -> AiUtils.getChatResponseContent(client.call(prompt)))
-                .subscribeOn(Schedulers.boundedElastic()).timeout(Duration.ofSeconds(40)).block();
+        var session = customerModels.forModel(model, 0.0, 256);
+        var prompt = new Prompt(List.of(new SystemMessage(POLICY), new UserMessage(contextText(context) + "\n本次问题：" + content)), session.options());
+        String output = Mono.fromCallable(() -> AiUtils.getChatResponseContent(session.client().call(prompt)))
+                .subscribeOn(Schedulers.boundedElastic()).timeout(Duration.ofSeconds(20)).block();
         Intent result;
         try { result = parse(output); }
         catch (IllegalArgumentException e) {
+            if (!CustomerAiCatalogueService.symptomTerms(userText).isEmpty()) return new Intent("advice", null, null);
             if (!context.isEmpty()) return new Intent("chat", null, null);
             throw e;
         }
+        if (("chat".equals(result.action()) || "advice".equals(result.action())) && !CustomerAiCatalogueService.symptomTerms(userText).isEmpty())
+            return new Intent("advice", null, null);
         if (result.keyword() != null && !userText.toLowerCase(java.util.Locale.ROOT).contains(result.keyword().toLowerCase(java.util.Locale.ROOT))) {
             // A paraphrased symptom may still be discussed, but must not become a database query.
             if ("advice".equals(result.action())) return new Intent("chat", null, null);
@@ -79,9 +84,10 @@ public class CustomerAiIntentService {
             while (keys.hasNext()) if (!Set.of("action", "keyword", "drugId").contains(keys.next())) throw new IllegalArgumentException();
             String action = node.path("action").asText();
             if (action.equals("chat")) return new Intent(action, null, null);
-            if (action.equals("advice")) {
+            if (action.equals("advice") || action.equals("browseDrugs")) {
                 String keyword = node.path("keyword").isTextual() ? node.path("keyword").asText().trim() : null;
                 if (keyword != null && (keyword.isEmpty() || keyword.length() > 60)) throw new IllegalArgumentException();
+                if (action.equals("browseDrugs") && keyword == null) throw new IllegalArgumentException();
                 return new Intent(action, keyword, null);
             }
             if (action.equals("refuse")) return new Intent(action, null, null);

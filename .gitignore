@@ -53,3 +53,11 @@ Thumbs.db
 # Deployment image archives
 /deploy/*.tar
 /deploy/*.tar.gz
+
+# Python bytecode cache
+__pycache__/
+*.py[cod]
+
+# Local drug catalogue operation backups and test logs
+/docs/drug-data-review-20261002/batch-backups/
+/docs/drug-data-review-20261002/*.log

@@ -73,6 +73,10 @@ const api = {
           ),
     );
   },
+  async productPage({ pageNo = 1, pageSize = 100, ...filters } = {}) {
+    const list = await api.products(filters);
+    return { list: list.slice((pageNo - 1) * pageSize, pageNo * pageSize), total: list.length };
+  },
   async product(id) {
     return execute(() => {
       const d = catalogue(read()).find((p) => p.id === Number(id));
