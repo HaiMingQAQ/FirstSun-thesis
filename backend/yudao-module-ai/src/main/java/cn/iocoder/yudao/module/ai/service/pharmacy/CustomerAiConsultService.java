@@ -51,7 +51,15 @@ public class CustomerAiConsultService {
                     : request.getContext() == null ? List.<CustomerAiConsultReqVO.Turn>of() : request.getContext();
             request.setContext(context);
             var decision = context.isEmpty() ? intent.resolve(request.getContent()) : intent.resolve(request.getContent(), context);
-            if ("refuse".equals(decision.action())) {
+            if ("followupStock".equals(decision.action())) {
+                Long id = request.getTopicId() == null ? null : history.lastProductId(request.getTopicId(), member, request.getStoreId());
+                decision = new CustomerAiIntentService.Intent(id == null ? "clarifyProduct" : "getDrugDetail", null, id);
+            }
+            if ("clarifyProduct".equals(decision.action())) {
+                String clarification = "请明确要查询的药品名称或编号；上一条记录中没有唯一可确认的商品，我不会猜测库存。";
+                checkedSink.accept(clarification);
+                response = response(request, "SUCCESS", clarification, List.of(), false);
+            } else if ("refuse".equals(decision.action())) {
                 checkedSink.accept(NOTICE);
                 response = response(request, "SUCCESS", NOTICE, List.of(), false);
             } else if ("urgent".equals(decision.action())) {

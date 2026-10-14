@@ -12,11 +12,17 @@ export interface PharmacyAiCommand {
   expiresAt: string
   confirmationToken?: string
   errorMessage?: string
+  result?: { purchaseOrderId?: number; purchaseStatus?: string }
 }
 
 export const PharmacyAiApi = {
-  stream: (data: any, signal: AbortSignal, onMessage: (event: EventSourceMessage) => void) =>
-    fetchEventSource(`${config.base_url}/pharmacy/ai/chat/message/send-stream`, {
+  stream: async (
+    data: any,
+    signal: AbortSignal,
+    onMessage: (event: EventSourceMessage) => void
+  ) => {
+    let finished = false
+    await fetchEventSource(`${config.base_url}/pharmacy/ai/chat/message/send-stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -26,11 +32,22 @@ export const PharmacyAiApi = {
       body: JSON.stringify(data),
       signal,
       openWhenHidden: true,
-      onmessage: onMessage,
+      onopen: async (response) => {
+        if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream'))
+          throw new Error('AI 连接未能建立')
+      },
+      onmessage: (event) => {
+        if (event.event === 'done') finished = true
+        onMessage(event)
+      },
+      onclose: () => {
+        if (!finished && !signal.aborted) throw new Error('AI 事件流未完整结束')
+      },
       onerror: (error) => {
         throw error
       }
-    }),
+    })
+  },
   recentCommands: () => request.get({ url: '/pharmacy/ai/command/recent' }),
   confirm: (id: number, confirmationToken: string) =>
     request.post({

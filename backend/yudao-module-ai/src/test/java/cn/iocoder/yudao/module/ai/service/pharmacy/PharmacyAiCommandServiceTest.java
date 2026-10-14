@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.access.AccessDeniedException;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -27,15 +28,18 @@ class PharmacyAiCommandServiceTest {
     private final PharmacyAiContextService contexts = mock(PharmacyAiContextService.class);
     private final SecurityFrameworkService security = mock(SecurityFrameworkService.class);
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+    private final PharmacyAiPurchaseService purchases = mock(PharmacyAiPurchaseService.class);
     private PharmacyAiCommandService service;
 
     @BeforeEach
     void setUp() {
-        reset(mapper, drugs, contexts, security); // 隔离跨测试的 stub，避免权限 stub 泄漏
+        reset(mapper, drugs, contexts, security, purchases); // 隔离跨测试的 stub，避免权限 stub 泄漏
         service = new PharmacyAiCommandService(mapper, drugs, contexts, security, json,
-                Validation.buildDefaultValidatorFactory().getValidator());
+                Validation.buildDefaultValidatorFactory().getValidator(), purchases);
         when(contexts.requireContext(false)).thenReturn(new PharmacyAiContextService.Context(1L, 11L, 21L, 31L));
+        when(contexts.requireContext(true)).thenReturn(new PharmacyAiContextService.Context(1L, 11L, 21L, 31L));
         when(security.hasPermission(any())).thenReturn(true);
+        when(mapper.selectForUpdate(anyLong())).thenAnswer(i -> mapper.selectById((Long) i.getArgument(0)));
     }
 
     @Test
@@ -106,7 +110,7 @@ class PharmacyAiCommandServiceTest {
                 .writeValueAsString(json.readTree(stored.get().getRequestJson())));
 
         assertEquals("EXECUTED", service.confirm(101L, preview.confirmationToken()).get("status"));
-        assertThrows(IllegalStateException.class, () -> service.confirm(101L, preview.confirmationToken()));
+        assertEquals(1_040_012_000, assertThrows(ServiceException.class, () -> service.confirm(101L, preview.confirmationToken())).getCode());
         verify(drugs, times(1)).createDrug(any());
     }
 
@@ -252,7 +256,7 @@ class PharmacyAiCommandServiceTest {
         var preview = service.prepare("prepareUpdateDrug", args, 9L, "m-up-6");
 
         assertEquals("EXECUTED", service.confirm(202L, preview.confirmationToken()).get("status"));
-        assertThrows(IllegalStateException.class, () -> service.confirm(202L, preview.confirmationToken()));
+        assertEquals(1_040_012_000, assertThrows(ServiceException.class, () -> service.confirm(202L, preview.confirmationToken())).getCode());
         verify(drugs, times(1)).updateDrug(any());
     }
 
@@ -361,5 +365,73 @@ class PharmacyAiCommandServiceTest {
                 () -> service.confirm(205L, preview.confirmationToken()));
         assertTrue(ex.getMessage().contains("目标药品已发生变化"), ex.getMessage());
         verify(drugs, never()).updateDrug(any());
+    }
+
+    private AtomicReference<PharmacyAiCommandDO> stubPurchase() throws Exception {
+        AtomicReference<PharmacyAiCommandDO> stored = new AtomicReference<>();
+        var request = json.readTree("{\"storeId\":31,\"supplierId\":2,\"orderDate\":\"2026-10-12\",\"lines\":[{\"drugId\":1,\"orderQty\":5,\"unitPrice\":2}]}");
+        var snapshot = json.readTree("{\"storeId\":31,\"availableQty\":2,\"minStock\":10}");
+        when(purchases.prepare(any())).thenReturn(new PharmacyAiPurchaseService.Prepared(request, snapshot, snapshot));
+        when(purchases.snapshot(any())).thenReturn(snapshot);
+        when(purchases.createDraft(any())).thenReturn(801L);
+        when(mapper.insert(any(PharmacyAiCommandDO.class))).thenAnswer(i -> {
+            PharmacyAiCommandDO c = i.getArgument(0); c.setId(800L); stored.set(c); return 1;
+        });
+        when(mapper.selectById(800L)).thenAnswer(i -> stored.get());
+        when(mapper.claimPending(eq(800L), any())).thenReturn(1);
+        when(mapper.cancelPending(800L,11L)).thenAnswer(i -> { stored.get().setStatus("CANCELLED"); return 1; });
+        return stored;
+    }
+    @Test void purchasePreviewDoesNotWriteAndConfirmationCreatesOneDraft() throws Exception {
+        stubPurchase();
+        var preview = service.prepare("preparePurchaseDraft", json.readTree("{}"), 9L, "purchase-1");
+        verify(purchases, never()).createDraft(any());
+        var result = service.confirm(800L,preview.confirmationToken());
+        var order = inOrder(mapper, purchases);
+        order.verify(mapper).selectForUpdate(800L);
+        order.verify(purchases).snapshot(any());
+        order.verify(mapper).claimPending(eq(800L), any());
+        order.verify(purchases).createDraft(any());
+        assertEquals(801L,result.get("purchaseOrderId")); assertEquals("DRAFT",result.get("purchaseStatus"));
+        assertEquals(1_040_012_000,assertThrows(ServiceException.class,()->service.confirm(800L,preview.confirmationToken())).getCode());
+        verify(purchases,times(1)).createDraft(any()); verifyNoInteractions(drugs);
+    }
+    @Test void cancelledAndExpiredPurchaseReturnBusinessStateWithoutWriting() throws Exception {
+        var stored=stubPurchase(); var preview=service.prepare("preparePurchaseDraft",json.readTree("{}"),9L,"purchase-2");
+        service.cancel(800L);
+        assertTrue(assertThrows(ServiceException.class,()->service.confirm(800L,preview.confirmationToken())).getMessage().contains("CANCELLED"));
+        assertThrows(ServiceException.class,()->service.cancel(800L));
+        stored.get().setStatus("PENDING"); stored.get().setExpiresAt(java.time.LocalDateTime.now().minusSeconds(1));
+        assertTrue(assertThrows(ServiceException.class,()->service.confirm(800L,preview.confirmationToken())).getMessage().contains("EXPIRED"));
+        verify(purchases,never()).createDraft(any());
+    }
+    @Test void purchaseCannotBeConfirmedAfterStoreOrEmployeeChange() throws Exception {
+        stubPurchase(); var preview=service.prepare("preparePurchaseDraft",json.readTree("{}"),9L,"purchase-3");
+        when(contexts.requireContext(true)).thenReturn(new PharmacyAiContextService.Context(1L,11L,22L,31L));
+        assertThrows(AccessDeniedException.class,()->service.confirm(800L,preview.confirmationToken()));
+        when(contexts.requireContext(true)).thenReturn(new PharmacyAiContextService.Context(1L,11L,21L,32L));
+        assertThrows(AccessDeniedException.class,()->service.confirm(800L,preview.confirmationToken()));
+        assertThrows(AccessDeniedException.class,()->service.cancel(800L));
+        verify(purchases,never()).createDraft(any());
+    }
+    @Test void purchaseChangedStockAndForgedTokenOrSnapshotCannotWrite() throws Exception {
+        var stored=stubPurchase(); var preview=service.prepare("preparePurchaseDraft",json.readTree("{}"),9L,"purchase-4");
+        assertThrows(AccessDeniedException.class,()->service.confirm(800L,"invalid-token"));
+        when(purchases.snapshot(any())).thenReturn(json.readTree("{\"storeId\":31,\"availableQty\":3,\"minStock\":10}"));
+        assertEquals(1_040_012_001,assertThrows(ServiceException.class,()->service.confirm(800L,preview.confirmationToken())).getCode());
+        stored.get().setRequestJson("{\"storeId\":32}");
+        assertThrows(AccessDeniedException.class,()->service.confirm(800L,preview.confirmationToken()));
+        verify(purchases,never()).createDraft(any()); verify(mapper,never()).claimPending(anyLong(),any());
+    }
+    @Test void purchasePermissionRevokedOrOtherUserTenantCannotConfirm() throws Exception {
+        stubPurchase(); var preview=service.prepare("preparePurchaseDraft",json.readTree("{}"),9L,"purchase-5");
+        when(security.hasPermission(PharmacyAiPurchaseService.PERMISSION)).thenReturn(false);
+        assertThrows(AccessDeniedException.class,()->service.confirm(800L,preview.confirmationToken()));
+        when(security.hasPermission(PharmacyAiPurchaseService.PERMISSION)).thenReturn(true);
+        when(contexts.requireContext(false)).thenReturn(new PharmacyAiContextService.Context(1L,12L,21L,31L));
+        assertThrows(AccessDeniedException.class,()->service.confirm(800L,preview.confirmationToken()));
+        when(contexts.requireContext(false)).thenReturn(new PharmacyAiContextService.Context(2L,11L,21L,31L));
+        assertThrows(AccessDeniedException.class,()->service.confirm(800L,preview.confirmationToken()));
+        verify(purchases,never()).createDraft(any());
     }
 }

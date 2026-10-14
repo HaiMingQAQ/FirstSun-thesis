@@ -70,6 +70,27 @@ public class CustomerAiHistoryService {
         }
         return context;
     }
+    public Long lastProductId(Long topicId, Long member, Long storeId) {
+        var topic = require(topicId, member);
+        if (!Objects.equals(topic.getStoreId(), storeId)) throw invalidParamException("话题门店不一致");
+        var rows = consults.selectList(new LambdaQueryWrapperX<CustomerAiConsultDO>()
+                .eq(CustomerAiConsultDO::getTenantId, TenantContextHolder.getTenantId())
+                .eq(CustomerAiConsultDO::getMemberId, member).eq(CustomerAiConsultDO::getTopicId, topicId)
+                .eq(CustomerAiConsultDO::getStoreId, storeId).eq(CustomerAiConsultDO::getStatus, "SUCCESS")
+                .orderByDesc(CustomerAiConsultDO::getId).last("LIMIT 1"));
+        if (rows.isEmpty()) return null;
+        try {
+            var response = json.readTree(rows.get(0).getResultJson());
+            if (!"SUCCESS".equals(response.path("status").asText()) || response.path("truncated").asBoolean(true)) return null;
+            var products = response.path("products");
+            if (!products.isArray() || products.size() != 1) return null;
+            var product = products.get(0);
+            if (!product.path("id").isIntegralNumber() || !product.path("id").canConvertToLong()
+                    || product.path("id").asLong() <= 0 || !product.path("storeId").isIntegralNumber()
+                    || !product.path("storeId").canConvertToLong() || product.path("storeId").asLong() != storeId) return null;
+            return product.path("id").asLong();
+        } catch (Exception ignored) { return null; }
+    }
     @Transactional
     public void attach(CustomerAiConsultDO row, CustomerAiConsultReqVO request) {
         var topic = topics.lock(request.getTopicId(), TenantContextHolder.getTenantId(), row.getMemberId());

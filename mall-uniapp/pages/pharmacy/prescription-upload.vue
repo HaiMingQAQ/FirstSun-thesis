@@ -23,7 +23,7 @@
         <button class="fs-primary fs-gap" :disabled="busy || !form.patientName.trim() || !items.length || !files.length" :loading="busy" @tap="submit">{{ busy ? '提交中…' : '提交给药师审核' }}</button>
       </view>
       <view v-if="selected" class="fs-section">
-        <view class="fs-between"><text class="fs-title">{{ selected.prescNo }}</text><text class="fs-tag fs-tag-rx">{{ reviewLabel(selected) }}</text></view>
+        <view class="fs-between presc-header"><text class="fs-title presc-number">{{ selected.prescNo }}</text><text class="fs-tag fs-tag-rx">{{ reviewLabel(selected) }}</text></view>
         <view class="fs-muted fs-gap">患者：{{ selected.patientName }} · {{ formatDate(selected.createTime) }}</view>
         <view class="fs-gap">药师意见：{{ selected.reviewOpinion || '等待药师审核' }}</view>
         <view class="fs-row fs-gap material-actions"><button v-for="id in selected.materialIds" :key="id" class="fs-outline" :disabled="busy" @tap="preview(id)">查看私有材料</button></view>
@@ -34,7 +34,7 @@
         <button v-if="selected.reviewStatus === 2" class="fs-outline fs-gap" :disabled="busy" @tap="amend">修改后重新提交新申请</button>
       </view>
       <s-pharmacy-state v-if="!loading && !error && !records.length && !showForm" title="暂无处方记录" description="可提交真实材料交由药师审核" />
-      <view v-for="record in records" :key="record.id" class="fs-section" @tap="open(record.id)"><view class="fs-between"><text>{{ record.prescNo }}</text><text class="fs-tag">{{ reviewLabel(record) }}</text></view><view class="fs-muted">{{ formatDate(record.createTime) }}</view><button class="fs-text-btn">查看申请与核准明细</button></view>
+      <view v-for="record in records" :key="record.id" class="fs-section" @tap="open(record.id)"><view class="fs-between presc-header"><text class="presc-number">{{ record.prescNo }}</text><text class="fs-tag">{{ reviewLabel(record) }}</text></view><view class="fs-muted">{{ formatDate(record.createTime) }}</view><button class="fs-text-btn">查看申请与核准明细</button></view>
     </template>
   </s-pharmacy-page>
 </template>
@@ -49,9 +49,10 @@
   const { loading, error, run } = useRequest(), { busy, act } = useAction();
   let owner = '', initialDrug = null, initialId = null, requestId = '', lastSubmission = '';
   const reviewLabel = r => r.status === 2 ? '已作废' : ['待药师审核','审核通过','审核未通过'][r.reviewStatus] || '状态待确认';
-  const canBuy = computed(() => selected.value?.status === 0 && selected.value.reviewStatus === 1
-    && selected.value.approvedItems?.length && new Date(selected.value.approvedUntil).getTime() > Date.now()
-    && !(selected.value.uses || []).some(u => ['HELD','PAID'].includes(u.status)));
+  const canUse = record => record?.status === 0 && record.reviewStatus === 1
+    && record.approvedItems?.length && new Date(record.approvedUntil).getTime() > Date.now()
+    && !(record.uses || []).some(u => ['HELD','PAID'].includes(u.status));
+  const canBuy = computed(() => canUse(selected.value));
   const load = () => run(async () => { records.value = await api.prescriptions(); if (selected.value) selected.value = await api.prescription(selected.value.id); });
   const open = id => run(async () => { selected.value = await api.prescription(id); showForm.value = false; });
   const newForm = () => { showForm.value = true; selected.value = null; };
@@ -79,7 +80,17 @@
     items.value = (record.requestedItems || []).map(i => ({ drugId: i.drugId, qty: i.qty, name: i.drugName, specification: i.specification }));
     files.value = materials; requestId = ''; lastSubmission = ''; newForm();
   });
-  const checkout = () => act(async () => { await api.beginPrescriptionCheckout(selected.value.id); go('checkout'); });
+  const checkout = () => act(async () => {
+    const account = accountKey(), id = selected.value?.id;
+    if (!id) return;
+    const record = await api.prescription(id);
+    if (account !== accountKey()) throw new Error('登录账号已变化');
+    selected.value = record;
+    if (!canUse(record)) throw new Error('该处方暂不可结算，请查看审核状态、核准有效期与使用记录');
+    await api.beginPrescriptionCheckout(id);
+    if (account !== accountKey()) throw new Error('登录账号已变化');
+    go('checkout');
+  });
   onLoad(q => { initialDrug = Number(q.drugId) || null; initialId = Number(q.id) || null; });
   onShow(async () => {
     const account = accountKey(); loggedIn.value = !!api.session();
@@ -91,6 +102,9 @@
   });
 </script>
 <style scoped>
+  .presc-header { align-items: flex-start; gap: 8px; }
+  .presc-number { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .presc-header .fs-tag { flex-shrink: 0; white-space: nowrap; }
   .material-thumb { width: 64px; height: 64px; flex-shrink: 0; }
   .material-actions { flex-wrap: wrap; }
 </style>

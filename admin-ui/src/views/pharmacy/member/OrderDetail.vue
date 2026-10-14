@@ -6,7 +6,9 @@
     size="700px"
     :before-close="handleClose"
   >
-    <div v-loading="loading">
+    <el-alert v-if="error" :title="error" type="error" :closable="false" />
+    <el-skeleton v-if="loading" :rows="5" animated />
+    <div v-if="loaded">
       <!-- 订单基本信息 -->
       <el-divider content-position="left">订单信息</el-divider>
       <el-descriptions :column="2" border>
@@ -78,31 +80,56 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <!-- 订单明细（预留展示区，实际明细数据需后端接口支持） -->
+      <!-- 订单明细 -->
       <el-divider content-position="left">订单明细</el-divider>
       <el-empty description="暂无明细数据" v-if="!orderItems.length" />
       <el-table v-else :data="orderItems" size="small">
         <el-table-column label="商品名称" prop="drugName" />
+        <el-table-column label="规格" prop="specification" />
+        <el-table-column label="批号" prop="batchNo" />
         <el-table-column label="数量" align="center" prop="qty" width="80" />
         <el-table-column label="单价" align="center" prop="price" width="100">
           <template #default="scope">¥{{ formatMoney(scope.row.price) }}</template>
         </el-table-column>
-        <el-table-column label="小计" align="center" prop="subtotal" width="100">
-          <template #default="scope">¥{{ formatMoney(scope.row.subtotal) }}</template>
+        <el-table-column label="小计" align="center" prop="lineAmount" width="100">
+          <template #default="scope">¥{{ formatMoney(scope.row.lineAmount) }}</template>
         </el-table-column>
       </el-table>
     </div>
+    <template #footer>
+      <el-button
+        v-if="loaded && orderData.status === 1 && orderData.payStatus === 1"
+        v-hasPermi="['pharmacy:member:order:update']"
+        type="primary"
+        :loading="picking"
+        :disabled="loading || picking"
+        @click="handlePicking(false)"
+      >开始拣货</el-button>
+      <el-button
+        v-if="loaded && orderData.status === 2 && orderData.payStatus === 1"
+        v-hasPermi="['pharmacy:member:order:update']"
+        type="primary"
+        :loading="picking"
+        :disabled="loading || picking"
+        @click="handlePicking(true)"
+      >完成拣货</el-button>
+    </template>
   </el-drawer>
 </template>
 <script lang="ts" setup>
 import { DICT_TYPE } from '@/utils/dict'
 import { formatDate } from '@/utils/formatTime'
+import { checkPermi } from '@/utils/permission'
 import * as OrderApi from '@/api/pharmacy/member/order'
 
 defineOptions({ name: 'PharmacyMemberOrderDetail' })
 
 const drawerVisible = ref(false)
 const loading = ref(false)
+const loaded = ref(false)
+const picking = ref(false)
+const error = ref('')
+let sequence = 0
 
 const orderData = ref<OrderApi.MemberOrderVO>({
   id: undefined,
@@ -129,32 +156,74 @@ const orderData = ref<OrderApi.MemberOrderVO>({
   expireAt: new Date()
 })
 
-const orderItems = ref<any[]>([])
+const orderItems = ref<OrderApi.MemberOrderLineVO[]>([])
 
 /** 金额格式化 */
 const formatMoney = (val: number) => {
   return val ? val.toFixed(2) : '0.00'
 }
 
-/** 打开详情抽屉 */
-const open = async (id: number) => {
-  drawerVisible.value = true
+const load = async (id: number) => {
+  const requestId = ++sequence
   loading.value = true
+  loaded.value = false
+  orderItems.value = []
+  error.value = ''
   try {
-    const data = await OrderApi.getOrder(id)
-    orderData.value = { ...orderData.value, ...data }
-    // 订单明细暂为空，待后端接口支持后补充
-    orderItems.value = []
+    const [data, lines] = await Promise.all([OrderApi.getOrder(id), OrderApi.getOrderLineList(id)])
+    if (requestId !== sequence || !drawerVisible.value) return false
+    orderData.value = data
+    orderItems.value = lines
+    loaded.value = true
+    return true
+  } catch (failure: any) {
+    if (requestId === sequence) error.value = failure?.message || failure?.msg || '订单详情加载失败，请重新打开重试'
+    return false
   } finally {
-    loading.value = false
+    if (requestId === sequence) loading.value = false
   }
+}
+
+/** 打开详情抽屉 */
+const open = (id: number) => {
+  drawerVisible.value = true
+  return load(id)
 }
 defineExpose({ open })
 
 const emit = defineEmits(['success'])
 
+const handlePicking = async (finish: boolean) => {
+  const id = orderData.value.id, expected = finish ? 2 : 1, label = finish ? '完成拣货' : '开始拣货'
+  if (!id || !loaded.value || loading.value || picking.value || orderData.value.payStatus !== 1
+    || orderData.value.status !== expected || !checkPermi(['pharmacy:member:order:update'])) return
+  const requestId = sequence
+  picking.value = true
+  try {
+    await message.confirm(`确认${label}订单「${orderData.value.orderNo}」？`, label)
+    if (requestId !== sequence || !drawerVisible.value || !checkPermi(['pharmacy:member:order:update'])) return
+    if (finish) await OrderApi.finishPicking(id)
+    else await OrderApi.startPicking(id)
+    if (requestId !== sequence || !drawerVisible.value) return
+    emit('success')
+    const refreshId = sequence + 1, refreshed = await load(id)
+    if (refreshId !== sequence || !drawerVisible.value) return
+    if (refreshed) message.success(`${label}成功`)
+    else error.value = `${label}已完成，但订单详情刷新失败，请重新打开查看`
+  } catch (failure: any) {
+    if (requestId === sequence && failure !== 'cancel' && failure !== 'close') error.value = failure?.message || failure?.msg || `${label}失败，请重试`
+  } finally {
+    picking.value = false
+  }
+}
+
+const message = useMessage()
+
 /** 关闭前重置 */
 const handleClose = (done: () => void) => {
+  sequence++
+  loaded.value = false
+  loading.value = false
   orderItems.value = []
   done()
 }

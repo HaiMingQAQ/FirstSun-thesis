@@ -11,6 +11,11 @@ import java.util.List;
 
 @Mapper
 public interface PharmacyAiCommandMapper extends BaseMapperX<PharmacyAiCommandDO> {
+    default PharmacyAiCommandDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<PharmacyAiCommandDO>()
+                .eq(PharmacyAiCommandDO::getId, id).last("FOR UPDATE"));
+    }
+
     default List<PharmacyAiCommandDO> selectRecentByUser(Long userId) {
         return selectList(new LambdaQueryWrapperX<PharmacyAiCommandDO>()
                 .eq(PharmacyAiCommandDO::getUserId, userId)

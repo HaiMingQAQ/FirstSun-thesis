@@ -47,4 +47,34 @@ class CustomerAiHistoryServiceTest {
         assertThrows(RuntimeException.class, () -> history.delete(1L));
         verify(topics).lock(1L, 7L, 9L); verify(topics, never()).erase(anyLong(), anyLong(), anyLong()); verifyNoInteractions(consults);
     }
+    void ownedTopic() {
+        var topic = new CustomerAiTopicDO(); topic.setId(1L); topic.setMemberId(9L); topic.setTenantId(7L); topic.setStoreId(407L);
+        when(topics.selectById(1L)).thenReturn(topic);
+    }
+    @Test void referenceUsesOnlyTheSingleServerProductAndNotAnswerTextOrHistoricPrice() {
+        ownedTopic(); var row = new CustomerAiConsultDO();
+        row.setResultJson("{\"status\":\"SUCCESS\",\"truncated\":false,\"answer\":\"Invented drug 999 stock 999\",\"products\":[{\"id\":11,\"storeId\":407,\"price\":999,\"availableQty\":999}]}");
+        when(consults.selectList(any())).thenReturn(java.util.List.of(row));
+        assertEquals(11L, history.lastProductId(1L,9L,407L));
+    }
+    @Test void ambiguousEmptyTruncatedForeignOrMalformedProductsRequireClarification() {
+        ownedTopic(); var row = new CustomerAiConsultDO(); when(consults.selectList(any())).thenReturn(java.util.List.of(row));
+        for (String data : java.util.List.of(
+                "{\"status\":\"SUCCESS\",\"truncated\":false,\"products\":[]}",
+                "{\"status\":\"SUCCESS\",\"truncated\":false,\"products\":[{\"id\":11,\"storeId\":407},{\"id\":12,\"storeId\":407}]}",
+                "{\"status\":\"SUCCESS\",\"truncated\":true,\"products\":[{\"id\":11,\"storeId\":407}]}",
+                "{\"status\":\"SUCCESS\",\"truncated\":false,\"products\":[{\"id\":11,\"storeId\":408}]}",
+                "{\"status\":\"SUCCESS\",\"truncated\":false,\"products\":[{\"id\":1.5,\"storeId\":407}]}", "bad JSON")) {
+            row.setResultJson(data); assertNull(history.lastProductId(1L,9L,407L), data);
+        }
+        when(consults.selectList(any())).thenReturn(java.util.List.of());
+        assertNull(history.lastProductId(1L,9L,407L));
+    }
+    @Test void referenceRejectsOtherMemberTenantOrStoreBeforeReadingTurns() {
+        ownedTopic();
+        assertThrows(RuntimeException.class, () -> history.lastProductId(1L,10L,407L));
+        assertThrows(RuntimeException.class, () -> history.lastProductId(1L,9L,408L));
+        TenantContextHolder.setTenantId(8L);
+        assertThrows(RuntimeException.class, () -> history.lastProductId(1L,9L,407L)); verifyNoInteractions(consults);
+    }
 }

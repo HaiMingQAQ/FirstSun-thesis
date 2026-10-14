@@ -9,6 +9,12 @@ import cn.iocoder.yudao.framework.common.exception.ErrorCode;
  */
 public interface ErrorCodeConstants {
 
+    // ========== 药店确认命令 1-040-012-000 ==========
+    ErrorCode PHARMACY_COMMAND_STATE_INVALID = new ErrorCode(1_040_012_000,
+            "命令当前状态为 {}，不能再次确认或取消；请查看执行结果或重新生成预览");
+    ErrorCode PHARMACY_COMMAND_TARGET_CHANGED = new ErrorCode(1_040_012_001,
+            "预览后的库存、预警规则或采购业务资料已变化，请重新生成采购预览");
+
     // ========== API 密钥 1-040-000-000 ==========
     ErrorCode API_KEY_NOT_EXISTS = new ErrorCode(1_040_000_000, "API 密钥不存在");
     ErrorCode API_KEY_DISABLE = new ErrorCode(1_040_000_001, "API 密钥已禁用！");

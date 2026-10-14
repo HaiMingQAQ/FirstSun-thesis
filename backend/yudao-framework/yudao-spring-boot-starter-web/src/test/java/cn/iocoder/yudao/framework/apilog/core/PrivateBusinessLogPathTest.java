@@ -14,6 +14,12 @@ class PrivateBusinessLogPathTest {
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/prescription/material/get"));
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/member/consultation;foo=1/send"));
         assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/consultation/messages"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/ai/chat/message/send-stream"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/ai/purchase/preview"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/ai/command/1/confirm"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/ai;foo=1/purchase/preview"));
+        assertTrue(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/ai"));
+        assertFalse(ApiAccessLogSanitizer.isPrivateBusinessPath("/admin-api/pharmacy/aix/preview"));
         assertFalse(ApiAccessLogSanitizer.isPrivateBusinessPath("/app-api/pharmacy/drug/page"));
         assertFalse(ApiAccessLogSanitizer.isPrivateBusinessPath(null));
         assertTrue(ApiAccessLogSanitizer.isAuthenticationPath("/app-api/member/auth/login-or-register"));

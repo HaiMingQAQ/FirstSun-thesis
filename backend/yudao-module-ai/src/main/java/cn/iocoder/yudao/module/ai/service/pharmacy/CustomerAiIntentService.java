@@ -46,6 +46,11 @@ public class CustomerAiIntentService {
             return new Intent("refuse", null, null);
         if (userText.matches("(?s).*(剧烈腹痛|突然.*腹痛|呼吸困难|呕血|便血|胸痛|昏厥).*"))
             return new Intent("urgent", null, null);
+        // Resolve the reference separately from model output; only the server-owned topic can supply its ID.
+        if (content.trim().matches("^(?:请|帮我)?(?:继续)?(?:查询|查看|查一下|看看)?(?:同一(?:个)?药品|上一(?:个)?药品|上个商品|刚才(?:那个|的)?药品|这个药(?:品)?|这款药(?:品)?|该药品|它)(?:的)?(?:库存(?:数量)?|是否有货|有没有货|还有多少库存)(?:是多少|多少|吗|呢)?[？?。！!\\s]*$"))
+            return new Intent("followupStock", null, null);
+        if (content.trim().matches("^(?:查询|查看)?(?:(?:这些药品|这些药|它们|上述药品)(?:的)?)?库存(?:数量)?(?:是多少|多少|吗|呢)?[？?。！!\\s]*$"))
+            return new Intent("clarifyProduct", null, null);
         var browse = java.util.regex.Pattern.compile("(?:看看有哪些|看看有什么|有哪些|展示|列出)([^，。？！?\\n]{1,30}?)药(?:品)?[？?。！!\\s]*$").matcher(content.trim());
         if (browse.find()) return new Intent("browseDrugs", browse.group(1).trim(), null);
         var model = models.getRequiredDefaultModel(AiModelTypeEnum.CHAT.getType());

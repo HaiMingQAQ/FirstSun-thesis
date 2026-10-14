@@ -90,7 +90,8 @@ function resetFixture() {
    await navigate('detail?id=163103');
    assert.equal(await page.getByText('立即购买',{exact:true}).count(),0);
    assert.equal(await page.getByText('加入购物车',{exact:true}).count(),0);
-   assert.equal(await page.getByText('在线处方购药暂未开放',{exact:true}).getAttribute('disabled'),'true');
+   assert.equal(await page.getByText('提交处方申请',{exact:true}).count(),1);
+   assert.equal(await page.getByText('处方记录',{exact:true}).count(),1);
    await layout('rx-restricted',width);
    await page.screenshot({path:path.join(out,`rx-restricted-${width}.png`)});
    state.drugs[0].tradeName='超长药品名称与规格测试复方氨酚烷胺片仅用于布局验收'.repeat(3);

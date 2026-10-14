@@ -102,6 +102,7 @@ function createHarness({ login, socialResponse, profileResponse } = {}) {
     TEST_CODE: '123456',
     MAX_PRESCRIPTIONS: 3,
     DEFAULT_AREA_ID: 350203,
+    tenantId: 163,
     money: () => '',
     statusNames: {},
     normalizeDrug: (value) => value,

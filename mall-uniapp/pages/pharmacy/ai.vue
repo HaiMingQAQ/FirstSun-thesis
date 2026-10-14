@@ -192,7 +192,7 @@
   .ai-toolbar { position: fixed; top: var(--window-top, 0px); left: 0; right: 0; height: 48px; box-sizing: border-box; z-index: 20; padding: 4px 16px; display: flex; align-items: center; background: #fff; border-bottom: 1px solid #e2e9e4; }
   .ai-toolbar > text { flex: 1; color: #62756c; font-size: 12px; }
   .ai-toolbar .fs-text-btn { font-size: 13px; }
-  .history-overlay { position: fixed; top: 0; bottom: 0; left: 0; right: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .history-overlay { position: fixed; top: 0; bottom: 0; left: 0; right: 0; z-index: 900; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .history-backdrop { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: rgba(18, 41, 33, 0.45); }
   .history-panel { position: relative; width: 100%; max-width: 480px; box-sizing: border-box; border-radius: 16px; background: #fff; }
   .history-scroll { height: 55vh; margin-top: 12px; }

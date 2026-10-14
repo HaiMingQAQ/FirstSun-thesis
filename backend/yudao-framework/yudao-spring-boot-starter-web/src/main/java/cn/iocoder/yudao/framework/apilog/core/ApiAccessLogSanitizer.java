@@ -38,6 +38,8 @@ public final class ApiAccessLogSanitizer {
                 || "/app-api/pharmacy/ai/consult/stream".equals(uri) || "/app-api/pharmacy/ai/consult/stream/".equals(uri)
                 || (uri != null && (uri.startsWith("/app-api/member/prescription/")
                   || uri.startsWith("/admin-api/pharmacy/prescription/")
+                  || uri.startsWith("/admin-api/pharmacy/ai/")
+                  || uri.equals("/admin-api/pharmacy/ai")
                   || uri.startsWith("/app-api/member/consultation/")
                   || uri.startsWith("/admin-api/pharmacy/consultation/")));
     }

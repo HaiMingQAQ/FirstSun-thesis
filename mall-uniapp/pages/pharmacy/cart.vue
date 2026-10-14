@@ -3,6 +3,10 @@
     <view class="fs-pad fs-white">
       <view class="fs-title">{{ api.store.name }}</view>
       <view class="fs-muted">下单前为您核对价格与库存</view>
+      <view class="fs-between fs-gap">
+        <text class="fs-muted">处方药须先申请药师核准</text>
+        <button class="fs-text-btn" @tap="go('prescription-upload')">查看处方记录</button>
+      </view>
     </view>
     <s-pharmacy-state
       v-if="!loggedIn"
@@ -41,7 +45,7 @@
               <view v-if="invalid(row)" class="fs-danger fs-small">
                 {{
                   row.product.rx
-                    ? '在线处方购药暂未开放'
+                    ? '请先提交处方，药师核准后按核准明细结算'
                     : !row.product.active
                     ? '商品已失效，请删除'
                     : row.qty > row.product.stock
@@ -49,6 +53,14 @@
                     : '暂时缺货'
                 }}
               </view>
+              <button
+                v-if="row.product.rx"
+                class="fs-text-btn fs-gap"
+                :disabled="busy"
+                @tap="go('prescription-upload?drugId=' + row.drugId)"
+              >
+                提交处方申请
+              </button>
               <view class="fs-between cart-actions">
                 <button class="fs-text-btn fs-danger" :disabled="busy" @tap="remove(row)">
                   删除
@@ -64,7 +76,7 @@
           </view>
         </view>
       </view>
-      <view class="fs-footer">处方药须审核后购买，在线处方购药暂未开放</view>
+      <view class="fs-footer">处方药请先提交申请，药师审核通过后从处方详情按核准明细结算</view>
       <view class="fs-dock above-tabs">
         <button
           class="fs-check cart-select-all"

@@ -48,8 +48,17 @@ const out = path.resolve(__dirname, '../../../../.local/ai-history-layout-202610
         return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
       });
       assert(layout.left >= 0 && layout.right <= width && layout.top >= 0 && layout.bottom <= 844 && !layout.overflow, JSON.stringify(layout));
+      await page.locator('.history-row').first().getByText('删除', { exact: true }).click();
+      await page.locator('.uni-modal:visible').waitFor();
+      const confirmButton = page.locator('.uni-modal__btn_primary');
+      assert(await confirmButton.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        return !!document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('.uni-modal');
+      }), 'Delete confirmation must be above the history overlay');
+      await page.locator('.uni-modal__btn_default').click();
+      await page.locator('.uni-modal').waitFor({ state: 'hidden' });
       await page.screenshot({ path: path.join(out, `history-${width}.png`) });
-      await page.locator('.history-backdrop').click({ position: { x: 4, y: 4 } });
+      await page.locator('.history-backdrop').click({ position: { x: 4, y: 80 } });
       await page.locator('.history-overlay').waitFor({ state: 'hidden' });
     }
     failHistory = true;

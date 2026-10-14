@@ -7,6 +7,7 @@ import cn.iocoder.yudao.module.pharmacy.controller.admin.inventory.vo.InventoryR
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.DrugDO;
 import cn.iocoder.yudao.module.pharmacy.service.base.DrugService;
 import cn.iocoder.yudao.module.pharmacy.service.inventory.InventoryReadService;
+import cn.iocoder.yudao.module.pharmacy.service.inventory.InventoryAlertService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,16 @@ public class PharmacyAiToolService {
     private final InventoryReadService inventoryReadService;
     private final PharmacyAiContextService contextService;
     private final SecurityFrameworkService security;
+    private final InventoryAlertService inventoryAlerts;
+
+    public Map<String, Object> getInventoryAlerts(Long drugId, String keyword, Integer requestedLimit) {
+        require(INVENTORY_QUERY);
+        var context = contextService.requireContext(true);
+        int limit = Math.max(1, Math.min(requestedLimit == null ? 20 : requestedLimit, 20));
+        var rows = inventoryAlerts.alerts(drugId, keyword, limit + 1);
+        return Map.of("storeId", context.storeId(), "rule", "可用库存低于药品已配置下限 minStock；0 表示不启用下限预警",
+                "items", rows.stream().limit(limit).toList(), "hasMore", rows.size() > limit);
+    }
 
     public List<Map<String, Object>> searchDrugs(String keyword, Integer status, Integer requestedLimit) {
         require(DRUG_QUERY);
@@ -49,13 +60,14 @@ public class PharmacyAiToolService {
             query.setPageNo(1);
             query.setPageSize(20);
             PageResult<InventoryReadVO.Batch> batches = inventoryReadService.batches(query);
-            int available = batches.getList().stream().mapToInt(v -> value(v.getQtyAvail())).sum();
+            long available = inventoryAlerts.stock(drug.getId()).getAvailableQty();
             int frozen = batches.getList().stream().mapToInt(v -> value(v.getQtyFrozen())).sum();
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("drug", drugSummary(drug));
             row.put("availableQty", available);
             row.put("frozenQty", frozen);
             row.put("batches", batches.getList().stream().map(this::batchSummary).toList());
+            row.put("batchNote", "批次台账明细可能含过期或质量异常批次；可用库存按有效且启用的货位库存减冻结量完整汇总");
             row.put("truncated", batches.getTotal() > batches.getList().size());
             return row;
         }).toList();

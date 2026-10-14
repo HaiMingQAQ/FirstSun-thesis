@@ -71,6 +71,7 @@
         <s-pharmacy-stepper v-model="qty" :max="product.stock" :disabled="!product.stock || busy" />
       </view>
       <view v-if="product.rx" class="fs-dock">
+        <button class="fs-outline" @tap="requireLogin() && go('prescription-upload')">处方记录</button>
         <button class="fs-primary fs-grow" @tap="requireLogin() && go('prescription-upload?drugId=' + product.id)">提交处方申请</button>
       </view>
       <view v-else class="fs-dock">

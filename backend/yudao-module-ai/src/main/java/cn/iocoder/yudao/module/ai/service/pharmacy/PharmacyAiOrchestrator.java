@@ -4,9 +4,10 @@ import cn.iocoder.yudao.module.ai.controller.admin.pharmacy.vo.PharmacyAiChatReq
 import cn.iocoder.yudao.module.ai.controller.admin.pharmacy.vo.PharmacyAiEvent;
 import cn.iocoder.yudao.module.ai.dal.dataobject.model.AiModelDO;
 import cn.iocoder.yudao.module.ai.enums.model.AiModelTypeEnum;
-import cn.iocoder.yudao.module.ai.enums.model.AiPlatformEnum;
 import cn.iocoder.yudao.module.ai.service.model.AiModelService;
 import cn.iocoder.yudao.module.ai.util.AiUtils;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
+import com.fasterxml.jackson.core.io.JsonEOFException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -15,15 +16,23 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.StreamingChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @Slf4j
@@ -37,10 +46,18 @@ public class PharmacyAiOrchestrator {
     private static final String ROUTER = POLICY + """
             你必须只输出一个合法 JSON 对象。禁止 Markdown 代码块，禁止任何前后解释文字；若你确实需要代码块，请用 ```json 完整包裹且只包含 JSON。
             格式：{"action":"动作","arguments":{...}}。
-            动作仅允许 directAnswer、searchDrugs、getDrugDetail、getCurrentStoreInventory、
-            prepareCreateDrug、prepareUpdateDrug、prepareDeleteDrug。
+            动作仅允许 directAnswer、searchDrugs、getDrugDetail、getCurrentStoreInventory、getInventoryAlerts、
+            prepareCreateDrug、prepareUpdateDrug、prepareDeleteDrug、preparePurchaseDraft。
             directAnswer 的 arguments 为 {"answer":"..."}。搜索参数 keyword/status/limit；详情参数 id 或 drugCode；
             库存参数 drugId 或 keyword，绝不输出 storeId/tenantId/userId；新增参数 {"drug":{药品字段}}；
+            库存预警参数 drugId/keyword/limit，规则由当前门店真实可用库存和已配置 minStock 决定，
+            不允许自定义 threshold、minStock 或 storeId。没有预警必须明确说没有。
+            采购参数 {"purchase":{"supplierId":数字,"warehouseId":可选数字,"orderDate":"YYYY-MM-DD",
+            "expectDate":可选日期,"remark":可选备注,"lines":[{"drugId":数字,"orderQty":数字,
+            "unitPrice":数字,"discountRate":可选数字,"remark":可选备注}]}}。
+            供应商、采购日期、药品、数量和采购单价必须由用户明确提供；缺项时用 directAnswer 列出缺项。
+            不得根据库存上下限猜测采购数量、单价或供应商，不得生成 storeId/userId/id/状态字段。
+            采购仅生成草稿预览，确认后仅创建草稿，不得审批、发出或入库。
             修改参数 {"id":数字,"changes":{仅变更字段}}；删除参数 {"id":数字}。
             所有 id 和价格等数值字段必须是 JSON 数字（number），不能是字符串。
             修改药品示例：用户说“把药品 163101 的零售价改为 25 元”时，输出
@@ -61,53 +78,101 @@ public class PharmacyAiOrchestrator {
     private final PharmacyAiToolService toolService;
     private final PharmacyAiCommandService commandService;
     private final ObjectMapper objectMapper;
+    private final PharmacyAiModelClient modelClient;
 
     public Flux<PharmacyAiEvent> stream(PharmacyAiChatReqVO request) {
+        RequestContext context = new RequestContext(TenantContextHolder.getTenantId(), TenantContextHolder.isIgnore(),
+                SecurityContextHolder.getContext().getAuthentication());
         return Flux.defer(() -> {
-            AiModelDO model = modelService.getRequiredDefaultModel(AiModelTypeEnum.CHAT.getType());
-            ChatModel chatModel = modelService.getChatModel(model.getId());
-            var options = AiUtils.buildChatOptions(AiPlatformEnum.validatePlatform(model.getPlatform()),
-                    model.getModel(), 0.1, Math.min(value(model.getMaxTokens(), 800), 1200));
-            JsonNode decision = routeDecision(chatModel, options, request.getContent());
-            String action = decision.path("action").asText();
-            JsonNode arguments = decision.path("arguments");
+            RequestTrace trace = new RequestTrace();
             PharmacyAiEvent metadata = new PharmacyAiEvent("metadata", Map.of(
                     "conversationId", request.getConversationId() == null ? request.getClientMessageId() : request.getConversationId(),
-                    "clientMessageId", request.getClientMessageId(), "model", model.getModel()));
-            if (action.startsWith("prepare")) {
-                PharmacyAiCommandService.Preview preview = commandService.prepare(action, arguments,
-                        request.getConversationId(), request.getClientMessageId());
-                return Flux.just(metadata,
-                        new PharmacyAiEvent("tool_started", Map.of("tool", action)),
-                        new PharmacyAiEvent("delta", Map.of("content", "已生成操作预览。确认前不会修改药品数据。")),
-                        new PharmacyAiEvent("tool_preview", preview),
-                        new PharmacyAiEvent("done", Map.of("finishReason", "tool_confirmation_required")));
-            }
-            if ("directAnswer".equals(action)) {
-                String answer = arguments.path("answer").asText("抱歉，我只能处理药品档案和当前门店库存相关请求。");
-                return Flux.just(metadata, new PharmacyAiEvent("delta", Map.of("content", answer)),
-                        new PharmacyAiEvent("done", Map.of("finishReason", "stop")));
-            }
-            Object result = executeRead(action, arguments);
-            String resultJson = write(result);
-            Prompt answerPrompt = new Prompt(List.of(new SystemMessage(POLICY + "\n请基于工具结果简洁回答；无结果就明确说未找到。"),
-                    new UserMessage("用户问题：" + request.getContent() + "\n工具：" + action + "\n工具结果：" + resultJson)), options);
-            StreamingChatModel streaming = (StreamingChatModel) chatModel;
-            Flux<PharmacyAiEvent> answer = streaming.stream(answerPrompt)
-                    .<PharmacyAiEvent>handle((response, sink) -> {
-                        String content = AiUtils.getChatResponseContent(response);
-                        if (content != null && !content.isEmpty()) {
-                            sink.next(new PharmacyAiEvent("delta", Map.of("content", content)));
+                    "clientMessageId", request.getClientMessageId(), "requestId", trace.id));
+            Flux<PharmacyAiEvent> body = Mono.fromCallable(() -> context.call(() -> {
+                        try { return createResponse(request, trace); }
+                        catch (Exception ex) {
+                            // 连接已关闭时不把迟到的供应商异常交给 Reactor 的默认 dropped-error 日志。
+                            if (trace.cancelled) return Flux.<PharmacyAiEvent>empty();
+                            throw ex;
                         }
+                    })).doOnCancel(() -> trace.cancelled = true)
+                    .subscribeOn(Schedulers.boundedElastic()).timeout(Duration.ofSeconds(45))
+                    .flatMapMany(events -> events);
+            return Flux.concat(Flux.just(metadata), body)
+                    .onErrorResume(ex -> {
+                        if (isCancellation(ex)) return Flux.error(ex);
+                        String code = errorCode(ex, trace.stage);
+                        trace.failed = true;
+                        // 不输出异常 message/stack，可能含上游响应、凭据或用户原文。
+                        log.warn("pharmacy_ai requestId={} stage={} errorType={}", trace.id, trace.stage, code);
+                        return Flux.just(new PharmacyAiEvent("error", Map.of("message", safeMessage(ex, trace.stage),
+                                        "requestId", trace.id, "stage", trace.stage, "errorCode", code)),
+                                new PharmacyAiEvent("done", Map.of("finishReason", "error", "requestId", trace.id)));
                     })
-                    .timeout(Duration.ofSeconds(45));
-            return Flux.concat(Flux.just(metadata,
-                            new PharmacyAiEvent("tool_started", Map.of("tool", action)),
-                            new PharmacyAiEvent("tool_result", Map.of("tool", action, "result", result))),
-                    answer, Flux.just(new PharmacyAiEvent("done", Map.of("finishReason", "stop"))));
-        }).onErrorResume(ex -> Flux.just(
-                new PharmacyAiEvent("error", Map.of("message", safeMessage(ex))),
-                new PharmacyAiEvent("done", Map.of("finishReason", "error"))));
+                    .doOnCancel(() -> trace.cancelled = true)
+                    .doFinally(signal -> log.info("pharmacy_ai requestId={} stage={} outcome={}",
+                            trace.id, trace.stage, signal == reactor.core.publisher.SignalType.CANCEL
+                                    ? "cancelled" : trace.failed ? "error" : signal));
+        });
+    }
+
+    private Flux<PharmacyAiEvent> createResponse(PharmacyAiChatReqVO request, RequestTrace trace) {
+        checkCancellation(trace);
+        trace.stage = "model_configuration";
+        AiModelDO model = modelService.getRequiredDefaultModel(AiModelTypeEnum.CHAT.getType());
+        var session = modelClient.forModel(model);
+        checkCancellation(trace);
+        JsonNode decision = routeDecision(session.client(), session.options(), request.getContent(),
+                trace, session.allowRouteRepair());
+        checkCancellation(trace);
+        String action = decision.path("action").asText();
+        JsonNode arguments = decision.path("arguments");
+        if (action.startsWith("prepare")) {
+            trace.stage = "command_preview";
+            PharmacyAiCommandService.Preview preview = commandService.prepare(action, arguments,
+                    request.getConversationId(), request.getClientMessageId());
+            String text = "preparePurchaseDraft".equals(action)
+                    ? "仅采购草稿预览，确认前不会创建，不会审批、发出或入库。"
+                    : "已生成操作预览。确认前不会修改药品数据。";
+            return Flux.just(new PharmacyAiEvent("tool_started", Map.of("tool", action)),
+                    new PharmacyAiEvent("delta", Map.of("content", text)), new PharmacyAiEvent("tool_preview", preview),
+                    new PharmacyAiEvent("done", Map.of("finishReason", "tool_confirmation_required")));
+        }
+        if ("directAnswer".equals(action)) {
+            String answer = arguments.path("answer").asText("抱歉，我只能处理药品档案、当前门店库存和采购草稿相关请求。");
+            return Flux.just(new PharmacyAiEvent("delta", Map.of("content", answer)),
+                    new PharmacyAiEvent("done", Map.of("finishReason", "stop")));
+        }
+        trace.stage = "tool_execute";
+        Object result = executeRead(action, arguments);
+        String resultJson = write(result);
+        Prompt answerPrompt = new Prompt(List.of(new SystemMessage(POLICY + "\n请基于工具结果简洁回答；无结果就明确说未找到。"),
+                new UserMessage("用户问题：" + request.getContent() + "\n工具：" + action + "\n工具结果：" + resultJson)), session.options());
+        var finishReason = new AtomicReference<>("");
+        Flux<PharmacyAiEvent> answer = Flux.defer(() -> {
+            trace.stage = "answer_model";
+            return session.client().stream(answerPrompt);
+        }).<PharmacyAiEvent>handle((response, sink) -> {
+            if (response != null && response.getResult() != null && response.getResult().getMetadata() != null) {
+                String reason = response.getResult().getMetadata().getFinishReason();
+                if (reason != null && !reason.isBlank()) finishReason.set(reason);
+            }
+            String content = AiUtils.getChatResponseContent(response);
+            if (content != null && !content.isEmpty()) sink.next(new PharmacyAiEvent("delta", Map.of("content", content)));
+        }).timeout(Duration.ofSeconds(45));
+        return Flux.concat(Flux.just(new PharmacyAiEvent("tool_started", Map.of("tool", action)),
+                        new PharmacyAiEvent("tool_result", Map.of("tool", action, "result", result))),
+                answer, Flux.defer(() -> {
+                    String reason = finishReason.get();
+                    if ("STOP".equalsIgnoreCase(reason) || "END_TURN".equalsIgnoreCase(reason)
+                            || "STOP_SEQUENCE".equalsIgnoreCase(reason)) {
+                        return Flux.just(new PharmacyAiEvent("done", Map.of("finishReason", "stop")));
+                    }
+                    String code = reason.isBlank() ? "UPSTREAM_MISSING_FINISH"
+                            : "LENGTH".equalsIgnoreCase(reason) || "MAX_TOKENS".equalsIgnoreCase(reason)
+                            ? "UPSTREAM_TOKEN_LIMIT" : "UPSTREAM_FINISH_UNEXPECTED";
+                    return Flux.error(new IncompleteAnswerException(code));
+                }));
     }
 
     /**
@@ -115,18 +180,32 @@ public class PharmacyAiOrchestrator {
      * 解析失败时只允许有限次数（{@link #MAX_ROUTE_RETRIES}）的结构化重试，并记录原因；禁止无限重试。
      */
     JsonNode routeDecision(ChatModel chatModel, ChatOptions options, String userContent) {
+        return routeDecision(chatModel, options, userContent, new RequestTrace(), true);
+    }
+
+    private JsonNode routeDecision(ChatModel chatModel, ChatOptions options, String userContent,
+                                   RequestTrace trace, boolean allowRepair) {
+        checkCancellation(trace);
+        trace.stage = "route_model";
         ChatResponse routeResponse = chatModel.call(new Prompt(List.of(
                 new SystemMessage(ROUTER), new UserMessage(userContent)), options));
+        checkCancellation(trace);
+        trace.stage = "route_parse";
         try {
             return parseDecision(AiUtils.getChatResponseContent(routeResponse));
-        } catch (IllegalStateException first) {
-            log.warn("AI 路由决策解析失败（原因：{}），发起第 1 次结构化重试", safeLog(first.getMessage()));
+        } catch (IllegalStateException | IllegalArgumentException first) {
+            if (!allowRepair || MAX_ROUTE_RETRIES == 0) throw first;
+            checkCancellation(trace);
+            log.warn("pharmacy_ai requestId={} stage=route_parse errorType=ROUTE_INVALID repairAttempt=1", trace.id);
             String repair = "你上一次的输出无法解析为合法的 JSON 决策对象。请只输出一个 JSON 对象，" +
                     "不要 Markdown 代码块，不要任何解释文字。格式：{\"action\":\"动作\",\"arguments\":{...}}。";
+            trace.stage = "route_model";
             ChatResponse retryResponse = chatModel.call(new Prompt(List.of(
                     new SystemMessage(ROUTER),
                     new UserMessage(userContent + "\n（注意：只输出 JSON 对象，不要 Markdown 或解释文字）"),
                     new SystemMessage(repair)), options));
+            checkCancellation(trace);
+            trace.stage = "route_parse";
             return parseDecision(AiUtils.getChatResponseContent(retryResponse));
         }
     }
@@ -136,6 +215,12 @@ public class PharmacyAiOrchestrator {
             case "searchDrugs" -> toolService.searchDrugs(text(args, "keyword"), integer(args, "status"), integer(args, "limit"));
             case "getDrugDetail" -> toolService.getDrugDetail(longValue(args, "id"), text(args, "drugCode"));
             case "getCurrentStoreInventory" -> toolService.getCurrentStoreInventory(longValue(args, "drugId"), text(args, "keyword"));
+            case "getInventoryAlerts" -> {
+                for (String field : List.of("storeId", "tenantId", "userId", "threshold", "minStock")) {
+                    if (args.has(field)) throw new IllegalArgumentException("库存预警不能覆盖门店或预警规则");
+                }
+                yield toolService.getInventoryAlerts(longValue(args, "drugId"), text(args, "keyword"), integer(args, "limit"));
+            }
             default -> throw new IllegalArgumentException("模型请求了未注册工具");
         };
     }
@@ -188,17 +273,77 @@ public class PharmacyAiOrchestrator {
     private String text(JsonNode node, String key) { return node.hasNonNull(key) ? node.get(key).asText() : null; }
     private Integer integer(JsonNode node, String key) { return node.hasNonNull(key) ? node.get(key).asInt() : null; }
     private Long longValue(JsonNode node, String key) { return node.hasNonNull(key) ? node.get(key).asLong() : null; }
-    private int value(Integer value, int fallback) { return value == null ? fallback : value; }
-    private String safeMessage(Throwable ex) {
-        if (ex instanceof org.springframework.security.access.AccessDeniedException) return ex.getMessage();
-        if (ex instanceof IllegalArgumentException || ex instanceof IllegalStateException) return ex.getMessage();
-        return "AI 服务暂时不可用，请稍后重试；药品、库存和 POS 原有功能不受影响。";
+    private String safeMessage(Throwable ex, String stage) {
+        if (ex instanceof org.springframework.security.access.AccessDeniedException) return "当前账号无权完成此操作，请检查权限和门店绑定。";
+        if ("route_parse".equals(stage)) return "AI 未能识别本次需求，请重新描述；本次未执行业务写入。";
+        if (("tool_execute".equals(stage) || "command_preview".equals(stage)) && ex instanceof IllegalArgumentException)
+            return ex.getMessage();
+        if (ex instanceof IncompleteAnswerException incomplete && "UPSTREAM_TOKEN_LIMIT".equals(incomplete.code))
+            return "AI 回答达到长度上限，内容未完整生成；已返回的工具数据可继续查看。";
+        if ("answer_model".equals(stage)) return "AI 回答未能完整生成，已返回的工具数据可继续查看；请稍后重试。";
+        return "AI 未能完成本次请求，请稍后重试；本次未执行业务写入。";
     }
-    /** 日志脱敏：仅记录可操作的消息摘要，不输出模型密钥、访问令牌或数据库信息。 */
-    private String safeLog(String message) {
-        if (message == null || message.isBlank()) {
-            return "未知原因";
+
+    static String errorCode(Throwable ex, String stage) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof IncompleteAnswerException incomplete) return incomplete.code;
+            if (cause instanceof JsonEOFException) return "UPSTREAM_RESPONSE_TRUNCATED";
+            if (cause instanceof TimeoutException || cause instanceof java.net.SocketTimeoutException)
+                return "UPSTREAM_TIMEOUT";
+            if (cause instanceof org.springframework.web.client.RestClientResponseException
+                    || cause instanceof org.springframework.web.reactive.function.client.WebClientResponseException
+                    || cause instanceof org.springframework.ai.retry.TransientAiException
+                    || cause instanceof org.springframework.ai.retry.NonTransientAiException)
+                return "UPSTREAM_HTTP_ERROR";
         }
-        return message.length() > 120 ? message.substring(0, 120) + "…" : message;
+        if (ex instanceof org.springframework.security.access.AccessDeniedException) return "ACCESS_DENIED";
+        if ("route_parse".equals(stage)) return "ROUTE_INVALID";
+        if ("route_model".equals(stage) || "answer_model".equals(stage)) return "UPSTREAM_ERROR";
+        if ("model_configuration".equals(stage)) return "MODEL_CONFIGURATION_ERROR";
+        return "TOOL_ERROR";
+    }
+
+    private static boolean isCancellation(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof CancellationException || cause instanceof InterruptedException) return true;
+        }
+        return false;
+    }
+
+    private static void checkCancellation(RequestTrace trace) {
+        if (trace.cancelled || Thread.currentThread().isInterrupted()) throw new CancellationException("管理 AI 请求已停止");
+    }
+
+    private static class RequestTrace {
+        private final String id = UUID.randomUUID().toString();
+        private volatile String stage = "request_received";
+        private volatile boolean failed;
+        private volatile boolean cancelled;
+    }
+
+    private static class IncompleteAnswerException extends IllegalStateException {
+        private final String code;
+        private IncompleteAnswerException(String code) { super("AI 回答未完整生成"); this.code = code; }
+    }
+
+    private record RequestContext(Long tenant, boolean ignore, Authentication authentication) {
+        <T> T call(Callable<T> action) throws Exception {
+            var previousSecurity = SecurityContextHolder.getContext();
+            Long previousTenant = TenantContextHolder.getTenantId();
+            boolean previousIgnore = TenantContextHolder.isIgnore();
+            var security = SecurityContextHolder.createEmptyContext();
+            security.setAuthentication(authentication);
+            SecurityContextHolder.setContext(security);
+            TenantContextHolder.clear();
+            TenantContextHolder.setTenantId(tenant);
+            TenantContextHolder.setIgnore(ignore);
+            try { return action.call(); }
+            finally {
+                SecurityContextHolder.setContext(previousSecurity);
+                TenantContextHolder.clear();
+                if (previousTenant != null) TenantContextHolder.setTenantId(previousTenant);
+                TenantContextHolder.setIgnore(previousIgnore);
+            }
+        }
     }
 }

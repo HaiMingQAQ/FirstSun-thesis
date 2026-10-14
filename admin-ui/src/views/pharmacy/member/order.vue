@@ -65,6 +65,7 @@
 
   <!-- 列表 -->
   <ContentWrap class="pharmacy-panel">
+    <el-alert v-if="pickingError" :title="pickingError" type="error" :closable="false" class="mb-4" />
     <el-table v-loading="loading" :data="list">
       <el-table-column label="订单号" align="center" prop="orderNo" width="180" />
       <el-table-column label="会员ID" align="center" prop="memberId" width="100" />
@@ -99,7 +100,7 @@
           {{ formatDate(scope.row.createTime) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" width="220" fixed="right">
+      <el-table-column label="操作" align="center" width="320" fixed="right">
         <template #default="scope">
           <el-button
             link
@@ -110,6 +111,24 @@
             详情
           </el-button>
           <el-button
+            v-if="scope.row.status === 1 && scope.row.payStatus === 1"
+            v-hasPermi="['pharmacy:member:order:update']"
+            link
+            type="primary"
+            :loading="pickingId === scope.row.id"
+            :disabled="loading || pickingId !== undefined"
+            @click="handlePicking(scope.row, false)"
+          >开始拣货</el-button>
+          <el-button
+            v-if="scope.row.status === 2 && scope.row.payStatus === 1"
+            v-hasPermi="['pharmacy:member:order:update']"
+            link
+            type="success"
+            :loading="pickingId === scope.row.id"
+            :disabled="loading || pickingId !== undefined"
+            @click="handlePicking(scope.row, true)"
+          >完成拣货</el-button>
+          <el-button
             link
             type="warning"
             @click="handleCancel(scope.row.id)"
@@ -119,11 +138,12 @@
             取消
           </el-button>
           <el-button
+            v-if="scope.row.orderType === 0 && scope.row.payStatus === 1 && scope.row.status === 3"
             link
             type="success"
             @click="handleVerify(scope.row)"
             v-hasPermi="['pharmacy:member:order:verify']"
-            :disabled="scope.row.status !== 3"
+            :disabled="loading || verifyLoading || pickingId !== undefined"
           >
             核销
           </el-button>
@@ -169,6 +189,7 @@
 <script lang="ts" setup>
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { formatDate } from '@/utils/formatTime'
+import { checkPermi } from '@/utils/permission'
 import * as OrderApi from '@/api/pharmacy/member/order'
 import OrderDetail from './OrderDetail.vue'
 
@@ -179,6 +200,8 @@ const message = useMessage() // 消息弹窗
 const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
 const list = ref([]) // 列表的数据
+const pickingId = ref<number>()
+const pickingError = ref('')
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
@@ -202,6 +225,7 @@ const getList = async () => {
     const data = await OrderApi.getOrderPage(queryParams)
     list.value = data.list
     total.value = data.total
+    pickingError.value = ''
   } finally {
     loading.value = false
   }
@@ -230,6 +254,30 @@ const openDetail = (id: number) => {
   detailRef.value.open(id)
 }
 
+const handlePicking = async (row: OrderApi.MemberOrderVO, finish: boolean) => {
+  const id = row.id, expected = finish ? 2 : 1, label = finish ? '完成拣货' : '开始拣货'
+  if (!id || loading.value || pickingId.value !== undefined || row.payStatus !== 1 || row.status !== expected
+    || !checkPermi(['pharmacy:member:order:update'])) return
+  pickingId.value = id
+  pickingError.value = ''
+  let changed = false
+  try {
+    await message.confirm(`确认${label}订单「${row.orderNo}」？`, label)
+    if (row.status !== expected || row.payStatus !== 1 || !checkPermi(['pharmacy:member:order:update'])) return
+    if (finish) await OrderApi.finishPicking(id)
+    else await OrderApi.startPicking(id)
+    changed = true
+    await getList()
+    message.success(`${label}成功`)
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') pickingError.value = changed
+      ? `${label}已完成，但订单列表刷新失败，请重新查询`
+      : error?.message || error?.msg || `${label}失败，请重试`
+  } finally {
+    pickingId.value = undefined
+  }
+}
+
 /** 取消订单：取消原因由操作人填写并落库 */
 const handleCancel = async (id: number) => {
   try {
@@ -254,6 +302,7 @@ const verifyRules = reactive({
 })
 
 const handleVerify = (row: any) => {
+  if (loading.value || row.orderType !== 0 || row.payStatus !== 1 || row.status !== 3) return
   verifyForm.id = row.id
   verifyForm.orderNo = row.orderNo
   verifyForm.pickupCode = ''

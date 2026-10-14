@@ -8,10 +8,28 @@
 // =====================================================
 export const PHARMACY_DEMO = false;
 
-// 测试手机号登录使用的验证码。
-// 前端「获取测试码」按钮会填入该值；真实后端校验的是
-// 环境变量 PHARMACY_DEV_SMS_CODE（缺省未配置时后端返回明确业务错误，
-// 需在启动后端时配置一致的值，例如 123456）。
+// 仅本次显式本机验收构建可启用，仍使用真实后端的测试验证码校验。
+let h5TestLogin = false;
+// #ifdef H5
+const localBackend = (value) => {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+      || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return '';
+    return url.origin;
+  } catch { return ''; }
+};
+const testBackend = localBackend(import.meta.env.SHOPRO_H5_TEST_BACKEND_URL);
+h5TestLogin = import.meta.env.SHOPRO_H5_TEST_LOGIN === 'true'
+  && import.meta.env.MODE === 'local-acceptance'
+  && import.meta.env.SHOPRO_H5_TEST_BUILD === 'local-acceptance'
+  && !!testBackend
+  && localBackend(import.meta.env.SHOPRO_BASE_URL) === testBackend
+  && localBackend(import.meta.env.SHOPRO_DEV_BASE_URL) === testBackend;
+// #endif
+export const PHARMACY_H5_TEST_LOGIN = h5TestLogin;
+
+// 仅原本地 Mock 演示使用；本机真实后端验收必须由用户手工填写运行时验证码。
 export const TEST_CODE = '123456';
 
 // 处方图片最多上传张数（页面文案与校验共用）

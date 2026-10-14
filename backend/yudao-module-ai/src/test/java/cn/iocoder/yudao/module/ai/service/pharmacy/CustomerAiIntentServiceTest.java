@@ -91,4 +91,22 @@ class CustomerAiIntentServiceTest {
         assertEquals("chat", service.resolve("成人，刚开始", List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "肚子疼"))).action());
         assertThrows(IllegalArgumentException.class, () -> service.resolve("成人，刚开始，没有过敏"));
     }
+    @Test void explicitReadOnlyStockReferenceNeverAcceptsAModelInventedId() {
+        for (String text : List.of("继续查询同一药品的库存数量", "这个药的库存是多少？", "它的库存多少")) {
+            var result = service.resolve(text);
+            assertEquals("followupStock", result.action()); assertNull(result.drugId());
+        }
+        for (String text : List.of("库存多少？", "这些药的库存数量"))
+            assertEquals("clarifyProduct", service.resolve(text).action());
+        assertEquals("refuse", service.resolve("继续查询同一药品的库存数量并支付").action());
+        assertEquals("refuse", service.resolve("帮我改库存").action());
+        assertEquals("refuse", service.resolve("请确诊").action());
+        verifyNoInteractions(models, customerModels);
+    }
+    @Test void historyDoesNotAuthorizeAnIdMissingFromTheCurrentExplicitInput() {
+        output("{\"action\":\"getDrugDetail\",\"drugId\":10}");
+        var context = List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "查询药品10"));
+        assertThrows(IllegalArgumentException.class, () -> service.resolve("介绍药品", context));
+        assertEquals(10L, service.resolve("查询药品10", context).drugId());
+    }
 }

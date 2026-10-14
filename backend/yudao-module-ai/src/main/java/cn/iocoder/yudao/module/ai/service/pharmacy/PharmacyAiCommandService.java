@@ -16,6 +16,13 @@ import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
+import cn.iocoder.yudao.module.pharmacy.controller.admin.purchase.vo.order.PurchaseOrderSaveReqVO;
+
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.module.ai.enums.ErrorCodeConstants.PHARMACY_COMMAND_STATE_INVALID;
+import static cn.iocoder.yudao.module.ai.enums.ErrorCodeConstants.PHARMACY_COMMAND_TARGET_CHANGED;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -61,24 +68,31 @@ public class PharmacyAiCommandService {
     private final SecurityFrameworkService security;
     private final ObjectMapper objectMapper;
     private final Validator validator;
+    private final PharmacyAiPurchaseService purchaseService;
 
     public Preview prepare(String action, JsonNode arguments, Long conversationId, String clientMessageId) {
         String tool = switch (action) {
             case "prepareCreateDrug" -> "CREATE_DRUG";
             case "prepareUpdateDrug" -> "UPDATE_DRUG";
             case "prepareDeleteDrug" -> "DELETE_DRUG";
+            case "preparePurchaseDraft" -> "CREATE_PURCHASE_DRAFT";
             default -> throw new IllegalArgumentException("不支持的写工具");
         };
         String permission = switch (tool) {
             case "CREATE_DRUG" -> "pharmacy:base:drug:create";
             case "UPDATE_DRUG" -> "pharmacy:base:drug:update";
+            case "CREATE_PURCHASE_DRAFT" -> PharmacyAiPurchaseService.PERMISSION;
             default -> "pharmacy:base:drug:delete";
         };
         require(permission);
-        var context = contextService.requireContext(false);
+        var context = contextService.requireContext("CREATE_PURCHASE_DRAFT".equals(tool));
         JsonNode normalized;
         JsonNode before = null;
-        if ("CREATE_DRUG".equals(tool)) {
+        JsonNode after = null;
+        if ("CREATE_PURCHASE_DRAFT".equals(tool)) {
+            var prepared = purchaseService.prepare(arguments);
+            normalized = prepared.request(); before = prepared.before(); after = prepared.after();
+        } else if ("CREATE_DRUG".equals(tool)) {
             normalized = sanitize(arguments.has("drug") ? arguments.get("drug") : arguments, false);
             validate(objectMapper.convertValue(normalized, DrugSaveReqVO.class));
         } else {
@@ -113,7 +127,7 @@ public class PharmacyAiCommandService {
         command.setPermission(permission);
         command.setRequestJson(requestJson);
         command.setBeforeJson(beforeJson);
-        command.setAfterJson("DELETE_DRUG".equals(tool) ? null : requestJson);
+        command.setAfterJson("DELETE_DRUG".equals(tool) ? null : after == null ? requestJson : json(after));
         command.setRequestHash(requestHash);
         command.setTokenHash(sha256(token));
         command.setStatus("PENDING");
@@ -122,8 +136,10 @@ public class PharmacyAiCommandService {
         return toPreview(command, token);
     }
 
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.SERIALIZABLE)
     public Map<String, Object> confirm(Long id, String token) {
-        PharmacyAiCommandDO command = requireOwned(id);
+        // Serialize contenders before snapshot reads; shared-read lock upgrades can deadlock.
+        PharmacyAiCommandDO command = requireOwned(id, true);
         require(command.getPermission());
         if (!MessageDigest.isEqual(command.getTokenHash().getBytes(StandardCharsets.UTF_8),
                 sha256(token).getBytes(StandardCharsets.UTF_8))) {
@@ -136,16 +152,20 @@ public class PharmacyAiCommandService {
             throw new AccessDeniedException("命令快照校验失败");
         }
         if (!"PENDING".equals(command.getStatus()) || !command.getExpiresAt().isAfter(LocalDateTime.now())) {
-            throw new IllegalStateException("命令已使用、已取消或已过期");
+            throw exception(PHARMACY_COMMAND_STATE_INVALID, effectiveStatus(command));
         }
         verifyTargetUnchanged(command);
         if (mapper.claimPending(id, LocalDateTime.now()) != 1) {
-            throw new IllegalStateException("命令已被执行或已过期");
+            throw exception(PHARMACY_COMMAND_STATE_INVALID, effectiveStatus(requireOwned(id)));
         }
         Map<String, Object> result = new LinkedHashMap<>();
         try {
             JsonNode request = read(command.getRequestJson());
-            if ("CREATE_DRUG".equals(command.getToolName())) {
+            if ("CREATE_PURCHASE_DRAFT".equals(command.getToolName())) {
+                Long orderId = purchaseService.createDraft(request);
+                result.put("purchaseOrderId", orderId);
+                result.put("purchaseStatus", "DRAFT");
+            } else if ("CREATE_DRUG".equals(command.getToolName())) {
                 Long drugId = drugService.createDrug(objectMapper.convertValue(request, DrugSaveReqVO.class));
                 result.put("drugId", drugId);
             } else if ("UPDATE_DRUG".equals(command.getToolName())) {
@@ -171,9 +191,12 @@ public class PharmacyAiCommandService {
     }
 
     public void cancel(Long id) {
+        PharmacyAiCommandDO command = requireOwned(id);
+        if (!"PENDING".equals(command.getStatus()) || !command.getExpiresAt().isAfter(LocalDateTime.now()))
+            throw exception(PHARMACY_COMMAND_STATE_INVALID, effectiveStatus(command));
         var context = contextService.requireContext(false);
         if (mapper.cancelPending(id, context.userId()) != 1) {
-            throw new IllegalStateException("命令不存在或不能取消");
+            throw exception(PHARMACY_COMMAND_STATE_INVALID, effectiveStatus(requireOwned(id)));
         }
     }
 
@@ -189,6 +212,11 @@ public class PharmacyAiCommandService {
      * 不依赖 JSON 字符串全等，避免 19.80 / 19.8 / 1.98E+1 等数值表示差异导致的误判。
      */
     private void verifyTargetUnchanged(PharmacyAiCommandDO command) {
+        if ("CREATE_PURCHASE_DRAFT".equals(command.getToolName())) {
+            JsonNode current = purchaseService.snapshot(objectMapper.convertValue(read(command.getRequestJson()), PurchaseOrderSaveReqVO.class));
+            if (!snapshotsEqual(readNullable(command.getBeforeJson()), current)) throw exception(PHARMACY_COMMAND_TARGET_CHANGED);
+            return;
+        }
         if ("CREATE_DRUG".equals(command.getToolName())) return;
         long id = read(command.getRequestJson()).get("id").asLong();
         DrugDO current = drugService.getDrug(id);
@@ -255,11 +283,21 @@ public class PharmacyAiCommandService {
     }
 
     private PharmacyAiCommandDO requireOwned(Long id) {
+        return requireOwned(id, false);
+    }
+
+    private PharmacyAiCommandDO requireOwned(Long id, boolean lock) {
         var context = contextService.requireContext(false);
-        PharmacyAiCommandDO command = mapper.selectById(id);
+        PharmacyAiCommandDO command = lock ? mapper.selectForUpdate(id) : mapper.selectById(id);
         if (command == null || !context.userId().equals(command.getUserId())
                 || !context.tenantId().equals(command.getTenantId())) {
             throw new AccessDeniedException("命令不存在或无权访问");
+        }
+        if ("CREATE_PURCHASE_DRAFT".equals(command.getToolName())) {
+            var storeContext = contextService.requireContext(true);
+            if (!java.util.Objects.equals(storeContext.storeId(), command.getStoreId())
+                    || !java.util.Objects.equals(storeContext.employeeId(), command.getEmployeeId()))
+                throw new AccessDeniedException("采购命令不属于当前员工或门店");
         }
         return command;
     }
@@ -309,6 +347,11 @@ public class PharmacyAiCommandService {
                 command.getExpiresAt(), token, command.getErrorMessage());
     }
 
+    private String effectiveStatus(PharmacyAiCommandDO command) {
+        return "PENDING".equals(command.getStatus()) && !command.getExpiresAt().isAfter(LocalDateTime.now())
+                ? "EXPIRED" : command.getStatus();
+    }
+
     private JsonNode readNullable(String value) { return value == null ? null : read(value); }
     private JsonNode read(String value) {
         try { return objectMapper.readTree(value); }
@@ -347,6 +390,9 @@ public class PharmacyAiCommandService {
         catch (Exception e) { throw new IllegalStateException(e); }
     }
     private String safeMessage(Exception ex) {
+        if (!(ex instanceof cn.iocoder.yudao.framework.common.exception.ServiceException)
+                && !(ex instanceof IllegalArgumentException) && !(ex instanceof AccessDeniedException))
+            return "操作执行失败，请查询实际结果后重新生成预览；不会自动重试确认";
         String message = ex.getMessage();
         return message == null ? "执行失败" : message.substring(0, Math.min(message.length(), 500));
     }

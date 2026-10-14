@@ -26,11 +26,25 @@
       <div ref="messageArea" class="messages">
         <el-empty
           v-if="messages.length === 0"
-          description="可查询药品、当前门店库存，或生成药品增删改预览"
+          description="可查询药品、当前门店库存与预警，或生成药品变更和采购草稿预览"
         />
         <div v-for="(item, index) in messages" :key="index" class="message" :class="item.role">
           <div class="bubble">
             <MarkdownView v-if="item.text" :content="item.text" />
+            <el-alert
+              v-if="item.errorMessage"
+              type="error"
+              :closable="false"
+              :title="item.errorMessage"
+              :description="item.requestId ? `追踪编号：${item.requestId}` : undefined"
+              show-icon
+            />
+            <el-alert
+              v-if="item.stopped"
+              type="info"
+              :closable="false"
+              title="已停止生成；已返回的工具结果或预览仍可查看，写操作需要单独确认。"
+            />
             <el-card v-if="item.toolResult" class="tool-card" shadow="never">
               <template #header>工具结果 · {{ item.toolResult.tool }}</template>
               <div>{{ summarizeResult(item.toolResult.result) }}</div>
@@ -44,13 +58,91 @@
                 <el-descriptions-item label="状态">{{
                   statusLabel(item.preview.status)
                 }}</el-descriptions-item>
-                <el-descriptions-item label="变更">{{
-                  diffText(item.preview)
-                }}</el-descriptions-item>
+                <el-descriptions-item
+                  v-if="item.preview.tool !== 'CREATE_PURCHASE_DRAFT'"
+                  label="变更"
+                  >{{ diffText(item.preview) }}</el-descriptions-item
+                >
                 <el-descriptions-item label="有效期">{{
-                  item.preview.expiresAt
+                  previewDate(item.preview.expiresAt, 'YYYY-MM-DD HH:mm:ss')
                 }}</el-descriptions-item>
               </el-descriptions>
+              <template v-if="item.preview.tool === 'CREATE_PURCHASE_DRAFT'">
+                <el-alert
+                  type="info"
+                  :closable="false"
+                  title="确认后仅创建采购草稿；审批、发出和入库需要在采购业务页面另行操作。"
+                />
+                <el-descriptions :column="1" border size="small">
+                  <el-descriptions-item label="门店"
+                    >{{ item.preview.after?.display?.storeName }}（#{{
+                      item.preview.after?.display?.storeId
+                    }}）</el-descriptions-item
+                  >
+                  <el-descriptions-item label="供应商"
+                    >{{ item.preview.after?.display?.supplier?.name }}（#{{
+                      item.preview.after?.display?.supplier?.id
+                    }}）</el-descriptions-item
+                  >
+                  <el-descriptions-item label="仓库">{{
+                    warehouseText(item.preview.after?.display?.warehouse)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item label="采购日期">{{
+                    previewDate(item.preview.after?.display?.orderDate)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item label="预计到货">{{
+                    previewDate(item.preview.after?.display?.expectDate)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item label="采购金额"
+                    >{{ money(item.preview.after?.display?.totalAmount) }} 元</el-descriptions-item
+                  >
+                  <el-descriptions-item label="折扣金额"
+                    >{{
+                      money(item.preview.after?.display?.discountAmount)
+                    }}
+                    元</el-descriptions-item
+                  >
+                  <el-descriptions-item label="应付金额"
+                    >{{
+                      money(item.preview.after?.display?.payableAmount)
+                    }}
+                    元</el-descriptions-item
+                  >
+                </el-descriptions>
+                <el-table :data="item.preview.after?.display?.lines || []" size="small" border>
+                  <el-table-column label="药品" min-width="180">
+                    <template #default="{ row }"
+                      >{{ row.stock?.drugName }}（#{{ row.stock?.drugId }}）<br />{{
+                        row.stock?.specification
+                      }}</template
+                    >
+                  </el-table-column>
+                  <el-table-column label="可用 / 下限" min-width="105"
+                    ><template #default="{ row }"
+                      >{{ row.stock?.availableQty }} / {{ row.stock?.minStock }}</template
+                    ></el-table-column
+                  >
+                  <el-table-column prop="orderQty" label="采购数量" width="100" />
+                  <el-table-column label="单价" width="100"
+                    ><template #default="{ row }">{{
+                      money(row.unitPrice)
+                    }}</template></el-table-column
+                  >
+                  <el-table-column prop="discountRate" label="折扣率" width="90" />
+                  <el-table-column label="金额" width="100"
+                    ><template #default="{ row }">{{
+                      money(row.amount)
+                    }}</template></el-table-column
+                  >
+                </el-table>
+                <el-button
+                  v-if="item.preview.status === 'EXECUTED' && item.preview.result?.purchaseOrderId"
+                  type="primary"
+                  link
+                  @click="router.push('/pharmacy-base/purchase/order')"
+                  >查看采购草稿 #{{ item.preview.result.purchaseOrderId }}</el-button
+                >
+              </template>
               <div
                 class="actions"
                 v-if="item.preview.status === 'PENDING' && item.preview.confirmationToken"
@@ -71,7 +163,7 @@
                 v-else-if="item.preview.status === 'PENDING'"
                 type="info"
                 :closable="false"
-                title="页面刷新后确认凭证不再保留；如需执行，请重新生成操作预览"
+                title="确认凭证不可用；请先核对操作状态，如需新操作，请重新生成预览"
               />
               <el-alert
                 v-if="item.preview.errorMessage"
@@ -84,6 +176,9 @@
         </div>
       </div>
       <div class="composer">
+        <el-button v-if="canReadInventory" plain @click="inventoryPurchaseDialog?.open()"
+          >库存预警 / 采购草稿</el-button
+        >
         <el-input
           v-model="content"
           type="textarea"
@@ -102,12 +197,16 @@
         </div>
       </div>
     </el-card>
+    <InventoryPurchaseDialog ref="inventoryPurchaseDialog" @preview="appendPurchasePreview" />
   </div>
 </template>
 
 <script setup lang="ts">
 import MarkdownView from '@/components/MarkdownView/index.vue'
 import { PharmacyAiApi, PharmacyAiCommand } from '@/api/pharmacy/ai'
+import InventoryPurchaseDialog from './InventoryPurchaseDialog.vue'
+import { hasPermission } from '@/directives/permission/hasPermi'
+import { formatDate } from '@/utils/formatTime'
 
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 
@@ -116,6 +215,9 @@ type Message = {
   text?: string
   toolResult?: any
   preview?: PharmacyAiCommand
+  requestId?: string
+  errorMessage?: string
+  stopped?: boolean
 }
 
 type Conversation = {
@@ -125,6 +227,11 @@ type Conversation = {
 }
 
 const message = useMessage()
+const router = useRouter()
+const inventoryPurchaseDialog = ref<InstanceType<typeof InventoryPurchaseDialog>>()
+const canReadInventory = computed(
+  () => hasPermission(['pharmacy:ai:chat']) && hasPermission(['pharmacy:inventory-batch:query'])
+)
 const initialId = Date.now()
 const activeId = ref(initialId)
 const conversations = ref<Conversation[]>([{ id: initialId, title: '新对话', messages: [] }])
@@ -190,32 +297,40 @@ const send = async () => {
   const conversation = conversations.value.find((item) => item.id === activeId.value)
   if (conversation?.messages.length === 0) conversation.title = titleFromMessage(question)
   messages.value.push({ role: 'user', text: question })
-  const answer: Message = { role: 'assistant', text: '' }
+  const answer = reactive<Message>({ role: 'assistant', text: '' })
   messages.value.push(answer)
   generating.value = true
-  controller = new AbortController()
+  const requestController = new AbortController()
+  controller = requestController
   try {
     await PharmacyAiApi.stream(
       { conversationId: activeId.value, clientMessageId: crypto.randomUUID(), content: question },
-      controller.signal,
+      requestController.signal,
       (event) => {
         const data = event.data ? JSON.parse(event.data) : {}
+        if (event.event === 'metadata') answer.requestId = data.requestId
         if (event.event === 'delta') answer.text = (answer.text || '') + (data.content || '')
         if (event.event === 'tool_result') answer.toolResult = data
         if (event.event === 'tool_preview') {
           answer.preview = data
           commands.value.unshift(data)
         }
-        if (event.event === 'error') answer.text = `${answer.text || ''}\n\n${data.message}`
-        if (event.event === 'done') generating.value = false
+        if (event.event === 'error') {
+          answer.errorMessage = data.message || 'AI 未能完成本次请求，请稍后重试。'
+          answer.requestId = data.requestId || answer.requestId
+        }
         nextTick(() => messageArea.value?.scrollTo({ top: messageArea.value.scrollHeight }))
       }
     )
   } catch (error: any) {
-    if (error?.name !== 'AbortError')
-      answer.text = `${answer.text || ''}\n\n连接已异常终止，请重试。`
+    if (!requestController.signal.aborted && error?.name !== 'AbortError')
+      answer.errorMessage = '连接异常终止，回答可能不完整；请检查网络后重试。'
   } finally {
-    generating.value = false
+    if (requestController.signal.aborted) answer.stopped = true
+    if (controller === requestController) {
+      generating.value = false
+      controller = undefined
+    }
   }
 }
 
@@ -224,28 +339,91 @@ const stop = () => {
   generating.value = false
 }
 
+const appendPurchasePreview = (preview: PharmacyAiCommand) => {
+  messages.value.push({
+    role: 'assistant',
+    preview,
+    text: '仅采购草稿预览，确认前不会创建，不会审批、发出或入库。'
+  })
+  commands.value.unshift(preview)
+  nextTick(() => messageArea.value?.scrollTo({ top: messageArea.value.scrollHeight }))
+}
+
+const refreshCommandState = async (command: PharmacyAiCommand) => {
+  try {
+    const current = ((await PharmacyAiApi.recentCommands()) || []).find(
+      (item: PharmacyAiCommand) => item.commandId === command.commandId
+    )
+    if (current) {
+      command.status = current.status
+      command.errorMessage = current.errorMessage || command.errorMessage
+    }
+  } catch {
+    /* 保留当前状态与错误提示，确认凭证已移除，避免自动重复确认。 */
+  }
+}
+
 const confirmCommand = async (command: PharmacyAiCommand) => {
+  if (executing.value === command.commandId || command.status !== 'PENDING') return
   if (!command.confirmationToken) return message.error('确认凭证不存在或页面已刷新，请重新生成预览')
   executing.value = command.commandId
   try {
-    await PharmacyAiApi.confirm(command.commandId, command.confirmationToken)
+    const result = await PharmacyAiApi.confirm(command.commandId, command.confirmationToken)
     command.status = 'EXECUTED'
-    message.success(`${commandLabel(command.tool)}成功`)
-  } catch (error) {
-    command.status = 'FAILED'
-    throw error
+    command.result = result
+    command.confirmationToken = undefined
+    command.errorMessage = undefined
+    message.success(
+      command.tool === 'CREATE_PURCHASE_DRAFT'
+        ? `已创建采购草稿 #${result.purchaseOrderId}`
+        : `${commandLabel(command.tool)}成功`
+    )
+  } catch (error: any) {
+    command.confirmationToken = undefined
+    command.errorMessage = error?.message || '确认未能完成，请先核对操作状态。'
+    await refreshCommandState(command)
   } finally {
     executing.value = undefined
   }
 }
 
 const cancelCommand = async (command: PharmacyAiCommand) => {
-  await PharmacyAiApi.cancel(command.commandId)
-  command.status = 'CANCELLED'
+  if (executing.value === command.commandId) return
+  executing.value = command.commandId
+  try {
+    await PharmacyAiApi.cancel(command.commandId)
+    command.status = 'CANCELLED'
+    command.errorMessage = undefined
+  } catch (error: any) {
+    command.errorMessage = error?.message || '取消未能完成，请先核对操作状态。'
+    await refreshCommandState(command)
+  } finally {
+    command.confirmationToken = undefined
+    executing.value = undefined
+  }
 }
 
 const commandLabel = (tool: string) =>
-  ({ CREATE_DRUG: '新增药品', UPDATE_DRUG: '修改药品', DELETE_DRUG: '删除药品' })[tool] || tool
+  ({
+    CREATE_DRUG: '新增药品',
+    UPDATE_DRUG: '修改药品',
+    DELETE_DRUG: '删除药品',
+    CREATE_PURCHASE_DRAFT: '创建采购草稿'
+  })[tool] || tool
+const money = (value: unknown) => (value == null ? '-' : Number(value).toFixed(2))
+const previewDate = (value: any, pattern = 'YYYY-MM-DD') => {
+  if (value == null) return '未指定'
+  const date = Array.isArray(value)
+    ? new Date(value[0], value[1] - 1, value[2], value[3] || 0, value[4] || 0, value[5] || 0)
+    : value
+  return formatDate(date, pattern)
+}
+const warehouseText = (value: any) =>
+  typeof value === 'string'
+    ? value
+    : value?.whName
+      ? `${value.whName}（#${value.id}）`
+      : '未指定，收货时须确定'
 const statusLabel = (status: string) =>
   ({
     PENDING: '待确认',
@@ -271,6 +449,8 @@ const diffText = (command: PharmacyAiCommand) => {
 }
 const summarizeResult = (result: any) => {
   if (Array.isArray(result)) return `共返回 ${result.length} 条药品记录。`
+  if (result?.rule)
+    return `当前门店有 ${result.items?.length || 0} 条库存预警${result.hasMore ? '（还有更多）' : ''}。${result.rule}`
   if (result?.items) return `当前门店返回 ${result.items.length} 个药品的库存摘要。`
   if (result?.found === false) return '未找到对应药品。'
   return `已返回药品 ${result?.genericName || result?.drugCode || ''} 的详情。`

@@ -42,6 +42,33 @@ class ApiAccessLogFilterSanitizeTest {
     private static final String SECRET = "test-secret-4831";
 
     @Test
+    void adminAiPrivateTextAndConfirmationNeverReachLogsBeforeController() throws Exception {
+        var api = mock(ApiAccessLogCommonApi.class);
+        var filter = new ApiAccessLogFilter(new WebProperties(), "test", api);
+        var interceptor = new ApiAccessLogInterceptor();
+        var raw = new MockHttpServletRequest("POST", "/admin-api/pharmacy/ai/purchase/preview");
+        String privateText = "synthetic-private-health-text-1938";
+        raw.setContentType("application/json");
+        raw.setContent(("{\"content\":\"" + privateText + "\",\"confirmationToken\":\"" + TOKEN + "\"}").getBytes(StandardCharsets.UTF_8));
+        HttpServletRequest request = new CacheRequestBodyWrapper(raw);
+        WebFrameworkUtils.setLoginUserType(request, 2);
+        var response = new MockHttpServletResponse();
+        var handler = new HandlerMethod(new LoginHandler(), LoginHandler.class.getMethod("login"));
+        var appender = new ListAppender<ILoggingEvent>(); appender.start();
+        Logger logger = (Logger)LoggerFactory.getLogger(ApiAccessLogInterceptor.class); logger.addAppender(appender);
+        try {
+            filter.doFilter(request, response, (req,res) -> interceptor.preHandle(request,response,handler));
+            var captured = ArgumentCaptor.forClass(ApiAccessLogCreateReqDTO.class);
+            verify(api).createApiAccessLogAsync(captured.capture());
+            String stored = captured.getValue().getRequestParams() + captured.getValue().getResponseBody();
+            assertFalse(stored.contains(privateText)); assertFalse(stored.contains(TOKEN));
+            for (var event : appender.list) {
+                assertFalse(event.getFormattedMessage().contains(privateText)); assertFalse(event.getFormattedMessage().contains(TOKEN));
+            }
+        } finally { logger.detachAppender(appender); appender.stop(); }
+    }
+
+    @Test
     void unannotatedLoginRequestSanitizesConsoleAndPersistedLog() throws Exception {
         runRequest("{\"username\":\"0407\",\"password\":\"" + PASSWORD
                 + "\",\"appSecret\":\"" + SECRET + "\",\"nested\":{\"access_token\":\"" + TOKEN + "\"}}",

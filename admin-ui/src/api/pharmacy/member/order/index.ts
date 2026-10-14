@@ -27,6 +27,20 @@ export interface MemberOrderVO {
   createTime?: Date
 }
 
+export interface MemberOrderLineVO {
+  id: number
+  wxOrderId: number
+  drugId: number
+  drugName: string
+  specification?: string
+  unit?: string
+  qty: number
+  price: number
+  lineAmount: number
+  batchNo?: string
+  pickedQty?: number
+}
+
 // 查询小程序订单分页
 export const getOrderPage = async (params: PageParam) => {
   return await request.get({ url: '/pharmacy/member/order/page', params })
@@ -36,6 +50,15 @@ export const getOrderPage = async (params: PageParam) => {
 export const getOrder = async (id: number) => {
   return await request.get({ url: '/pharmacy/member/order/get?id=' + id })
 }
+
+export const getOrderLineList = (wxOrderId: number): Promise<MemberOrderLineVO[]> =>
+  request.get({ url: '/pharmacy/member/order/line-list', params: { wxOrderId } })
+
+export const startPicking = (id: number): Promise<boolean> =>
+  request.put({ url: '/pharmacy/member/order/start-picking', params: { id } })
+
+export const finishPicking = (id: number): Promise<boolean> =>
+  request.put({ url: '/pharmacy/member/order/finish-picking', params: { id } })
 
 // 修改订单状态（已废弃：后端不存在 /pharmacy/member/order/update-status，如需状态流转请使用支付 / 取消 / 核销接口）
 

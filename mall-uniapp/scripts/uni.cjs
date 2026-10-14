@@ -2,8 +2,18 @@
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { isDeployableHttpsUrl } = require('./production-url.cjs');
+const { buildMode, validateH5TestLogin } = require('./h5-test-login.cjs');
 const root = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
+let testLogin;
+try {
+  validateH5TestLogin(args, process.env);
+  const { loadEnv } = require('vite');
+  testLogin = validateH5TestLogin(args, loadEnv(buildMode(args), root, 'SHOPRO_'));
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 if (args.includes('build') && args.includes('mp-weixin')) {
   const { loadEnv } = require('vite');
   const env = loadEnv('production', root, 'SHOPRO_');
@@ -17,7 +27,7 @@ if (args.includes('build') && args.includes('mp-weixin')) {
 const result = spawnSync(process.execPath,
   [require.resolve('@dcloudio/vite-plugin-uni/bin/uni.js'), ...args], {
     cwd: root,
-    env: { ...process.env, UNI_INPUT_DIR: root },
+    env: { ...process.env, UNI_INPUT_DIR: root, SHOPRO_H5_TEST_BUILD: testLogin ? 'local-acceptance' : '' },
     stdio: 'inherit',
   });
 if (result.error) throw result.error;
