@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env*.local
+.local/
+
+# Keep the reproducible customer build lock despite the repository-wide rule.
+!/package-lock.json

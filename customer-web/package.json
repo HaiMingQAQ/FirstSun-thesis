@@ -1,0 +1,19 @@
+{
+  "name": "firstsun-customer-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4190 --strictPort",
+    "build": "vite build",
+    "test": "node --test tests/*.test.js",
+    "dev:acceptance": "vite --host 127.0.0.1 --port 4190 --strictPort --mode local-acceptance"
+  },
+  "dependencies": {
+    "vue": "3.4.21"
+  },
+  "devDependencies": {
+    "vite": "5.4.21",
+    "@vitejs/plugin-vue": "5.2.4"
+  }
+}
