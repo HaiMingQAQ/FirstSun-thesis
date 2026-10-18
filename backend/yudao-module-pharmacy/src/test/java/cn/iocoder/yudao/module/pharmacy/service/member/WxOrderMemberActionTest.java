@@ -25,6 +25,8 @@ import static org.mockito.Mockito.*;
 class WxOrderMemberActionTest {
     WxOrderMapper mapper;
     MemberPointSettlementService points;
+    WxOrderPaymentAccess access;
+    WxOrderSalePostingService salePosting;
     WxOrderServiceImpl service;
     Environment environment;
     LoginUser login;
@@ -38,6 +40,9 @@ class WxOrderMemberActionTest {
         environment = mock(Environment.class); service = new WxOrderServiceImpl();
         ReflectionTestUtils.setField(service, "wxOrderMapper", mapper);
         ReflectionTestUtils.setField(service, "memberPointSettlementService", points);
+        access = mock(WxOrderPaymentAccess.class); salePosting = mock(WxOrderSalePostingService.class);
+        ReflectionTestUtils.setField(service, "orderPaymentAccess", access);
+        ReflectionTestUtils.setField(service, "salePosting", salePosting);
         ReflectionTestUtils.setField(service, "environment", environment);
         when(environment.getActiveProfiles()).thenReturn(new String[]{"test"});
         login = new LoginUser(); login.setId(1L); login.setTenantId(7L);
@@ -49,6 +54,7 @@ class WxOrderMemberActionTest {
         order.setOrderType(1); order.setPayStatus(1); order.setStatus(3);
         order.setOrderNo("WX-test-100"); order.setPayableAmount(new BigDecimal("53.60"));
         when(mapper.selectById(100L)).thenReturn(order);
+        when(access.lockOrder(100L)).thenAnswer(invocation -> order);
         when(mapper.update(any(), any())).thenReturn(1);
     }
     @AfterEach void clear() { TenantContextHolder.clear(); SecurityContextHolder.clearContext(); }
@@ -87,6 +93,7 @@ class WxOrderMemberActionTest {
         verify(mapper).updateById(argThat((WxOrderDO value) -> value.getPointEarned() == 53));
         order.setStatus(4); service.confirmReceiveWxOrderByMember(100L);
         verify(points, times(1)).earnSalePoints(anyLong(), anyString(), any());
+        verify(salePosting, times(1)).post(100L);
     }
     @Test void cannotConfirmPickupIncludingCompletedPickup() {
         order.setOrderType(0);
@@ -121,28 +128,28 @@ class WxOrderMemberActionTest {
         assertThrows(AccessDeniedException.class, () -> service.confirmReceiveWxOrderByMember(100L));
         TenantContextHolder.setTenantId(7L); TenantContextHolder.setIgnore(true);
         assertThrows(AccessDeniedException.class, () -> service.confirmReceiveWxOrderByMember(100L));
-        verify(mapper, never()).selectById(anyLong());
+        verify(mapper, never()).selectById(anyLong()); verifyNoInteractions(access, salePosting);
     }
     @Test void rejectsAnonymousAndAdminPrincipal() {
         login.setUserType(UserTypeEnum.ADMIN.getValue());
         assertThrows(AccessDeniedException.class, () -> service.confirmReceiveWxOrderByMember(100L));
         SecurityContextHolder.clearContext();
         assertThrows(AccessDeniedException.class, () -> service.confirmReceiveWxOrderByMember(100L));
-        verify(mapper, never()).selectById(anyLong());
+        verify(mapper, never()).selectById(anyLong()); verifyNoInteractions(access, salePosting);
     }
     @Test void conditionalUpdateLoserDoesNotEarnPoints() {
         when(mapper.update(any(), any())).thenReturn(0);
         var completed = new WxOrderDO(); completed.setMemberId(1L); completed.setOrderType(1);
         completed.setPayStatus(1); completed.setStatus(4);
-        when(mapper.selectById(100L)).thenReturn(order, completed);
-        service.confirmReceiveWxOrderByMember(100L); verifyNoInteractions(points);
+        when(mapper.selectById(100L)).thenReturn(completed);
+        service.confirmReceiveWxOrderByMember(100L); verifyNoInteractions(points, salePosting);
     }
     @Test void concurrentCancellationIsNotReportedAsSuccessfulReceipt() {
         when(mapper.update(any(), any())).thenReturn(0);
         var cancelled = new WxOrderDO(); cancelled.setMemberId(1L); cancelled.setStatus(-1);
-        when(mapper.selectById(100L)).thenReturn(order, cancelled);
+        when(mapper.selectById(100L)).thenReturn(cancelled);
         assertThrows(ServiceException.class, () -> service.confirmReceiveWxOrderByMember(100L));
-        verifyNoInteractions(points);
+        verifyNoInteractions(points, salePosting);
     }
     @Test void prescriptionReferenceRequiresOwnerStoreAndApprovalBeforeOrderWrites() {
         var prescriptions = mock(cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescRecordMapper.class);

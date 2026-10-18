@@ -86,6 +86,8 @@ class WxOrderPointSettlementTest {
     private DrugApi drugApi;
     @Mock
     private MemberPointSettlementService memberPointSettlementService;
+    @Mock
+    private WxOrderSalePostingService salePosting;
 
     @InjectMocks
     private WxOrderServiceImpl wxOrderService;

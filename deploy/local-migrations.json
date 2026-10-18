@@ -170,5 +170,9 @@
   {
     "id": 43,
     "path": "sql/migrations/20261001_d_customer_ai_history.sql"
+  },
+  {
+    "id": 44,
+    "path": "sql/migrations/20261018_a_wx_order_sale_posting.sql"
   }
 ]
