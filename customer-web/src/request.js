@@ -5,7 +5,8 @@ export {clearLoginState};
 // Account-scoped adapter calls explicitly disable refresh, preserving their captured-owner guards.
 let refreshing;
 export default async function request(config){
- const snapshot=identity(),custom=config.custom||{},headers={'Content-Type':'application/json',Accept:'*/*',terminal:'20',platform:'H5'};
+ const snapshot=identity(),custom={...(config.custom||{})},headers={'Content-Type':'application/json',Accept:'*/*',terminal:'20',platform:'H5'};
+ if(/^\/member\/(wx-cart|wx-order|address)\//.test(config.url))custom.skipRefresh=true;
  if(!custom.skipTenant)headers['tenant-id']=snapshot.tenant;
  if(custom.isToken!==false&&snapshot.token)headers.Authorization=snapshot.token;
  Object.assign(headers,config.header||{});
