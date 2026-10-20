@@ -43,7 +43,8 @@ class InventoryReadMapperTest {
         query.setFlowFrom(java.time.LocalDateTime.of(2026, 1, 1, 0, 0));
         query.setFlowBefore(java.time.LocalDateTime.of(2027, 1, 1, 0, 0));
         query.setPageNo(2);
-        Map<String, Object> parameters = Map.of("scope", new Scope(1, 2), "q", query, "id", 9L);
+        Map<String, Object> parameters = Map.of("scope", new Scope(1, 2), "q", query,
+                "warehouseId", query.getWarehouseId(), "id", 9L);
         for (var method : InventoryReadMapper.class.getDeclaredMethods()) {
             var statement = configuration.getMappedStatement(InventoryReadMapper.class.getName() + "." + method.getName());
             var bound = statement.getBoundSql(parameters);

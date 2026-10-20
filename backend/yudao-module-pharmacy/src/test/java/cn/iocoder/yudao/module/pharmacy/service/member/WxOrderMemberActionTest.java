@@ -4,8 +4,18 @@ import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.security.core.LoginUser;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
+import cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.StoreDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderDO;
+import cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription.PhPrescRecordDO;
+import cn.iocoder.yudao.module.pharmacy.dal.mysql.inventory.AppAvailableInventoryMapper;
+import cn.iocoder.yudao.module.pharmacy.dal.mysql.member.WxOrderLineMapper;
 import cn.iocoder.yudao.module.pharmacy.dal.mysql.member.WxOrderMapper;
+import cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescRecordMapper;
+import cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescriptionUseMapper;
+import cn.iocoder.yudao.module.pharmacy.service.base.DrugService;
+import cn.iocoder.yudao.module.pharmacy.service.base.StoreService;
+import cn.iocoder.yudao.module.pharmacy.service.prescription.PrescriptionNotificationService;
+import cn.iocoder.yudao.module.pharmacy.service.prescription.PrescriptionPurchaseService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -16,6 +26,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -152,22 +163,47 @@ class WxOrderMemberActionTest {
         verifyNoInteractions(points, salePosting);
     }
     @Test void prescriptionReferenceRequiresOwnerStoreAndApprovalBeforeOrderWrites() {
-        var prescriptions = mock(cn.iocoder.yudao.module.pharmacy.dal.mysql.prescription.PrescRecordMapper.class);
-        ReflectionTestUtils.setField(service, "prescRecordMapper", prescriptions);
-        var prescription = new cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription.PhPrescRecordDO();
-        prescription.setWxMemberId(2L); prescription.setStoreId(9L);
+        var prescriptions = mock(PrescRecordMapper.class);
+        var uses = mock(PrescriptionUseMapper.class);
+        var stock = mock(AppAvailableInventoryMapper.class);
+        var notifications = mock(PrescriptionNotificationService.class);
+        var stores = mock(StoreService.class);
+        var drugs = mock(DrugService.class);
+        var lines = mock(WxOrderLineMapper.class);
+        var purchase = new PrescriptionPurchaseService(prescriptions, uses, stock, notifications, stores, drugs, lines);
+        ReflectionTestUtils.setField(service, "prescriptionPurchase", purchase);
+        var store = new StoreDO(); store.setId(9L); store.setStatus(1);
+        when(stores.getStore(9L)).thenReturn(store);
+        var prescription = new PhPrescRecordDO();
+        prescription.setId(20L);
+        prescription.setWxMemberId(1L); prescription.setStoreId(9L);
         prescription.setStatus(0); prescription.setReviewStatus(1);
-        when(prescriptions.selectById(20L)).thenReturn(prescription);
-        assertThrows(ServiceException.class, () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0));
+        prescription.setApprovedUntil(LocalDateTime.now().plusDays(1));
+        prescription.setApprovedItems("[{\"drugId\":11,\"qty\":1}]");
+        when(prescriptions.lock(20L)).thenReturn(prescription);
+        assertSame(prescription, purchase.lockApproved(20L, 1L, 9L));
+
+        prescription.setWxMemberId(2L);
+        assertEquals("处方不属于当前会员与门店", assertThrows(AccessDeniedException.class,
+                () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0)).getMessage());
         prescription.setWxMemberId(1L); prescription.setStoreId(10L);
-        assertThrows(ServiceException.class, () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0));
+        assertEquals("处方不属于当前会员与门店", assertThrows(AccessDeniedException.class,
+                () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0)).getMessage());
         prescription.setStoreId(9L); prescription.setReviewStatus(0);
-        assertThrows(ServiceException.class, () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0));
+        assertEquals("处方未通过、已失效或超过有效期", assertThrows(ServiceException.class,
+                () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0)).getMessage());
         prescription.setReviewStatus(2);
-        assertThrows(ServiceException.class, () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0));
+        assertEquals("处方未通过、已失效或超过有效期", assertThrows(ServiceException.class,
+                () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0)).getMessage());
         prescription.setReviewStatus(1); prescription.setStatus(2);
-        assertThrows(ServiceException.class, () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0));
-        verifyNoInteractions(mapper, points);
+        assertEquals("处方未通过、已失效或超过有效期", assertThrows(ServiceException.class,
+                () -> service.createOrderFromCart(1L, 9L, 0, null, 20L, null, 0)).getMessage());
+        prescription.setStatus(0);
+        assertSame(prescription, purchase.lockApproved(20L, 1L, 9L));
+        verify(prescriptions, times(7)).lock(20L);
+        verify(stores, times(7)).getStore(9L);
+        verifyNoMoreInteractions(prescriptions, stores);
+        verifyNoInteractions(mapper, points, uses, stock, notifications, drugs, lines);
     }
 
 }
