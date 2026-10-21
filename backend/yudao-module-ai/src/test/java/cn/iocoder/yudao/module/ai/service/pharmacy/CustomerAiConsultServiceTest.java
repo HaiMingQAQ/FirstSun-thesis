@@ -209,4 +209,25 @@ class CustomerAiConsultServiceTest {
         var row=pending();row.setStatus("SUCCESS");row.setResultJson(saved.getValue());when(mapper.find(2L,"request_1")).thenReturn(row);
         assertEquals(response,service.consult(req));verify(client,times(1)).stream(any(org.springframework.ai.chat.prompt.Prompt.class));
     }
+    @Test void mixedRiskReminderSurvivesCheckedDeltaPersistenceAndReplay() throws Exception {
+        var models=mock(cn.iocoder.yudao.module.ai.service.model.AiModelService.class);var customerModels=mock(CustomerAiModelClient.class);
+        var client=mock(org.springframework.ai.chat.model.ChatModel.class);
+        when(models.getRequiredDefaultModel(anyInt())).thenReturn(cn.iocoder.yudao.module.ai.dal.dataobject.model.AiModelDO.builder().id(1L).platform("DeepSeek").build());
+        when(customerModels.forModel(any(),eq(0.2),eq(1200))).thenReturn(new CustomerAiModelClient.Session(client,org.springframework.ai.chat.prompt.ChatOptions.builder().build()));
+        String reminder="有过敏史时请核对规格及禁忌，勿自行加量。";
+        when(client.stream(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("该药缺少通")))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("用名，"+reminder)))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
+        var received=new java.util.ArrayList<String>();var realAnswers=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);
+        when(answers.answer(eq(req),anyList(),any())).thenAnswer(i->realAnswers.answer(req,i.getArgument(1),text->{received.add(text);((java.util.function.Consumer<String>)i.getArgument(2)).accept(text);}));
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("searchDrugs","板蓝根",null));
+        var product=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(81L,"板蓝根颗粒","板蓝根颗粒","盒装",null,"批准辛号",null,null,5,1L);
+        when(catalogue.query(1L,"板蓝根",null)).thenReturn(new CustomerAiCatalogueService.Result(List.of(product),false));
+        var response=service.consult(req);assertEquals("SUCCESS",response.status());assertTrue(response.answer().contains(reminder));
+        assertFalse(response.answer().contains("缺少通用名"));assertEquals(String.join("",received),response.answer());
+        var saved=org.mockito.ArgumentCaptor.forClass(String.class);verify(mapper).finish(eq(9L),eq("SUCCESS"),saved.capture());
+        var row=pending();row.setStatus("SUCCESS");row.setResultJson(saved.getValue());when(mapper.find(2L,"request_1")).thenReturn(row);
+        assertEquals(response,service.consult(req));verify(client,times(1)).stream(any(org.springframework.ai.chat.prompt.Prompt.class));
+    }
 }

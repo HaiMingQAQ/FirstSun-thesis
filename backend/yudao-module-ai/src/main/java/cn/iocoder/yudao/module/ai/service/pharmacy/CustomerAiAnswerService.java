@@ -89,12 +89,6 @@ public class CustomerAiAnswerService {
         var referenced = products.stream().filter(p ->
                 (p.name() != null && text.contains(p.name())) || (p.genericName() != null && !p.genericName().isBlank() && text.contains(p.genericName())));
         if (unsafe) return "具体用药请让本店药师结合症状和药品说明核对。\n";
-        boolean catalogueFacts = text.matches("(?s).*(通用名(?:称)?|(?:商品|药品)名(?:称)?|规格|生产(?:厂家|厂商|企业|商|单位)|厂家|厂商|制造商|批准(?:文号|号|信息)).*")
-                || text.matches("(?s).*(?:商品|药品)(?:基础)?(?:资料|信息).*(?:缺失|缺少|不全|不完整|未知).*");
-        if (!products.isEmpty() && catalogueFacts) {
-            // Field presence and identity come from verified rows, before any sentence reaches the stream.
-            return catalogueFacts(products);
-        }
         if (recommendation) {
             // Never pass through a model recommendation, even when it also names a verified product.
             // Render only database names so mixed or fabricated recommendations cannot escape this gate.
@@ -102,7 +96,24 @@ public class CustomerAiAnswerService {
             if (names.isBlank()) return "具体用药请让本店药师结合症状和药品说明核对。\n";
             return "可查看下方匹配的非处方商品：" + names + "。选择前请核对说明书中的适应症、禁忌和重复成分。\n";
         }
-        return text;
+        if (products.isEmpty()) return text;
+        var checked = new StringBuilder();
+        boolean renderedFacts = false;
+        for (String clause : text.split("(?<=[，,；;。！？\\n])")) {
+            if (catalogueDeclaration(clause)) {
+                // Replace the field assertion, retaining independent precautions in other clauses.
+                if (!renderedFacts) checked.append(catalogueFacts(products));
+                renderedFacts = true;
+            } else checked.append(clause);
+        }
+        return checked.toString();
+    }
+    private static boolean catalogueDeclaration(String text) {
+        String label = "(?:通用名(?:称)?|(?:商品|药品)名(?:称)?|规格|生产(?:厂家|厂商|企业|商|单位)|厂家|厂商|制造商|批准(?:文号|号|信息)|(?:商品|药品)(?:基础)?(?:资料|信息))";
+        String fields = label + "(?:[、和及与\\s]+" + label + ")*";
+        String state = "(?:缺少|缺失|未(?:提供|注明|给出|列明)|没有|未知|不详|不全|不完整|齐全|完整)";
+        return text.matches("(?s).*" + fields + "\\s*(?:(?:信息|资料)?(?:均|都)?" + state + "|为|是(?!否)|[:：]).*")
+                || text.matches("(?s).*(?:缺少|缺失|没有|未(?:提供|注明|给出|列明))\\s*" + fields + ".*");
     }
     private static String catalogueFacts(List<Product> products) {
         return products.stream().map(p -> "商品：" + field(p.name()) + "；通用名：" + field(p.genericName())
