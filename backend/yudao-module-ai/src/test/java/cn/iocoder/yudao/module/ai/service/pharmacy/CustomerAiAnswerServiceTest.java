@@ -169,4 +169,43 @@ class CustomerAiAnswerServiceTest {
         String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels).answer(req,List.of(product),received::add);
         assertEquals(String.join("",received),answer);assertTrue(answer.contains(reminder));assertFalse(answer.contains("缺少通用名"));
     }
+    @Test void conditionalFieldRisksAreNotAssertionsAboutCurrentProducts() {
+        var product=new Product(91L,"清宁片","清宁片","盒装",null,"批准壬号",null,null,3,8L);
+        for(String conditional:List.of("如通用名缺失请先咨询药师。","若批准文号缺失请核对说明书。",
+                "如果厂家信息不全请先咨询药师。","假如该药缺少规格请先核对资料。"))
+            assertEquals(conditional,CustomerAiAnswerService.safeSentence(conditional,List.of(product)));
+        String namedProduct=CustomerAiAnswerService.safeSentence("如意片缺少通用名。",List.of(product));
+        assertFalse(namedProduct.contains("缺少通用名"));assertTrue(namedProduct.contains("通用名：清宁片"));
+    }
+    @Test void localFieldAssertionsKeepUnpunctuatedPrecautions() {
+        var product=new Product(92L,"明净片","明净片","盒装",null,"批准癸号",null,null,3,8L);
+        var cases=Map.of("该药缺少通用名且儿童用药前应咨询药师。","儿童用药前应咨询药师。",
+                "批准文号缺失并且有过敏史时需先咨询药师。","有过敏史时需先咨询药师。",
+                "该药缺少通用名使用前请核对禁忌。","使用前请核对禁忌。",
+                "厂家是但马制药且儿童用药前应咨询药师。","儿童用药前应咨询药师。");
+        for(var entry:cases.entrySet()){
+            String checked=CustomerAiAnswerService.safeSentence(entry.getKey(),List.of(product));
+            assertTrue(checked.contains(entry.getValue()));assertFalse(checked.contains("该药缺少通用名"));
+            assertFalse(checked.contains("批准文号缺失"));assertFalse(checked.contains("但马制药"));
+            assertTrue(checked.contains("通用名：明净片"));assertTrue(checked.contains("生产厂家：未提供"));
+        }
+    }
+    @Test void conditionalAndUnpunctuatedRiskChunksAreCheckedBeforeDelivery() {
+        var models=mock(AiModelService.class);var client=mock(ChatModel.class);var customerModels=mock(CustomerAiModelClient.class);
+        when(models.getRequiredDefaultModel(anyInt())).thenReturn(AiModelDO.builder().id(1L).platform("DeepSeek").build());
+        when(customerModels.forModel(any(),eq(0.2),eq(1200))).thenReturn(new CustomerAiModelClient.Session(client,org.springframework.ai.chat.prompt.ChatOptions.builder().build()));
+        var received=new ArrayList<String>();String conditional="如通用名缺失请先咨询药师。",reminder="儿童用药前应咨询药师。";
+        when(client.stream(any(Prompt.class))).thenReturn(Flux.create(sink->{
+            sink.next(new ChatResponse(List.of(new Generation(new AssistantMessage("如通用名缺")))));assertTrue(received.isEmpty());
+            sink.next(new ChatResponse(List.of(new Generation(new AssistantMessage("失请先咨询药师。")))));assertEquals(conditional,String.join("",received));
+            sink.next(new ChatResponse(List.of(new Generation(new AssistantMessage("该药缺少通用名且儿童用药前应")))));
+            sink.next(new ChatResponse(List.of(new Generation(new AssistantMessage("咨询药师。")))));
+            assertFalse(String.join("",received).contains("该药缺少通用名"));assertTrue(String.join("",received).contains(reminder));
+            sink.next(new ChatResponse(List.of(new Generation(new AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build()))));sink.complete();
+        }));
+        var product=new Product(93L,"舒润片","舒润片","盒装",null,"批准子号",null,null,3,8L);var req=new CustomerAiConsultReqVO();req.setContent("用药前要注意什么");
+        String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels).answer(req,List.of(product),received::add);
+        assertEquals(String.join("",received),answer);assertTrue(answer.startsWith(conditional));assertTrue(answer.contains(reminder));
+        assertFalse(answer.contains("该药缺少通用名"));
+    }
 }
