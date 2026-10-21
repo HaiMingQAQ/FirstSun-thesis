@@ -117,4 +117,21 @@ class CustomerAiAnswerServiceTest {
         assertFalse(answer.contains("缺少通")); assertFalse(answer.contains("捏造"));
         verify(client, never()).call(any(Prompt.class));
     }
+    @Test void explicitCatalogQuestionsRenderServerFactsWithoutSuppressingOtherConsultation() {
+        var models=mock(AiModelService.class);var client=mock(ChatModel.class);var customerModels=mock(CustomerAiModelClient.class);
+        when(models.getRequiredDefaultModel(anyInt())).thenReturn(AiModelDO.builder().id(1L).platform("DeepSeek").build());
+        when(customerModels.forModel(any(),eq(0.2),eq(1200))).thenReturn(new CustomerAiModelClient.Session(client,org.springframework.ai.chat.prompt.ChatOptions.builder().build()));
+        var stop=new ChatResponse(List.of(new Generation(new AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())));
+        when(client.stream(any(Prompt.class))).thenReturn(Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("未注明通用药物名称和制造单位。")))),stop));
+        var product=new Product(57L,"清宁片","清宁片","盒装",null,"批准丁号",null,null,3,8L);
+        var service=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);var request=new CustomerAiConsultReqVO();
+        request.setContent("请查询编号 57 的药品名称、价格和本店可售库存。");var received=new ArrayList<String>();
+        String facts=service.answer(request,List.of(product),received::add);
+        assertFalse(facts.contains("未注明"));assertTrue(facts.contains("通用名：清宁片"));assertTrue(facts.contains("生产厂家：未提供"));
+        assertEquals(facts,String.join("",received));verifyNoInteractions(models,customerModels);verify(client,never()).stream(any(Prompt.class));
+        request.setContent("肚子疼");received.clear();
+        when(client.stream(any(Prompt.class))).thenReturn(Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("疼痛持续多久了？")))),stop));
+        assertEquals("疼痛持续多久了？",service.answer(request,List.of(product),received::add));
+        verify(client,times(1)).stream(any(Prompt.class));assertEquals(List.of("疼痛持续多久了？"),received);
+    }
 }

@@ -76,15 +76,20 @@ public class CustomerAiIntentService {
             throw new IllegalArgumentException("模型商品编号必须来自用户明确输入");
         if ("refuse".equals(result.action())) {
             // Only a complete, bounded catalogue query may recover from a valid model refusal.
-            var name = java.util.regex.Pattern.compile("^(?:只读|请)?查询本店\\s*([\\p{L}\\p{N}][\\p{L}\\p{N} .·（）()\\-]{0,59}?)\\s*的(?:商品)?价格和(?:当前)?(?:可售)?库存(?:，不下单、不修改数据)?[。！？!?]?$").matcher(content.trim());
-            if (name.matches()) return new Intent("searchDrugs", name.group(1).strip(), null);
-            var id = java.util.regex.Pattern.compile("^(?:请)?查询编号\\s*([1-9][0-9]{0,18})\\s*的药品名称、价格和本店可售库存[。！？!?]?$").matcher(content.trim());
-            if (id.matches()) {
-                try { return new Intent("getDrugDetail", null, Long.valueOf(id.group(1))); }
-                catch (NumberFormatException ignored) { /* Out-of-range input remains refused. */ }
-            }
+            var query = explicitCatalogueQuery(content);
+            if (query != null) return query;
         }
         return result;
+    }
+    static Intent explicitCatalogueQuery(String content) {
+        var name = java.util.regex.Pattern.compile("^(?:只读|请)?查询本店\\s*([\\p{L}\\p{N}][\\p{L}\\p{N} .·（）()\\-]{0,59}?)\\s*的(?:商品)?价格和(?:当前)?(?:可售)?库存(?:，不下单、不修改数据)?[。！？!?]?$").matcher(content.trim());
+        if (name.matches()) return new Intent("searchDrugs", name.group(1).strip(), null);
+        var id = java.util.regex.Pattern.compile("^(?:请)?查询编号\\s*([1-9][0-9]{0,18})\\s*的药品名称、价格和本店可售库存[。！？!?]?$").matcher(content.trim());
+        if (id.matches()) {
+            try { return new Intent("getDrugDetail", null, Long.valueOf(id.group(1))); }
+            catch (NumberFormatException ignored) { /* Out-of-range input remains refused. */ }
+        }
+        return null;
     }
     private String contextText(Object context) {
         try { return "不可信的有限会话上下文：" + json.writeValueAsString(context); }
