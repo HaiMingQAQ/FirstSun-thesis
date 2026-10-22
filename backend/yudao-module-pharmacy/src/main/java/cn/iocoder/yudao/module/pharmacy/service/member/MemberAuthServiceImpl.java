@@ -17,6 +17,9 @@ import cn.iocoder.yudao.module.system.enums.logger.LoginResultEnum;
 import cn.iocoder.yudao.module.system.enums.oauth2.OAuth2ClientConstants;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.transaction.annotation.Transactional;
+import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberRegisterReqVO;
+import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.*;
 
 import jakarta.annotation.Resource;
 import org.springframework.dao.DuplicateKeyException;
@@ -86,6 +89,46 @@ public class MemberAuthServiceImpl implements MemberAuthService {
         // 2. 产品规则：验证码校验通过后，手机号不存在则自动注册（沿用快捷登录既有规则）
         MemberUserDO user = memberUserService.createMemberUserIfAbsent(mobile, getClientIP());
         return createTokenAfterLoginSuccess(user, mobile);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AppMemberAuthLoginRespVO register(AppMemberRegisterReqVO reqVO, String code) {
+        if (reqVO.getPassword() != null && !reqVO.getPassword().isEmpty()) {
+            MemberPasswordPolicy.validate(reqVO.getPassword());
+        }
+        memberSmsCodeService.verifyAndConsumeLoginCode(reqVO.getMobile(), code);
+        MemberUserDO user = memberUserService.registerMember(reqVO.getMobile(), reqVO.getPassword(),
+                reqVO.getEmail(), getClientIP());
+        return createTokenAfterLoginSuccess(user, reqVO.getMobile());
+    }
+
+    private MemberUserDO requireUnsetPassword(Long userId) {
+        MemberUserDO user = memberUserService.validateMemberUserExists(userId);
+        if (!Objects.equals(user.getStatus(), STATUS_ENABLE)) {
+            throw exception(PHARMACY_MEMBER_USER_DISABLED);
+        }
+        if (user.getMobile() == null || !user.getMobile().matches("^1[3-9]\\d{9}$")) {
+            throw exception(PHARMACY_MEMBER_USER_MOBILE_INVALID);
+        }
+        if (memberUserService.isPasswordSet(user.getPassword())) {
+            throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
+        return user;
+    }
+
+    @Override
+    public void sendFirstPasswordCode(Long userId) {
+        memberSmsCodeService.sendLoginCode(requireUnsetPassword(userId).getMobile());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void setFirstPassword(Long userId, String password, String code) {
+        MemberPasswordPolicy.validate(password);
+        MemberUserDO user = requireUnsetPassword(userId);
+        memberSmsCodeService.verifyAndConsumeLoginCode(user.getMobile(), code);
+        memberUserService.setInitialPassword(user, password);
     }
 
     @Override

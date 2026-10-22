@@ -80,6 +80,12 @@ public interface MemberUserService {
      */
     boolean isPasswordMatch(String rawPassword, String encodedPassword);
 
+    boolean isPasswordSet(String encodedPassword);
+
+    MemberUserDO registerMember(String mobile, String password, String email, String ip);
+
+    void setInitialPassword(MemberUserDO user, String password);
+
     /**
      * 更新会员最后登录信息（登录 IP + 登录时间）
      */
@@ -105,5 +111,7 @@ public interface MemberUserService {
      * 仅允许修改昵称、头像、性别，不允许修改手机号、积分、等级等敏感字段。
      */
     void updateMemberUserProfile(Long id, String nickname, String avatar, Integer sex);
+
+    void updateMemberUserProfile(Long id, String nickname, String avatar, Integer sex, String email);
 
 }

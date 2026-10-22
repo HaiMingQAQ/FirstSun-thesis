@@ -15,6 +15,10 @@ public class AppMemberUserInfoRespVO {
     @Schema(description = "手机号", example = "13800138000")
     private String mobile;
 
+    private String email;
+
+    private Boolean passwordSet;
+
     @Schema(description = "用户昵称", example = "张三")
     private String nickname;
 

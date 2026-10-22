@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.module.infra.enums.ErrorCodeConstants.FILE_PATH_INVALID;
 
 @Tag(name = "用户 App - 文件存储")
 @RestController
@@ -36,6 +38,7 @@ public class AppFileController {
     @Parameter(name = "file", description = "文件附件", required = true,
             schema = @Schema(type = "string", format = "binary"))
     public CommonResult<String> uploadFile(@Valid AppFileUploadReqVO uploadReqVO) throws Exception {
+        rejectReservedAvatarPath(uploadReqVO.getDirectory());
         MultipartFile file = uploadReqVO.getFile();
         byte[] content = IoUtil.readBytes(file.getInputStream());
         return success(fileService.createFile(content, file.getOriginalFilename(),
@@ -51,13 +54,26 @@ public class AppFileController {
     public CommonResult<FilePresignedUrlRespVO> getFilePresignedUrl(
             @RequestParam("name") String name,
             @RequestParam(value = "directory", required = false) String directory) {
+        rejectReservedAvatarPath(directory);
         return success(fileService.presignPutUrl(name, directory));
     }
 
     @PostMapping("/create")
     @Operation(summary = "创建文件", description = "模式二：前端上传文件：配合 presigned-url 接口，记录上传了上传的文件")
     public CommonResult<Long> createFile(@Valid @RequestBody FileCreateReqVO createReqVO) {
+        rejectReservedAvatarPath(createReqVO.getPath());
         return success(fileService.createFile(createReqVO));
+    }
+
+    // This namespace is written only by the member's dedicated avatar endpoint.
+    private void rejectReservedAvatarPath(String value) {
+        if (value == null) {
+            return;
+        }
+        String root = value.replace('\\', '/').split("/", -1)[0].replaceAll("[. ]+$", "");
+        if ("member-profile-avatar".equalsIgnoreCase(root)) {
+            throw exception(FILE_PATH_INVALID);
+        }
     }
 
 }
