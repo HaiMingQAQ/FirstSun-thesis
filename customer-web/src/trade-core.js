@@ -7,6 +7,16 @@ export const canCancel=o=>o?.status===0&&o?.payStatus===0;
 export const canReceive=o=>o?.orderType===1&&o?.status===3&&o?.payStatus===1;
 export function expired(o,now=Date.now()){const value=typeof o?.expireAt==='number'?o.expireAt:new Date(o?.expireAt).getTime();return Number.isFinite(value)&&value<=now;}
 export const canMockPay=(o,capability,local)=>local===true&&capability===true&&canCancel(o)&&!expired(o);
+export function paymentModeNotice(o,status,local){
+ if(!canCancel(o))return '';
+ const unpaid='订单仍未支付，正式支付尚未接入。';
+ if(expired(o))return '已超过付款截止时间，当前不可模拟支付。'+unpaid;
+ if(local!==true)return '当前页面未开放本机模拟支付。'+unpaid;
+ if(status==='enabled')return '本机测试模拟支付已开放，不会产生真实付款；金额与状态由后端再次校验。订单仍未支付。';
+ if(status==='unavailable')return '无法核实模拟支付能力，当前不可用。'+unpaid;
+ if(status==='checking')return '正在核实模拟支付能力，当前不可用。'+unpaid;
+ return '本机模拟支付当前未开放。'+unpaid;
+}
 export const orderState=o=>({'-1':'已取消',0:'待支付',1:'待拣货',2:'拣货中',3:o.orderType===0?'待自提':'待收货',4:'已完成'}[o.status]||'状态待核实');
 const stale=()=>Object.assign(new Error('登录账号已变化，请重新加载'),{code:'STALE'});
 export function createTradeApi({request,cartApi,orderApi,identity}){
@@ -32,7 +42,8 @@ export function createTradeApi({request,cartApi,orderApi,identity}){
   order:id=>member(async()=>unwrap(await orderApi.getOrder(id))),
   cancel:id=>member(async()=>unwrap(await orderApi.cancelOrder(id,'顾客主动取消'))),
   receive:id=>member(async()=>unwrap(await orderApi.confirmReceive(id))),
-  capability:async()=>{try{return await member(async()=>unwrap(await orderApi.getMockPaymentAvailable()))===true;}catch{return false;}},
+  probeCapability:async()=>{try{const value=await member(async()=>unwrap(await orderApi.getMockPaymentAvailable()));return{available:value===true,status:value===true?'enabled':value===false?'disabled':'unavailable'};}catch{return{available:false,status:'unavailable'};}},
+  capability:async()=>(await api.probeCapability()).available,
   simulate:(id,local)=>member(async check=>{if(local!==true||await api.capability()!==true)throw Error('当前环境未开放测试模拟支付');check();return unwrap(await orderApi.simulatePay(id));}),
   async create({storeId,orderType,addressId,remark}){
    const previous=api.creation();if(previous?.id)throw Error('订单已创建，请查看订单详情');if(previous?.pending||previous?.unknown)throw Error('创建结果尚未确认，请先去订单列表核对');
