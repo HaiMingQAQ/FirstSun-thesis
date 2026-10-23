@@ -17,6 +17,9 @@ public class AppMemberUserInfoRespVO {
 
     private String email;
 
+    @Schema(description = "已验证的邮箱登录身份，只读；与可编辑联系方式 email 分离")
+    private String loginEmail;
+
     private Boolean passwordSet;
 
     @Schema(description = "用户昵称", example = "张三")

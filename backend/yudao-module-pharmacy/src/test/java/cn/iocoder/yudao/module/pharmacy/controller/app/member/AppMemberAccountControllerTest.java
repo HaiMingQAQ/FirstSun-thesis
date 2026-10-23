@@ -21,10 +21,12 @@ class AppMemberAccountControllerTest {
     final AppMemberUserController controller=new AppMemberUserController();
     final MemberUserService users=mock(MemberUserService.class);
     final MemberAuthService auth=mock(MemberAuthService.class);
+    final MemberEmailAuthService emailAuth=mock(MemberEmailAuthService.class);
     final MemberAvatarService avatars=mock(MemberAvatarService.class);
     @BeforeEach void setup() {
         TenantContextHolder.setTenantId(7L);ReflectionTestUtils.setField(controller,"memberUserService",users);
         ReflectionTestUtils.setField(controller,"memberAuthService",auth);ReflectionTestUtils.setField(controller,"memberAvatarService",avatars);
+        ReflectionTestUtils.setField(controller,"memberEmailAuthService",emailAuth);
     }
     @AfterEach void clean(){TenantContextHolder.clear();SecurityContextHolder.clearContext();}
     void login(int type,Long tenant) {

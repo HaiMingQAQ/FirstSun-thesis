@@ -256,6 +256,42 @@ public class MemberUserServiceImpl implements MemberUserService {
     }
 
     @Override
+    public MemberUserDO createEmailMember(Long tenantId, String email, String password, String ip) {
+        if (tenantId == null) {
+            throw exception(PHARMACY_MEMBER_USER_NOT_EXISTS);
+        }
+        if (password != null && !password.isEmpty()) {
+            MemberPasswordPolicy.validate(password);
+        }
+        MemberUserDO memberUser = new MemberUserDO();
+        memberUser.setTenantId(tenantId);
+        memberUser.setMobile(null);
+        memberUser.setEmail(email);
+        memberUser.setPassword(password == null || password.isEmpty() ? "" : PASSWORD_ENCODER.encode(password));
+        memberUser.setStatus(STATUS_ENABLE);
+        memberUser.setRegisterIp(resolveRegisterIp(ip));
+        memberUser.setNickname("邮箱会员");
+        memberUser.setAvatar("");
+        memberUser.setPoint(0);
+        memberUser.setExperience(0);
+        memberUserMapper.insert(memberUser);
+        return memberUser;
+    }
+
+    @Override
+    public void setInitialEmailPassword(MemberUserDO user, String password, Long identityId, String email) {
+        MemberPasswordPolicy.validate(password);
+        if (isPasswordSet(user.getPassword())) {
+            throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
+        int rows = memberUserMapper.updateInitialEmailPassword(user.getId(), TenantContextHolder.getRequiredTenantId(),
+                user.getPassword(), PASSWORD_ENCODER.encode(password), identityId, email);
+        if (rows != 1) {
+            throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
+    }
+
+    @Override
     public void updateMemberUserProfile(Long id, String nickname, String avatar, Integer sex) {
         // 校验会员存在
         validateMemberUserExists(id);

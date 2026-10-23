@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.MemberUserDO;
 import cn.iocoder.yudao.module.pharmacy.service.member.MemberLevelService;
 import cn.iocoder.yudao.module.pharmacy.service.member.MemberUserService;
 import cn.iocoder.yudao.module.pharmacy.service.member.MemberAuthService;
+import cn.iocoder.yudao.module.pharmacy.service.member.MemberEmailAuthService;
 import cn.iocoder.yudao.module.pharmacy.service.member.MemberAvatarService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -46,6 +47,9 @@ public class AppMemberUserController {
     private MemberAuthService memberAuthService;
 
     @Resource
+    private MemberEmailAuthService memberEmailAuthService;
+
+    @Resource
     private MemberAvatarService memberAvatarService;
 
     @GetMapping("/get")
@@ -54,6 +58,7 @@ public class AppMemberUserController {
         MemberUserDO user = memberUserService.validateMemberUserExists(requireMember());
         AppMemberUserInfoRespVO respVO = BeanUtils.toBean(user, AppMemberUserInfoRespVO.class);
         respVO.setPasswordSet(memberUserService.isPasswordSet(user.getPassword()));
+        respVO.setLoginEmail(memberEmailAuthService.getLoginEmail(user.getId()));
         // 补充会员等级名称
         if (user.getLevelId() != null) {
             MemberLevelDO level = memberLevelService.getMemberLevel(user.getLevelId());

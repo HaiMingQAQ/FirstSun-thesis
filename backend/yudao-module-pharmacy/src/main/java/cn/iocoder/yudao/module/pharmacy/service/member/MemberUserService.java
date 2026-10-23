@@ -105,6 +105,11 @@ public interface MemberUserService {
      */
     MemberUserDO createWechatMember(Long tenantId, String ip);
 
+    /** 只由已验证邮箱注册事务调用，不按历史联系方式查找或认领会员。 */
+    MemberUserDO createEmailMember(Long tenantId, String email, String password, String ip);
+
+    void setInitialEmailPassword(MemberUserDO user, String password, Long identityId, String email);
+
     /**
      * 更新会员个人资料（小程序个人中心）
      *

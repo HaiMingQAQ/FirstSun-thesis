@@ -1,1 +1,1 @@
-<template><div><p>正式顾客网页登录方式尚待确认。当前构建未启用本机测试登录。</p><p class="small muted">微信小程序登录不能直接用于此浏览器页面。</p></div></template>
+<template><div><p>当前地址未启用本机手机号验收入口。</p><p class="small muted">邮箱账号请使用邮箱登录入口；微信登录仅支持微信小程序。</p></div></template>

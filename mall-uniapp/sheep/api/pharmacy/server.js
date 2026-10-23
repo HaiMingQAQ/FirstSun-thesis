@@ -331,6 +331,7 @@ const api = {
       userId: raw.id,
       name: raw.nickname || 'FirstSun 会员',
       avatar: raw.avatar || '',
+      loginEmail: raw.loginEmail || '',
       email: raw.email || '',
       passwordSet: raw.passwordSet === true,
       mobile: raw.mobile,
