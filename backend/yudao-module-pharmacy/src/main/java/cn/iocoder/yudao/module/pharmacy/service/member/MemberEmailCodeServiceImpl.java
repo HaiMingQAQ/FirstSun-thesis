@@ -19,7 +19,7 @@ import static cn.iocoder.yudao.module.pharmacy.enums.member.MemberEmailErrorCode
 public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final Set<String> SCENES = Set.of(SCENE_REGISTER, SCENE_LOGIN, SCENE_FIRST_PASSWORD);
+    private static final Set<String> SCENES = Set.of(SCENE_REGISTER, SCENE_LOGIN, SCENE_FIRST_PASSWORD, SCENE_PASSWORD_RESET);
     private final MemberEmailProperties properties;
     private final MemberEmailCodeRedisDAO redis;
     private final ResendEmailSender sender;
@@ -58,6 +58,18 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
 
     @Override
     public void sendCode(String email, String scene, String clientIp) {
+        if (SCENE_PASSWORD_RESET.equals(scene)) {
+            throw exception(EMAIL_SCENE_INVALID);
+        }
+        sendCode(email, scene, clientIp, null);
+    }
+
+    @Override
+    public void sendPasswordResetCode(String email, String binding, String clientIp) {
+        sendCode(email, SCENE_PASSWORD_RESET, clientIp, binding);
+    }
+
+    private void sendCode(String email, String scene, String clientIp, String binding) {
         ensureAvailable();
         String normalized = MemberEmailAddress.normalize(email);
         validateScene(scene);
@@ -72,13 +84,21 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
         String version = HexFormat.of().formatHex(nonce);
         try {
             if (!redis.beginSend(tenantId, normalized, scene, clientIp, version,
-                    digest(tenantId, normalized, scene, version, code))) {
+                    digest(tenantId, normalized, scene, version, code, binding))) {
                 throw exception(EMAIL_SEND_TOO_FAST);
             }
         } catch (ServiceException ex) {
             throw ex;
         } catch (RuntimeException ignored) {
             throw exception(EMAIL_UNAVAILABLE);
+        }
+        if (SCENE_PASSWORD_RESET.equals(scene) && binding == null) {
+            try {
+                redis.abort(tenantId, normalized, scene, version);
+            } catch (RuntimeException ignored) {
+                // A pending challenge is never consumable and expires on its own.
+            }
+            return;
         }
         try {
             sender.sendCode(normalized, scene, code);
@@ -91,12 +111,30 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
             } catch (RuntimeException unavailable) {
                 // pending 不可消费且自动过期；清理异常也不输出底层细节。
             }
-            throw exception(EMAIL_SEND_FAILED);
+            if (!SCENE_PASSWORD_RESET.equals(scene)) {
+                throw exception(EMAIL_SEND_FAILED);
+            }
+            // Reset-send responses must not disclose whether an eligible identity was found.
         }
     }
 
     @Override
     public void verifyAndConsume(String email, String scene, String code, String clientIp) {
+        if (SCENE_PASSWORD_RESET.equals(scene)) {
+            throw exception(EMAIL_SCENE_INVALID);
+        }
+        verifyAndConsume(email, scene, code, clientIp, null);
+    }
+
+    @Override
+    public void verifyPasswordResetCode(String email, String binding, String code, String clientIp) {
+        if (binding == null || binding.isBlank()) {
+            throw exception(EMAIL_CODE_INVALID);
+        }
+        verifyAndConsume(email, SCENE_PASSWORD_RESET, code, clientIp, binding);
+    }
+
+    private void verifyAndConsume(String email, String scene, String code, String clientIp, String binding) {
         ensureAvailable();
         String normalized = MemberEmailAddress.normalize(email);
         validateScene(scene);
@@ -110,7 +148,7 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
             }
             String version = redis.getActiveVersion(tenantId, normalized, scene);
             if (version == null || !redis.consume(tenantId, normalized, scene, version,
-                    digest(tenantId, normalized, scene, version, code))) {
+                    digest(tenantId, normalized, scene, version, code, binding))) {
                 throw exception(EMAIL_CODE_INVALID);
             }
         } catch (ServiceException ex) {
@@ -134,7 +172,8 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
         return tenantId;
     }
 
-    private static String digest(long tenantId, String email, String scene, String version, String code) {
-        return DigestUtil.sha256Hex(tenantId + "\n" + email + "\n" + scene + "\n" + version + "\n" + code);
+    private static String digest(long tenantId, String email, String scene, String version, String code, String binding) {
+        String input = tenantId + "\n" + email + "\n" + scene + "\n" + version + "\n" + code;
+        return DigestUtil.sha256Hex(binding == null ? input : input + "\n" + binding);
     }
 }

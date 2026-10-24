@@ -51,6 +51,7 @@ public class ResendEmailSender {
             case MemberEmailCodeService.SCENE_REGISTER -> "注册";
             case MemberEmailCodeService.SCENE_LOGIN -> "登录";
             case MemberEmailCodeService.SCENE_FIRST_PASSWORD -> "首次设置密码";
+            case MemberEmailCodeService.SCENE_PASSWORD_RESET -> "重置密码";
             default -> throw exception(EMAIL_SCENE_INVALID);
         };
         try {

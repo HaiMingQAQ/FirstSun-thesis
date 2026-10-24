@@ -3,15 +3,24 @@ package cn.iocoder.yudao.module.system.dal.mysql.oauth2;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2RefreshTokenDO;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Mapper
 public interface OAuth2RefreshTokenMapper extends BaseMapperX<OAuth2RefreshTokenDO> {
+
+    default List<OAuth2RefreshTokenDO> selectListByUserIdAndUserType(Long userId, Integer userType) {
+        return selectList(new LambdaQueryWrapperX<OAuth2RefreshTokenDO>()
+                .eq(OAuth2RefreshTokenDO::getUserId, userId)
+                .eq(OAuth2RefreshTokenDO::getUserType, userType)
+                .eqIfPresent(OAuth2RefreshTokenDO::getTenantId, TenantContextHolder.getTenantId()));
+    }
 
     default int deleteByRefreshToken(String refreshToken) {
         return delete(new LambdaQueryWrapperX<OAuth2RefreshTokenDO>()

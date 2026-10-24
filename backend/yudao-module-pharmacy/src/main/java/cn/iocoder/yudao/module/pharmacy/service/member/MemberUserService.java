@@ -110,6 +110,9 @@ public interface MemberUserService {
 
     void setInitialEmailPassword(MemberUserDO user, String password, Long identityId, String email);
 
+    /** Replace only the captured password and verified identity; callers revoke sessions in the same transaction. */
+    void replaceEmailPassword(MemberUserDO user, String password, Long identityId, String email);
+
     /**
      * 更新会员个人资料（小程序个人中心）
      *

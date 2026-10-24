@@ -4,7 +4,7 @@ import account from './account.js';
 import {normalizeEmail,validEmail} from './email-address.js';
 import {identity,clearLoginState} from './session.js';
 import {sameIdentity} from './guards.js';
-const emit=defineEmits(['logged-in','register']);
+const emit=defineEmits(['logged-in','register','forgot']);
 const mode=ref('password'),email=ref(''),code=ref(''),password=ref(''),busy=ref(false),sending=ref(false),sentEmail=ref(''),cooldown=ref(0),error=ref('');
 let disposed=false,generation=0,timer,pendingOwner;
 const owns=owner=>{const now=identity();return owner&&owner.epoch===now.epoch&&owner.tenant===now.tenant;};
@@ -35,7 +35,7 @@ async function submit(){
  <label v-else class="form-field">密码<input v-model="password" type="password" autocomplete="current-password" :disabled="busy" required></label>
  <p v-if="error" class="error-panel" role="alert">{{error}}</p>
  <button class="btn primary full" :disabled="busy||sending||!validEmail(email)||(mode==='code'?(sentEmail!==email.trim().toLowerCase()||!/^\d{6}$/.test(code)):!password.trim())">{{busy?'正在登录…':'登录'}}</button>
- <div class="email-login-actions"><button type="button" class="btn link" :disabled="busy" @click="changeMode(mode==='code'?'password':'code')">{{mode==='code'?'密码登录':'验证码登录'}}</button><button type="button" class="btn link" :disabled="busy" @click="emit('register')">没有账号？立即注册</button></div>
+ <div class="email-login-actions"><button type="button" class="btn link" :disabled="busy" @click="changeMode(mode==='code'?'password':'code')">{{mode==='code'?'密码登录':'验证码登录'}}</button><button type="button" class="btn link" :disabled="busy" @click="emit('forgot')">忘记密码</button><button type="button" class="btn link" :disabled="busy" @click="emit('register')">没有账号？立即注册</button></div>
 </form>
 </template>
 <style scoped>

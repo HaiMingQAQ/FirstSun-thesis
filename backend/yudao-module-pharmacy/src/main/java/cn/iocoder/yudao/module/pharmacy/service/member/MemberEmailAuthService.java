@@ -11,4 +11,7 @@ public interface MemberEmailAuthService {
     String getLoginEmail(Long memberId);
     void sendFirstPasswordCode(Long memberId, String clientIp);
     void setFirstPassword(Long memberId, String password, String code, String clientIp);
+    void sendResetCode(String email, String clientIp);
+    void resetPassword(String email, String password, String code, String clientIp);
+    void changePassword(Long memberId, String oldPassword, String password, String clientIp);
 }

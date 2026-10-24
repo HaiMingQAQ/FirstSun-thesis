@@ -1,6 +1,6 @@
 import {normalizeEmail} from './email-address.js';
 // Desktop account requests capture one identity across every step; no refresh or retry.
-export function createAccountApi({identity,clearLoginState,setTokens,cacheProfile,fetch,FormData,localTestLogin}){
+export function createAccountApi({identity,clearLoginState,setTokens,cacheProfile,fetch,FormData,localTestLogin,onPasswordChanged=()=>{}}){
  const same=(a,b)=>a.token===b.token&&a.tenant===b.tenant&&a.epoch===b.epoch;
  const passwordValid=p=>typeof p==='string'&&p.trim()&&[...p].length>=8&&[...p].length<=64&&new TextEncoder().encode(p).length<=72;
  const ensurePassword=p=>{if(!passwordValid(p))throw Error('密码须为8–64字符且UTF-8不超过72字节，不能全为空白');};
@@ -8,9 +8,9 @@ export function createAccountApi({identity,clearLoginState,setTokens,cacheProfil
  function operation(valid=()=>true){
   let owner=identity();
   const check=()=>{if(!valid()||!same(owner,identity()))throw Error('登录账号已变化或操作已取消，请重新加载');};
-  async function request(url,{method='GET',data,code,emailCode,file}={}){
+  async function request(url,{method='GET',data,code,emailCode,file,anonymous=false}={}){
    check();const headers={Accept:'application/json',terminal:'20',platform:'H5','tenant-id':owner.tenant};
-   if(owner.token)headers.Authorization=owner.token;
+   if(owner.token&&!anonymous)headers.Authorization=owner.token;
    if(code!==undefined)headers['X-Sms-Code']=code;
    if(emailCode!==undefined)headers['X-Email-Code']=emailCode;
    let body;if(file){body=new FormData();body.append('file',file);}else if(data!==undefined){headers['Content-Type']='application/json';body=JSON.stringify(data);}
@@ -32,7 +32,22 @@ export function createAccountApi({identity,clearLoginState,setTokens,cacheProfil
   try{const tokens=await op.request(url,{method:'POST',data,code:channel==='sms'?code:undefined,emailCode:channel==='email'?code:undefined});op.adopt(tokens);return await profile(op);}catch(e){op.clear();throw e;}
  }
  const ensureEmailCode=code=>{if(!/^\d{6}$/.test(code||''))throw Error('请输入6位邮箱验证码');};
+ async function finishPasswordUpdate(url,options,valid){
+  const op=operation(valid);await op.request(url,{method:'POST',...options});op.check();op.clear();onPasswordChanged();
+ }
  const api={
+  async sendResetEmailCode(email,valid){
+   return operation(valid).request('/member/auth/send-email-reset-code',{method:'POST',data:{email:normalizeEmail(email)},anonymous:true});
+  },
+  async resetEmailPassword(email,password,code,valid){
+   const normalized=normalizeEmail(email);ensurePassword(password);ensureEmailCode(code);
+   return finishPasswordUpdate('/member/auth/email-reset-password',{data:{email:normalized,password},emailCode:code,anonymous:true},valid);
+  },
+  async changeEmailPassword(oldPassword,password,valid){
+   if(typeof oldPassword!=='string'||!oldPassword.trim())throw Error('请输入原密码');
+   ensurePassword(password);
+   return finishPasswordUpdate('/member/auth/email-change-password',{data:{oldPassword,password}},valid);
+  },
   async sendEmailCode(email,scene,valid){
    if(!['register','login'].includes(scene))throw Error('验证码用途无效');
    return operation(valid).request('/member/auth/send-email-code',{method:'POST',data:{email:normalizeEmail(email),scene}});

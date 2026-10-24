@@ -6,6 +6,7 @@ public interface MemberEmailCodeService {
     String SCENE_REGISTER = "register";
     String SCENE_LOGIN = "login";
     String SCENE_FIRST_PASSWORD = "first-password";
+    String SCENE_PASSWORD_RESET = "password-reset";
 
     /** 只读开关，关闭时旧实例无需查询新增身份表。 */
     boolean isEnabled();
@@ -19,4 +20,9 @@ public interface MemberEmailCodeService {
     void sendCode(String email, String scene, String clientIp);
 
     void verifyAndConsume(String email, String scene, String code, String clientIp);
+
+    /** Null binding applies the same send rate limits but creates no usable reset code. */
+    void sendPasswordResetCode(String email, String binding, String clientIp);
+
+    void verifyPasswordResetCode(String email, String binding, String code, String clientIp);
 }

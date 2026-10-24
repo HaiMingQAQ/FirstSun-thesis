@@ -15,4 +15,7 @@ public interface MemberEmailErrorCodes {
     ErrorCode EMAIL_LOGIN_BAD_CREDENTIALS = new ErrorCode(1_030_006_027, "邮箱或密码错误");
     ErrorCode EMAIL_IDENTITY_MISSING = new ErrorCode(1_030_006_028, "未找到已验证的邮箱账号");
     ErrorCode EMAIL_TEST_RECIPIENT_ONLY = new ErrorCode(1_030_006_029, "当前测试环境仅向配置的测试邮箱发送验证码");
+    ErrorCode EMAIL_OLD_PASSWORD_INVALID = new ErrorCode(1_030_006_030, "原密码不正确");
+    ErrorCode EMAIL_PASSWORD_STATE_CHANGED = new ErrorCode(1_030_006_031, "账号状态已变化，请重新登录或重新获取验证码");
+    ErrorCode EMAIL_PASSWORD_NOT_SET = new ErrorCode(1_030_006_032, "尚未设置密码，请使用首次设密");
 }

@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.token.OAuth2AccessTokenPageReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
 import org.apache.ibatis.annotations.Delete;
@@ -35,8 +36,10 @@ public interface OAuth2AccessTokenMapper extends BaseMapperX<OAuth2AccessTokenDO
     }
 
     default List<OAuth2AccessTokenDO> selectListByUserIdAndUserType(Long userId, Integer userType) {
-        return selectList(OAuth2AccessTokenDO::getUserId, userId,
-                OAuth2AccessTokenDO::getUserType, userType);
+        return selectList(new LambdaQueryWrapperX<OAuth2AccessTokenDO>()
+                .eq(OAuth2AccessTokenDO::getUserId, userId)
+                .eq(OAuth2AccessTokenDO::getUserType, userType)
+                .eqIfPresent(OAuth2AccessTokenDO::getTenantId, TenantContextHolder.getTenantId()));
     }
 
     /**

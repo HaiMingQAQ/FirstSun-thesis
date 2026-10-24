@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.pharmacy.service.member;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.dto.OAuth2AccessTokenCreateReqDTO;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
+import cn.hutool.crypto.digest.DigestUtil;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberAuthLoginRespVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.MemberEmailIdentityDO;
@@ -128,6 +129,74 @@ public class MemberEmailAuthServiceImpl implements MemberEmailAuthService {
         MemberEmailIdentityDO identity = requireOwnIdentity(memberId);
         memberEmailCodeService.verifyAndConsume(identity.getNormalizedEmail(), SCENE_FIRST_PASSWORD, code, clientIp);
         memberUserService.setInitialEmailPassword(member, password, identity.getId(), identity.getNormalizedEmail());
+    }
+
+    @Override
+    public void sendResetCode(String email, String clientIp) {
+        memberEmailCodeService.ensureAvailable();
+        String normalized = MemberEmailAddress.normalize(email);
+        MemberEmailIdentityDO identity = memberEmailIdentityMapper.selectByEmail(
+                TenantContextHolder.getRequiredTenantId(), normalized);
+        MemberUserDO member = activeEmailMember(identity);
+        memberEmailCodeService.sendPasswordResetCode(normalized,
+                member == null ? null : resetBinding(member, identity), clientIp);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetPassword(String email, String password, String code, String clientIp) {
+        memberEmailCodeService.ensureAvailable();
+        String normalized = MemberEmailAddress.normalize(email);
+        MemberPasswordPolicy.validate(password);
+        MemberEmailIdentityDO identity = memberEmailIdentityMapper.selectByEmail(
+                TenantContextHolder.getRequiredTenantId(), normalized);
+        MemberUserDO member = activeEmailMember(identity);
+        if (member == null) {
+            throw exception(EMAIL_CODE_INVALID);
+        }
+        memberEmailCodeService.verifyPasswordResetCode(normalized, resetBinding(member, identity), code, clientIp);
+        memberUserService.replaceEmailPassword(member, password, identity.getId(), normalized);
+        oauth2TokenApi.removeAccessToken(member.getId(), UserTypeEnum.MEMBER.getValue());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(Long memberId, String oldPassword, String password, String clientIp) {
+        memberEmailCodeService.ensureAvailable();
+        MemberPasswordPolicy.validate(password);
+        MemberEmailIdentityDO identity = requireOwnIdentity(memberId);
+        MemberUserDO member = activeEmailMember(identity);
+        if (member == null || !Objects.equals(memberId, member.getId())) {
+            throw exception(EMAIL_IDENTITY_MISSING);
+        }
+        if (!memberUserService.isPasswordSet(member.getPassword())) {
+            throw exception(EMAIL_PASSWORD_NOT_SET);
+        }
+        memberEmailCodeService.checkPasswordLoginAttempt(identity.getNormalizedEmail(), clientIp);
+        if (!memberUserService.isPasswordMatch(oldPassword, member.getPassword())) {
+            throw exception(EMAIL_OLD_PASSWORD_INVALID);
+        }
+        memberUserService.replaceEmailPassword(member, password, identity.getId(), identity.getNormalizedEmail());
+        oauth2TokenApi.removeAccessToken(memberId, UserTypeEnum.MEMBER.getValue());
+    }
+
+    private MemberUserDO activeEmailMember(MemberEmailIdentityDO identity) {
+        Long tenant = TenantContextHolder.getRequiredTenantId();
+        if (identity == null || !Objects.equals(identity.getTenantId(), tenant)
+                || Boolean.TRUE.equals(identity.getDeleted())) {
+            return null;
+        }
+        MemberUserDO member = memberUserService.getMemberUserByIdAndTenantId(identity.getMemberId(), tenant);
+        return member != null && Objects.equals(member.getId(), identity.getMemberId())
+                && Objects.equals(member.getTenantId(), tenant) && Objects.equals(member.getStatus(), 0)
+                && !Boolean.TRUE.equals(member.getDeleted()) ? member : null;
+    }
+
+    private String resetBinding(MemberUserDO member, MemberEmailIdentityDO identity) {
+        // Binding is not returned or stored in plaintext; credential/identity changes invalidate a sent reset code.
+        return DigestUtil.sha256Hex(identity.getTenantId() + "\n" + identity.getId() + "\n"
+                + identity.getMemberId() + "\n" + identity.getNormalizedEmail() + "\n"
+                + identity.getUpdateTime() + "\n" + member.getPassword() + "\n" + member.getUpdateTime());
     }
 
     private MemberEmailIdentityDO requireOwnIdentity(Long memberId) {

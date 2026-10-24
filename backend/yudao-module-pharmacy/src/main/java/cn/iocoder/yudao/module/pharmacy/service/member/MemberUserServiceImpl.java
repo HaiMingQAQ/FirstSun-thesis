@@ -23,6 +23,7 @@ import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.*;
+import static cn.iocoder.yudao.module.pharmacy.enums.member.MemberEmailErrorCodes.EMAIL_PASSWORD_STATE_CHANGED;
 
 /**
  * 会员用户 Service 实现类
@@ -288,6 +289,17 @@ public class MemberUserServiceImpl implements MemberUserService {
                 user.getPassword(), PASSWORD_ENCODER.encode(password), identityId, email);
         if (rows != 1) {
             throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
+    }
+
+    @Override
+    public void replaceEmailPassword(MemberUserDO user, String password, Long identityId, String email) {
+        MemberPasswordPolicy.validate(password);
+        // Reuse the identity/password CAS; the first-set method above retains its separate unset guard.
+        int rows = memberUserMapper.updateInitialEmailPassword(user.getId(), TenantContextHolder.getRequiredTenantId(),
+                user.getPassword(), PASSWORD_ENCODER.encode(password), identityId, email);
+        if (rows != 1) {
+            throw exception(EMAIL_PASSWORD_STATE_CHANGED);
         }
     }
 
