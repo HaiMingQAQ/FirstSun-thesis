@@ -72,19 +72,19 @@ public class CustomerAiCatalogueService {
                 .filter(c -> c.getCatName() != null && c.getCatName().contains(keyword)).map(c -> c.getId()).toList();
         return query(storeId, keyword, null, true, categoryIds);
     }
-    private Result query(Long storeId, String keyword, Long id, boolean advice, List<Long> categoryIds) {
+    private Result query(Long storeId, String keyword, Long id, boolean browse, List<Long> categoryIds) {
         requireStore(storeId);
         // One bounded projection; filter BEFORE limiting. Never reuse administrator search results.
         var query = allowedQuery()
                 .eqIfPresent(DrugDO::getId, id)
-                .and(!advice && keyword != null && !keyword.isBlank(), w -> w.like(DrugDO::getGenericName, keyword)
+                .and(!browse && keyword != null && !keyword.isBlank(), w -> w.like(DrugDO::getGenericName, keyword)
                         .or().like(DrugDO::getTradeName, keyword).or().like(DrugDO::getSpellCode, keyword))
-                .and(advice, w -> w.like(DrugDO::getDescription, keyword)
+                .and(browse, w -> w.like(DrugDO::getDescription, keyword)
                         .or().like(DrugDO::getGenericName, keyword).or().like(DrugDO::getTradeName, keyword)
                         .or(!categoryIds.isEmpty()).in(!categoryIds.isEmpty(), DrugDO::getCategoryId, categoryIds))
                 .orderByDesc(DrugDO::getId).last("LIMIT 21");
         var found = drugs.selectList(query);
-        return project(storeId, found, false, found.size() > 20);
+        return project(storeId, found, browse, found.size() > 20);
     }
     private Result project(Long storeId, List<DrugDO> found, boolean includeUnavailable, boolean truncated) {
         if (found.isEmpty()) return new Result(List.of(), false);

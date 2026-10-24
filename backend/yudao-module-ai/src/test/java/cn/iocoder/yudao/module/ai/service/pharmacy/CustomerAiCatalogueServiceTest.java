@@ -89,4 +89,36 @@ class CustomerAiCatalogueServiceTest {
         assertEquals(List.of(), CustomerAiCatalogueService.symptomTerms("肚子疼"));
         assertEquals(List.of("鼻塞"), CustomerAiCatalogueService.symptomTerms("没有流鼻涕，无发烧，鼻塞"));
     }
+    @Test void browsingKeepsUnavailableCardsAndSortsAvailableFirstWithoutChangingStock() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "browse-stock-test"), DrugDO.class);
+        var drugs=mock(DrugMapper.class); var inventory=mock(AppAvailableInventoryMapper.class);
+        var stores=mock(StoreService.class); var categories=mock(CategoryService.class);
+        var store=new StoreDO(); store.setStatus(1); when(stores.getStore(1L)).thenReturn(store);
+        var missing=new DrugDO(); missing.setId(1L); missing.setGenericName("缺货资料");
+        var available=new DrugDO(); available.setId(2L); available.setGenericName("有货资料");
+        var zero=new DrugDO(); zero.setId(3L); zero.setGenericName("零库存资料");
+        when(drugs.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenReturn(List.of(missing,available,zero));
+        var a=new cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppInventoryAvailableRespVO(); a.setDrugId(2L); a.setQtyAvail(4);
+        var z=new cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppInventoryAvailableRespVO(); z.setDrugId(3L); z.setQtyAvail(0);
+        when(inventory.selectAvailable(any(),eq(1L),anyList())).thenReturn(List.of(a,z));
+        var catalogue=new CustomerAiCatalogueService(drugs,inventory,stores,categories);
+        var result=catalogue.browseCandidates(1L,"感冒");
+        assertEquals(List.of(2L,1L,3L),result.products().stream().map(p->p.id()).toList());
+        assertEquals(List.of(4,0,0),result.products().stream().map(p->p.availableQty()).toList());
+        assertTrue(result.products().stream().allMatch(p->p.storeId()==1L)); assertFalse(result.truncated());
+        assertEquals(List.of(2L),catalogue.query(1L,"感冒",null).products().stream().map(p->p.id()).toList());
+        when(drugs.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenReturn(List.of(missing));
+        assertTrue(catalogue.query(1L,null,1L).products().isEmpty());
+    }
+    @Test void allUnavailableBrowsingRemainsBoundedAndMarksTruncation() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "browse-limit-test"), DrugDO.class);
+        var drugs=mock(DrugMapper.class); var inventory=mock(AppAvailableInventoryMapper.class); var stores=mock(StoreService.class);
+        var store=new StoreDO(); store.setStatus(1); when(stores.getStore(1L)).thenReturn(store);
+        var found=java.util.stream.LongStream.rangeClosed(1,21).mapToObj(id->{var d=new DrugDO();d.setId(id);d.setGenericName("资料"+id);return d;}).toList();
+        when(drugs.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenReturn(found);
+        when(inventory.selectAvailable(any(),eq(1L),anyList())).thenReturn(List.of());
+        var result=new CustomerAiCatalogueService(drugs,inventory,stores,mock(CategoryService.class)).browseCandidates(1L,"感冒");
+        assertEquals(20,result.products().size()); assertTrue(result.truncated());
+        assertTrue(result.products().stream().allMatch(p->p.availableQty()==0));
+    }
 }

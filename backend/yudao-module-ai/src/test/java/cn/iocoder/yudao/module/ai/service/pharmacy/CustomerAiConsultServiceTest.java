@@ -252,4 +252,30 @@ class CustomerAiConsultServiceTest {
         var row=pending();row.setStatus("SUCCESS");row.setResultJson(saved.getValue());when(mapper.find(2L,"request_1")).thenReturn(row);
         assertEquals(response,service.consult(req));verify(client,times(1)).stream(any(org.springframework.ai.chat.prompt.Prompt.class));
     }
+    @Test void unavailableBrowsingNoticeAndCardsPersistExactlyAsDeliveredAndReplay() throws Exception {
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("browseDrugs","感冒",null));
+        var product=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(
+                11L,"测试药品资料","测试药品资料","规格","厂家","批准号",null,null,0,1L);
+        when(catalogue.browseCandidates(1L,"感冒")).thenReturn(new CustomerAiCatalogueService.Result(List.of(product),false));
+        var delivered=new java.util.ArrayList<String>();
+        var method=CustomerAiConsultService.class.getDeclaredMethod("consult",CustomerAiConsultReqVO.class,java.util.function.Consumer.class);
+        method.setAccessible(true);
+        var result=(cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO)method.invoke(service,req,(java.util.function.Consumer<String>)delivered::add);
+        assertEquals("SUCCESS",result.status()); assertEquals(List.of(product),result.products());
+        assertTrue(result.answer().contains("找到1种")); assertTrue(result.answer().contains("目前均缺货"));
+        assertTrue(result.answer().contains("仅供查看资料")); assertTrue(result.answer().contains("暂不可购买"));
+        assertFalse(result.answer().contains("暂未查到")); assertEquals(result.answer(),String.join("",delivered));
+        var saved=org.mockito.ArgumentCaptor.forClass(String.class); verify(mapper).finish(eq(9L),eq("SUCCESS"),saved.capture());
+        var row=pending(); row.setStatus("SUCCESS"); row.setResultJson(saved.getValue()); when(mapper.find(2L,"request_1")).thenReturn(row);
+        assertEquals(result,service.consult(req)); verify(intent,times(1)).resolve(anyString()); verifyNoInteractions(answers);
+    }
+    @Test void mixedBrowsingStockKeepsQuantitiesAndOnlyMarksUnavailableCards() {
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("browseDrugs","感冒",null));
+        var available=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(11L,"有货资料","有货资料","规格","厂家","批准号",null,null,3,1L);
+        var unavailable=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(12L,"缺货资料","缺货资料","规格","厂家","批准号",null,null,0,1L);
+        when(catalogue.browseCandidates(1L,"感冒")).thenReturn(new CustomerAiCatalogueService.Result(List.of(available,unavailable),false));
+        var result=service.consult(req); assertEquals(List.of(available,unavailable),result.products());
+        assertTrue(result.answer().contains("缺货商品仅供查看资料，暂不可购买"));
+        assertFalse(result.answer().contains("目前均缺货")); verifyNoInteractions(answers);
+    }
 }
