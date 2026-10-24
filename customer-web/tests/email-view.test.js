@@ -16,7 +16,7 @@ function setup(file,names,account={},props={disabled:false,user:{userId:19}},onE
 }
 function auth(file='EmailLogin.vue',account={}){
  const names=['email','code','password','sentEmail','busy','sending','cooldown','error','sendCode','submit',...(file==='EmailLogin.vue'?['mode','changeMode']:['confirm'])];
- const h=setup(file,names,account);h.email.value='Member@Example.Test';h.watch();return h;
+ const h=setup(file,names,account);if(file==='EmailLogin.vue')h.changeMode('code');h.email.value='Member@Example.Test';h.watch();return h;
 }
 function ready(h){h.sentEmail.value='member@example.test';h.code.value='123456';return h;}
 for(const file of ['EmailLogin.vue','EmailRegister.vue'])test(file+' requires explicit successful send and never resends on consume',async()=>{
