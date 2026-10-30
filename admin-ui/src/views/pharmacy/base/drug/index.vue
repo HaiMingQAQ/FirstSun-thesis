@@ -78,6 +78,16 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item v-show="expandQuery" label="线上可售" prop="saleableOnline">
+          <el-select v-model="queryParams.saleableOnline" placeholder="请选择" clearable class="!w-180px">
+            <el-option
+              v-for="dict in getIntDictOptions(DICT_TYPE.PHARMACY_YES_NO)"
+              :key="dict.value"
+              :label="dict.label"
+              :value="dict.value"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item v-show="expandQuery" label="审核状态" prop="approveStatus">
           <el-select
             v-model="queryParams.approveStatus"
@@ -126,6 +136,7 @@
         导出
       </el-button>
 
+      <el-alert v-if="listError" :title="listError" type="error" :closable="false" class="mt-10px" />
       <el-table v-loading="loading" :data="list" :show-overflow-tooltip="true" class="mt-10px">
         <el-table-column label="图片" align="center" width="76">
           <template #default="scope">
@@ -166,6 +177,14 @@
           </template>
         </el-table-column>
         <el-table-column label="零售价" align="right" prop="retailPrice" width="100" />
+        <el-table-column label="会员价" align="right" width="100">
+          <template #default="scope">{{ scope.row.memberPrice ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="线上可售" align="center" prop="saleableOnline" width="100">
+          <template #default="scope">
+            <dict-tag :type="DICT_TYPE.PHARMACY_YES_NO" :value="scope.row.saleableOnline" />
+          </template>
+        </el-table-column>
         <el-table-column label="审核状态" align="center" prop="approveStatus" width="100">
           <template #default="scope">
             <dict-tag
@@ -251,8 +270,10 @@ const message = useMessage() // 消息弹窗
 const { t } = useI18n() // 国际化
 
 const loading = ref(true)
+const listError = ref('')
 const total = ref(0)
 const list = ref<any[]>([])
+let listGeneration = 0
 /** 查询区「更多筛选」展开状态：默认仅展示高频条件，审核状态收入展开区 */
 const expandQuery = ref(false)
 const queryParams = reactive({
@@ -264,6 +285,7 @@ const queryParams = reactive({
   categoryId: undefined,
   drugType: undefined,
   approveStatus: undefined,
+  saleableOnline: undefined,
   status: undefined
 })
 const queryFormRef = ref()
@@ -295,13 +317,19 @@ const getCategoryTree = async () => {
 
 /** 查询列表 */
 const getList = async () => {
+  const ticket = ++listGeneration
   loading.value = true
+  listError.value = ''
   try {
     const data = await DrugApi.getDrugPage(queryParams)
+    if (ticket !== listGeneration) return
     list.value = data.list
     total.value = data.total
+  } catch {
+    if (ticket !== listGeneration) return
+    listError.value = '药品列表加载失败，请重试。当前表格仍是上次成功的结果。'
   } finally {
-    loading.value = false
+    if (ticket === listGeneration) loading.value = false
   }
 }
 

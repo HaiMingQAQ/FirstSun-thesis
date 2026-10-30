@@ -93,18 +93,13 @@
 
     <!-- 列表 -->
     <ContentWrap class="pharmacy-panel">
-      <el-table
-        v-loading="loading"
-        :data="list"
-        row-key="id"
-        default-expand-all
-        :tree-props="{ children: 'children' }"
-      >
+      <el-alert v-if="listError" :title="listError" type="error" :closable="false" class="mb-12px" />
+      <el-table v-loading="loading" :data="list" row-key="id">
         <el-table-column label="分类名称" align="left" prop="catName" min-width="180" />
         <el-table-column label="分类编码" align="left" prop="catCode" min-width="140" />
         <el-table-column label="上级分类" align="center" prop="parentId">
           <template #default="scope">
-            {{ parentMap[scope.row.parentId]?.catName ?? '顶级分类' }}
+            {{ parentCategoryLabel(scope.row.parentId, parentMap[scope.row.parentId]?.catName) }}
           </template>
         </el-table-column>
         <el-table-column label="分类类型" align="center" prop="catType">
@@ -155,9 +150,9 @@
 <script lang="ts" setup>
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import download from '@/utils/download'
-import { handleTree } from '@/utils/tree'
 import * as CategoryApi from '@/api/pharmacy/base/category'
 import CategoryForm from './CategoryForm.vue'
+import { parentCategoryLabel } from './display'
 
 defineOptions({ name: 'PharmacyBaseCategory' })
 
@@ -165,8 +160,10 @@ const message = useMessage() // 消息弹窗
 const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中
+const listError = ref('')
 const total = ref(0) // 列表的总页数
 const list = ref<CategoryApi.CategoryVO[]>([]) // 列表的数据
+let listGeneration = 0
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
@@ -198,13 +195,20 @@ const loadAllCategories = async () => {
 
 /** 查询药品分类列表 */
 const getList = async () => {
+  const ticket = ++listGeneration
   loading.value = true
+  listError.value = ''
   try {
     const data = await CategoryApi.getCategoryPage(queryParams)
-    list.value = handleTree(data.list, 'id', 'parentId')
+    if (ticket !== listGeneration) return
+    // 分页结果按平铺展示。跨页父子不能在当前页拼成树，上级名称单独显示。
+    list.value = data.list || []
     total.value = data.total
+  } catch {
+    if (ticket !== listGeneration) return
+    listError.value = '分类列表加载失败，请重试。当前表格仍是上次成功的结果。'
   } finally {
-    loading.value = false
+    if (ticket === listGeneration) loading.value = false
   }
 }
 

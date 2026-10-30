@@ -2,6 +2,7 @@
   <el-drawer v-model="visible" title="库存台账" size="min(1280px, 98vw)" @closed="close">
     <div class="pharmacy-page pharmacy-modern-page">
       <p>{{ warehouseName }}</p>
+      <p class="ledger-note">批次和货位接口按药品编号返回，不包含药品名称、规格。门店编号来自当前仓库，不来自批次行。</p>
       <el-tabs v-model="tab" @tab-change="changeTab">
         <el-tab-pane v-if="canStock" label="批次库存" name="batches" />
         <el-tab-pane v-if="canStock" label="货位库存" name="locations" />
@@ -244,8 +245,6 @@ const load = async () => {
     loaded.value = true
   } catch {
     if (requestId !== sequence || !visible.value) return
-    rows.value = []
-    total.value = 0
     failed.value = true
   } finally {
     if (requestId === sequence) loading.value = false
@@ -288,10 +287,13 @@ const open = (warehouse: WarehouseVO) => {
   close()
   query.warehouseId = warehouse.id
   query.pageSize = 10
-  warehouseName.value = `${warehouse.whName}（${warehouse.whCode}）`
+  warehouseName.value = `${warehouse.whName}（${warehouse.whCode}）· 门店 ${warehouse.storeId}`
   tab.value = canStock.value ? 'batches' : 'flows'
   visible.value = true
   return reset()
 }
 defineExpose({ open })
 </script>
+<style scoped>
+.ledger-note { color: var(--el-text-color-secondary); font-size: 13px; }
+</style>
