@@ -4,14 +4,14 @@
 
 ## 从哪个版本开始
 
-- 共同分支：`codex/customer-password-security-20261025`。
+- 共同分支：`main`。PR #3 已于 2026-10-30 合并，合并提交为 `5497c9571414f8bfb16397677fec257a1d523d8d`；原功能分支 `codex/customer-password-security-20261025` 保留。
 - 已实现及已测的产品源码提交：`f836342209a9a7a699cc53aa083dc10245f1ef73`。分支后续的本次交接提交只增加本文。
 - 相对同步前的 GitHub `main`（`1bfa10126ae7a7120d4c3732ee61633d39eaf610`），包含 17 个已有提交，涵盖销售入账、电脑端、已禁用模块精简、AI 查询修正、会员账号及密码功能。
-- 本地 `main` 原在 `75258f4261f9bec2865a6334504e080413105f12`，尚未包含之后 7 个功能提交。请从上述共同分支创建任务分支。
+- 合并前本地 `main` 在 `75258f4261f9bec2865a6334504e080413105f12`，当时尚未包含之后 7 个功能提交；现已快进同步到上述合并提交。后续从最新 `main` 创建各自的任务分支。
 - 大量后端文件删除来自既有模块精简提交，不是本次交接删除；历史功能、测试及原始提交仍保留在 Git 历史。
 
 ```sh
-git clone --branch codex/customer-password-security-20261025 https://github.com/HaiMingQAQ/FirstSun-thesis.git
+git clone --branch main https://github.com/HaiMingQAQ/FirstSun-thesis.git
 cd FirstSun-thesis
 git switch -c work/your-task
 ```
