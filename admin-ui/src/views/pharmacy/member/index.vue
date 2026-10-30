@@ -44,10 +44,10 @@
       <el-form-item label="状态" prop="status">
         <el-select v-model="queryParams.status" placeholder="请选择状态" clearable class="!w-240px">
           <el-option
-            v-for="dict in getIntDictOptions(DICT_TYPE.PHARMACY_STATUS)"
-            :key="dict.value"
-            :label="dict.label"
-            :value="dict.value"
+            v-for="item in MEMBER_STATUS_OPTIONS"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
           />
         </el-select>
       </el-form-item>
@@ -76,7 +76,15 @@
 
   <!-- 列表 -->
   <ContentWrap class="pharmacy-panel">
-    <el-table v-loading="loading" :data="list">
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" class="mb-12px" />
+    <el-alert
+      v-if="levelError"
+      :title="levelError"
+      type="warning"
+      :closable="false"
+      class="mb-12px"
+    />
+    <el-table v-loading="loading" :data="list" empty-text="没有符合条件的会员" :show-overflow-tooltip="true">
       <el-table-column label="手机号" align="center" prop="mobile" width="130" />
       <el-table-column label="昵称" align="center" prop="nickname" />
       <el-table-column label="姓名" align="center" prop="name" width="100" />
@@ -93,7 +101,9 @@
       <el-table-column label="积分" align="center" prop="point" width="100" />
       <el-table-column label="状态" align="center" prop="status" width="100">
         <template #default="scope">
-          <dict-tag :type="DICT_TYPE.PHARMACY_STATUS" :value="scope.row.status" />
+          <el-tag :type="isMemberEnabled(scope.row.status) ? 'success' : 'info'">{{
+            memberStatusLabel(scope.row.status)
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="注册时间" align="center" prop="createTime" width="180">
@@ -113,11 +123,11 @@
           </el-button>
           <el-button
             link
-            :type="scope.row.status === 1 ? 'danger' : 'success'"
+            :type="isMemberEnabled(scope.row.status) ? 'danger' : 'success'"
             @click="handleStatusChange(scope.row)"
             v-hasPermi="['pharmacy:member:user:update']"
           >
-            {{ scope.row.status === 1 ? '禁用' : '启用' }}
+            {{ isMemberEnabled(scope.row.status) ? '禁用' : '启用' }}
           </el-button>
           <el-button
             link
@@ -143,12 +153,20 @@
   <MemberForm ref="formRef" @success="handleFormSuccess" />
 </template>
 <script lang="ts" setup>
-import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
+import { DICT_TYPE } from '@/utils/dict'
 import download from '@/utils/download'
 import { formatDate } from '@/utils/formatTime'
+import { checkPermi } from '@/utils/permission'
 import * as MemberApi from '@/api/pharmacy/member/user'
 import * as LevelApi from '@/api/pharmacy/member/level'
 import MemberForm from './MemberForm.vue'
+import {
+  MEMBER_EXPORT_NOTICE,
+  MEMBER_STATUS_OPTIONS,
+  isMemberEnabled,
+  memberStatusLabel,
+  toggledMemberStatus
+} from './member-status'
 
 defineOptions({ name: 'PharmacyMemberUser' })
 
@@ -156,8 +174,12 @@ const message = useMessage() // 消息弹窗
 const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中
+const listError = ref('')
+const levelError = ref('')
 const total = ref(0) // 列表的总页数
 const list = ref([]) // 列表的数据
+let listGeneration = 0
+const canQuery = computed(() => checkPermi(['pharmacy:member:user:query']))
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
@@ -173,24 +195,42 @@ const exportLoading = ref(false) // 导出的加载中
 const levelList = ref<LevelApi.MemberLevelSimpleVO[]>([])
 const levelMap = ref<Record<number, LevelApi.MemberLevelSimpleVO>>({})
 const loadLevelList = async () => {
-  const data = await LevelApi.getSimpleLevelList()
-  levelList.value = data
-  const map: Record<number, LevelApi.MemberLevelSimpleVO> = {}
-  for (const item of data) {
-    map[item.id] = item
+  levelError.value = ''
+  try {
+    const data = await LevelApi.getSimpleLevelList()
+    levelList.value = data || []
+    const map: Record<number, LevelApi.MemberLevelSimpleVO> = {}
+    for (const item of levelList.value) {
+      map[item.id] = item
+    }
+    levelMap.value = map
+  } catch {
+    levelList.value = []
+    levelMap.value = {}
+    levelError.value = '会员等级没有加载，列表里的等级会显示为编号。'
   }
-  levelMap.value = map
 }
 
 /** 查询会员列表 */
 const getList = async () => {
+  if (!canQuery.value) {
+    loading.value = false
+    listError.value = '没有会员查询权限，不能读取会员档案。'
+    return
+  }
+  const ticket = ++listGeneration
   loading.value = true
+  listError.value = ''
   try {
     const data = await MemberApi.getMemberPage(queryParams)
-    list.value = data.list
+    if (ticket !== listGeneration) return
+    list.value = data.list || []
     total.value = data.total
+  } catch {
+    if (ticket !== listGeneration) return
+    listError.value = '会员列表加载失败，请重试。表格仍保留上次成功的结果。'
   } finally {
-    loading.value = false
+    if (ticket === listGeneration) loading.value = false
   }
 }
 
@@ -235,8 +275,8 @@ const handleDelete = async (id: number) => {
 /** 启用/禁用操作 */
 const handleStatusChange = async (row: MemberApi.MemberUserVO) => {
   try {
-    const newStatus = row.status === 1 ? 0 : 1
-    const actionText = newStatus === 1 ? '启用' : '禁用'
+    const newStatus = toggledMemberStatus(row.status)
+    const actionText = newStatus === 0 ? '启用' : '禁用'
     await message.confirm(`确定要${actionText}该会员吗？`)
     await MemberApi.updateMemberStatus(row.id!, newStatus)
     message.success(t('common.updateSuccess'))
@@ -248,7 +288,7 @@ const handleStatusChange = async (row: MemberApi.MemberUserVO) => {
 const handleExport = async () => {
   try {
     // 导出的二次确认
-    await message.exportConfirm()
+    await message.confirm(MEMBER_EXPORT_NOTICE, '导出会员档案')
     // 发起导出
     exportLoading.value = true
     const data = await MemberApi.exportMember(queryParams)
@@ -261,6 +301,11 @@ const handleExport = async () => {
 
 /** 初始化 **/
 onMounted(async () => {
+  if (!canQuery.value) {
+    loading.value = false
+    listError.value = '没有会员查询权限，不能读取会员档案。'
+    return
+  }
   await loadLevelList()
   await getList()
 })

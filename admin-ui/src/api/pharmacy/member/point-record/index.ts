@@ -4,7 +4,7 @@ import request from '@/config/axios'
 export interface PointRecordVO {
   id?: number
   userId: number
-  bizId: number
+  bizId: string
   bizType: number
   title: string
   description: string
