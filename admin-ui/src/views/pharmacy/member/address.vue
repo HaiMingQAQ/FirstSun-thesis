@@ -42,7 +42,7 @@
 
   <!-- 列表 -->
   <ContentWrap class="pharmacy-panel">
-    <el-table v-loading="loading" :data="list">
+    <el-table v-loading="loading" :data="list" empty-text="没有收件地址" :show-overflow-tooltip="true">
       <el-table-column label="会员ID" align="center" prop="userId" width="100" />
       <el-table-column label="收件人" align="center" prop="name" width="120" />
       <el-table-column label="手机号" align="center" prop="mobile" width="130" />
@@ -114,7 +114,7 @@
   </el-drawer>
 
   <!-- 新增 / 编辑收货地址 -->
-  <el-dialog v-model="formVisible" :title="formTitle" width="520px">
+  <el-dialog v-model="formVisible" :title="formTitle" width="min(520px, 94vw)">
     <el-form ref="formRef" v-loading="formLoading" :model="formData" :rules="formRules" label-width="90px">
       <el-form-item label="会员ID" prop="userId">
         <el-input-number v-model="formData.userId" :min="1" controls-position="right" class="!w-200px" />
@@ -277,11 +277,11 @@ const openForm = (row?: AddressApi.MemberAddressVO) => {
 
 /** 提交新增 / 编辑 */
 const submitForm = async () => {
-  if (!formRef.value) return
-  const valid = await formRef.value.validate()
-  if (!valid) return
+  if (!formRef.value || formLoading.value) return
   formLoading.value = true
   try {
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
     const payload = { ...formData.value }
     if (payload.id) {
       await AddressApi.updateAddress(payload)

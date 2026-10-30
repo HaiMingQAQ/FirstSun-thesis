@@ -90,7 +90,7 @@
   </ContentWrap>
 
   <!-- 新建退货弹窗 -->
-  <el-dialog v-model="returnDialogVisible" title="新建退货" width="720px" :close-on-click-modal="false">
+  <el-dialog v-model="returnDialogVisible" title="新建退货" width="min(720px, 94vw)" :close-on-click-modal="false">
     <el-form ref="returnFormRef" :model="returnForm" :rules="returnRules" label-width="110px">
       <el-form-item label="原销售单ID" prop="saleOrderId">
         <el-input-number
@@ -175,7 +175,7 @@
   </el-dialog>
 
   <!-- 详情弹窗 -->
-  <el-dialog v-model="detailVisible" title="退货单详情" width="640px">
+  <el-dialog v-model="detailVisible" title="退货单详情" width="min(640px, 94vw)">
     <template v-if="returnDetail">
       <el-descriptions :column="2" border>
         <el-descriptions-item label="退货单号">{{ returnDetail.returnOrder.returnNo }}</el-descriptions-item>

@@ -109,7 +109,7 @@
   </ContentWrap>
 
   <!-- 开台弹窗 -->
-  <el-dialog v-model="openShiftDialogVisible" title="开台" width="440px">
+  <el-dialog v-model="openShiftDialogVisible" title="开台" width="min(440px, 94vw)">
     <el-form label-width="90px">
       <el-form-item label="门店">
         <el-input-number v-model="openShiftForm.storeId" :min="1" :controls="false" class="!w-180px" />
@@ -128,7 +128,7 @@
   </el-dialog>
 
   <!-- 交班弹窗 -->
-  <el-dialog v-model="closeShiftDialogVisible" title="交班" width="480px">    <el-form label-width="110px">
+  <el-dialog v-model="closeShiftDialogVisible" title="交班" width="min(480px, 94vw)">    <el-form label-width="110px">
       <el-form-item label="班次号">
         <span>{{ closeShiftForm.shiftNo }}</span>
       </el-form-item>

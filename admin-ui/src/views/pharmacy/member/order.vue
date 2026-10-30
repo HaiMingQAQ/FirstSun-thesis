@@ -66,7 +66,7 @@
   <!-- 列表 -->
   <ContentWrap class="pharmacy-panel">
     <el-alert v-if="pickingError" :title="pickingError" type="error" :closable="false" class="mb-4" />
-    <el-table v-loading="loading" :data="list">
+    <el-table v-loading="loading" :data="list" empty-text="没有订单" :show-overflow-tooltip="true">
       <el-table-column label="订单号" align="center" prop="orderNo" width="180" />
       <el-table-column label="会员ID" align="center" prop="memberId" width="100" />
       <el-table-column label="门店ID" align="center" prop="storeId" width="100" />
@@ -163,7 +163,7 @@
   <OrderDetail ref="detailRef" @success="handleDetailSuccess" />
 
   <!-- 核销对话框：提货码必填；核销员工由服务端根据登录用户确认 -->
-  <el-dialog v-model="verifyVisible" title="订单核销" width="420px">
+  <el-dialog v-model="verifyVisible" title="订单核销" width="min(420px, 94vw)">
     <el-form ref="verifyFormRef" :model="verifyForm" :rules="verifyRules" label-width="80px">
       <el-form-item label="订单号">
         <span>{{ verifyForm.orderNo }}</span>
