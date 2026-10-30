@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.pharmacy.service.member;
 import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberAuthLoginReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberAuthLoginRespVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberWechatLoginRespVO;
+import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberRegisterReqVO;
 
 /**
  * 会员认证 Service（小程序端）
@@ -16,6 +17,12 @@ public interface MemberAuthService {
      * 手机号 + 密码登录
      */
     AppMemberAuthLoginRespVO login(AppMemberAuthLoginReqVO reqVO);
+
+    AppMemberAuthLoginRespVO register(AppMemberRegisterReqVO reqVO, String code);
+
+    void sendFirstPasswordCode(Long userId);
+
+    void setFirstPassword(Long userId, String password, String code);
 
     /**
      * 手机号 + 验证码快捷登录（小程序），验证码校验通过后不存在则自动注册

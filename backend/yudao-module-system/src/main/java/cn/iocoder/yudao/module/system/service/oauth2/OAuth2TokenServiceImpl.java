@@ -156,19 +156,24 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void removeAccessToken(Long userId, Integer userType) {
         List<OAuth2AccessTokenDO> accessTokens = oauth2AccessTokenMapper.selectListByUserIdAndUserType(userId, userType);
-        if (CollUtil.isEmpty(accessTokens)) {
-            return;
+        List<OAuth2RefreshTokenDO> refreshTokens = oauth2RefreshTokenMapper.selectListByUserIdAndUserType(userId, userType);
+        if (CollUtil.isNotEmpty(accessTokens)) {
+            accessTokens.forEach(accessToken -> {
+                oauth2AccessTokenMapper.deleteById(accessToken.getId());
+                oauth2AccessTokenRedisDAO.delete(accessToken.getAccessToken());
+                // getAccessToken also caches refresh tokens under their own token key.
+                oauth2AccessTokenRedisDAO.delete(accessToken.getRefreshToken());
+            });
         }
-        accessTokens.forEach(accessToken -> {
-            // 删除访问令牌
-            oauth2AccessTokenMapper.deleteById(accessToken.getId());
-            oauth2AccessTokenRedisDAO.delete(accessToken.getAccessToken());
-            // 删除刷新令牌
-            oauth2RefreshTokenMapper.deleteByRefreshToken(accessToken.getRefreshToken());
-            oauth2AccessTokenRedisDAO.delete(accessToken.getRefreshToken());
-        });
+        if (CollUtil.isNotEmpty(refreshTokens)) {
+            refreshTokens.forEach(refreshToken -> {
+                oauth2RefreshTokenMapper.deleteById(refreshToken.getId());
+                oauth2AccessTokenRedisDAO.delete(refreshToken.getRefreshToken());
+            });
+        }
     }
 
     @Override

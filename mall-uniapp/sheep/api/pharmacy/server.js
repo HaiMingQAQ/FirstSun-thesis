@@ -244,7 +244,7 @@ const api = {
       uni.getStorageSync(SESSION_KEY) || { name: 'FirstSun 会员', mobile: '', level: '', points: 0 }
     );
   },
-  async login(mobile, code) {
+  async sendLoginCode(mobile) {
     if (!/^1[3-9]\d{9}$/.test(mobile)) throw new Error('请输入正确的 11 位手机号');
     // 1. 获取验证码（后端校验手机号 + 环境是否配置测试码 PHARMACY_DEV_SMS_CODE）
     await call({
@@ -252,7 +252,15 @@ const api = {
       method: 'POST',
       params: { mobile },
     });
-    // 2. 登录 / 自动注册；验证码走 X-Sms-Code 请求头（后端契约锁定，避免进访问日志）
+  },
+  async login(mobile, code) {
+    // 保留旧 H5 调用契约；电脑端显式发送后使用 loginWithCode，提交不重发。
+    await api.sendLoginCode(mobile);
+    return api.loginWithCode(mobile, code);
+  },
+  async loginWithCode(mobile, code) {
+    if (!/^1[3-9]\d{9}$/.test(mobile)) throw new Error('请输入正确的 11 位手机号');
+    // 登录 / 自动注册；验证码走 X-Sms-Code 请求头（后端契约锁定，避免进访问日志）
     const res = await call({
       url: '/member/auth/login-or-register',
       method: 'POST',
@@ -323,6 +331,9 @@ const api = {
       userId: raw.id,
       name: raw.nickname || 'FirstSun 会员',
       avatar: raw.avatar || '',
+      loginEmail: raw.loginEmail || '',
+      email: raw.email || '',
+      passwordSet: raw.passwordSet === true,
       mobile: raw.mobile,
       level: raw.levelName || '普通会员',
       points: Number(raw.point) || 0,

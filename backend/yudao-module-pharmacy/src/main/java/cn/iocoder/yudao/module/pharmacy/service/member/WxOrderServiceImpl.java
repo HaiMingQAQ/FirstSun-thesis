@@ -138,6 +138,9 @@ public class WxOrderServiceImpl implements WxOrderService {
     @Resource
     private DrugApi drugApi;
 
+    @Resource
+    private WxOrderSalePostingService salePosting;
+
     /** F 的统一积分结算服务：抵扣预扣 / 赠送 / 取消释放全部走这里，本类不直接写积分流水 */
     @Resource
     private MemberPointSettlementService memberPointSettlementService;
@@ -485,7 +488,10 @@ public class WxOrderServiceImpl implements WxOrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmReceiveWxOrderByMember(Long id) {
-        WxOrderDO wxOrder = validateWxOrderOwner(cn.iocoder.yudao.module.pharmacy.service.member.AppMemberAccess.requireMember(), id);
+        Long memberId = AppMemberAccess.requireMember();
+        // A locking read sees the committed completion after a concurrent waiter resumes (also under MySQL RR).
+        WxOrderDO wxOrder = orderPaymentAccess.lockOrder(id);
+        if (!Objects.equals(wxOrder.getMemberId(), memberId)) throw exception(PHARMACY_WX_ORDER_NOT_OWNER);
         if (!Objects.equals(wxOrder.getOrderType(), ORDER_TYPE_DELIVERY)
                 || !Objects.equals(wxOrder.getPayStatus(), PAY_STATUS_PAID)) {
             throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
@@ -517,7 +523,6 @@ public class WxOrderServiceImpl implements WxOrderService {
             }
             return;
         }
-        transferToSale(wxOrder);
         // 对接 F：完成即赠送积分（幂等键 = 订单号，重复确认不重复赠送）。
         // 与 verifyWxOrder 的积分口径一致：赠送基数 = 应付金额（已扣除积分抵扣）。
         int earned = memberPointSettlementService.earnSalePoints(wxOrder.getMemberId(), wxOrder.getOrderNo(),
@@ -528,6 +533,7 @@ public class WxOrderServiceImpl implements WxOrderService {
             pointUpdate.setPointEarned(earned);
             wxOrderMapper.updateById(pointUpdate);
         }
+        transferToSale(wxOrder);
     }
 
     @Override
@@ -698,7 +704,6 @@ public class WxOrderServiceImpl implements WxOrderService {
         }
         // 对接 D：核销即自提完成，触发线上订单转销售。
         // 扣库已在支付时由 C 完成，转销售不重复扣库（约定：不能在支付与核销各扣一次）。
-        transferToSale(wxOrder);
         // 对接 F：完成 / 核销即赠送积分（幂等键 = 订单号，重复核销不重复赠送）。
         // 赠送基数 = 实际成交金额（应付金额，已扣除积分抵扣），积分规则见 yudao.pharmacy.member-point。
         int earned = memberPointSettlementService.earnSalePoints(wxOrder.getMemberId(), wxOrder.getOrderNo(),
@@ -709,6 +714,7 @@ public class WxOrderServiceImpl implements WxOrderService {
             pointUpdate.setPointEarned(earned);
             wxOrderMapper.updateById(pointUpdate);
         }
+        transferToSale(wxOrder);
     }
 
     @Override
@@ -1369,14 +1375,9 @@ public class WxOrderServiceImpl implements WxOrderService {
         }
     }
 
-    /**
-     * 对接 D：线上订单转销售（核销即自提完成时触发）。
-     *
-     * 约定：扣库已在支付时由 C 完成，转销售不得重复扣库；失败需补偿。
-     * D 尚未提供跨模块转销售接口，先预留调用点，待 D 提供后接入。
-     */
+    /** 完成事务内入账；库存与积分沿用原订单来源，不再执行第二次结算。 */
     private void transferToSale(WxOrderDO wxOrder) {
-        // TODO 待 D 提供线上订单转销售接口后接入，例如 saleFacade.createFromWxOrder(orderNo)
+        salePosting.post(wxOrder.getId());
     }
 
 }

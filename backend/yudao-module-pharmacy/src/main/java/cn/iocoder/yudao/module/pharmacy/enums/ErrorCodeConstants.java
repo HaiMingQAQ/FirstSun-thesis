@@ -117,6 +117,10 @@ public interface ErrorCodeConstants {
             "微信登录类型不支持");
     ErrorCode PHARMACY_WECHAT_IDENTITY_MEMBER_MISSING = new ErrorCode(1_030_006_015,
             "微信身份绑定的会员不存在");
+    ErrorCode PHARMACY_MEMBER_PASSWORD_INVALID = new ErrorCode(1_030_006_016, "密码须为8–64字符且UTF-8不超过72字节，不能全为空白");
+    ErrorCode PHARMACY_MEMBER_PASSWORD_ALREADY_SET = new ErrorCode(1_030_006_017, "已设置密码，请使用密码或验证码登录");
+    ErrorCode PHARMACY_MEMBER_AVATAR_INVALID = new ErrorCode(1_030_006_018, "头像须为5MB以内的PNG/JPEG图片，尺寸不超过4096像素");
+    ErrorCode PHARMACY_MEMBER_REGISTER_EXISTS = new ErrorCode(1_030_006_019, "该手机号已有账号，请登录");
 
     // ========== 会员等级 1-030-007-000 ==========
     ErrorCode PHARMACY_MEMBER_LEVEL_NOT_EXISTS = new ErrorCode(1_030_007_000, "会员等级不存在");

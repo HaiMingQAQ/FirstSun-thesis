@@ -25,14 +25,25 @@ function page(isEnabled, overrides = {}) {
     call: async config => { requests.push(config); return overrides.request ? overrides.request(config) : {}; },
     api: { profile: async () => ({ userId: 91 }), wechatLogin: overrides.wechat || (async () => { throw new Error('仅支持微信小程序'); }) } };
   vm.createContext(sandbox);
-  const method = server.slice(server.indexOf('  async login('), server.indexOf('  async wechatLogin(')).trim().replace(/,$/, '');
-  sandbox.api.login = vm.runInContext(`({${method}}).login`, sandbox);
+  const method = server.slice(server.indexOf('  async sendLoginCode('), server.indexOf('  async wechatLogin(')).trim().replace(/,$/, '');
+  Object.assign(sandbox.api, vm.runInContext(`({${method}})`, sandbox));
   vm.runInContext(utility.replace(/^import .*;$/gm, '').replace(/export /g, '')
     + login.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^\s*import .*;$/gm, '')
     + ';globalThis.page={mobile,code,agreed,login,fillCode,busy};', sandbox);
-  return { ...sandbox.page, requests, toasts, navigation };
+  return { ...sandbox.page, api: sandbox.api, requests, toasts, navigation };
 }
 const fill = p => { p.mobile.value = '13900001611'; p.code.value = '987654'; p.agreed.value = true; };
+
+test('explicit send and consume adapter preserves header contract without another send', async () => {
+  const p = page(true);
+  await p.api.sendLoginCode('13900001611');
+  assert.equal(p.requests.length, 1);
+  await p.api.loginWithCode('13900001611', '987654');
+  assert.equal(p.requests.length, 2);
+  assert.equal(p.requests[0].url, '/member/auth/send-sms-code');
+  assert.equal(p.requests[1].url, '/member/auth/login-or-register');
+  assert.equal(p.requests[1].header['X-Sms-Code'], '987654');
+});
 
 test('runtime requires H5, acceptance mode, compiler marker and consistent local backend; MP never enables it', () => {
   assert.equal(enabled('H5', {}), false); assert.equal(enabled('H5', env), true); assert.equal(enabled('MP-WEIXIN', env), false);

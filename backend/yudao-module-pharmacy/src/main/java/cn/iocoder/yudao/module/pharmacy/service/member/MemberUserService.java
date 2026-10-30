@@ -80,6 +80,12 @@ public interface MemberUserService {
      */
     boolean isPasswordMatch(String rawPassword, String encodedPassword);
 
+    boolean isPasswordSet(String encodedPassword);
+
+    MemberUserDO registerMember(String mobile, String password, String email, String ip);
+
+    void setInitialPassword(MemberUserDO user, String password);
+
     /**
      * 更新会员最后登录信息（登录 IP + 登录时间）
      */
@@ -99,11 +105,21 @@ public interface MemberUserService {
      */
     MemberUserDO createWechatMember(Long tenantId, String ip);
 
+    /** 只由已验证邮箱注册事务调用，不按历史联系方式查找或认领会员。 */
+    MemberUserDO createEmailMember(Long tenantId, String email, String password, String ip);
+
+    void setInitialEmailPassword(MemberUserDO user, String password, Long identityId, String email);
+
+    /** Replace only the captured password and verified identity; callers revoke sessions in the same transaction. */
+    void replaceEmailPassword(MemberUserDO user, String password, Long identityId, String email);
+
     /**
      * 更新会员个人资料（小程序个人中心）
      *
      * 仅允许修改昵称、头像、性别，不允许修改手机号、积分、等级等敏感字段。
      */
     void updateMemberUserProfile(Long id, String nickname, String avatar, Integer sex);
+
+    void updateMemberUserProfile(Long id, String nickname, String avatar, Integer sex, String email);
 
 }

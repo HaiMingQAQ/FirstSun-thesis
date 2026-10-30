@@ -11,6 +11,9 @@ import cn.hutool.core.util.StrUtil;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.annotation.Transactional;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
@@ -20,6 +23,7 @@ import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.pharmacy.enums.ErrorCodeConstants.*;
+import static cn.iocoder.yudao.module.pharmacy.enums.member.MemberEmailErrorCodes.EMAIL_PASSWORD_STATE_CHANGED;
 
 /**
  * 会员用户 Service 实现类
@@ -144,10 +148,59 @@ public class MemberUserServiceImpl implements MemberUserService {
 
     @Override
     public boolean isPasswordMatch(String rawPassword, String encodedPassword) {
-        if (rawPassword == null || encodedPassword == null) {
+        if (rawPassword == null || rawPassword.isBlank() || !isPasswordSet(encodedPassword)) {
             return false;
         }
         return PASSWORD_ENCODER.matches(rawPassword, encodedPassword);
+    }
+
+    @Override
+    public boolean isPasswordSet(String encodedPassword) {
+        // Legacy SMS accounts store BCrypt(""). They still have no usable password.
+        return StrUtil.isNotBlank(encodedPassword) && !PASSWORD_ENCODER.matches("", encodedPassword);
+    }
+
+    @Override
+    public MemberUserDO registerMember(String mobile, String password, String email, String ip) {
+        if (mobile == null || !mobile.matches("^1[3-9]\\d{9}$")) {
+            throw exception(PHARMACY_MEMBER_USER_MOBILE_INVALID);
+        }
+        if (password != null && !password.isEmpty()) {
+            MemberPasswordPolicy.validate(password);
+        }
+        if (memberUserMapper.selectByMobile(mobile) != null) {
+            throw exception(PHARMACY_MEMBER_REGISTER_EXISTS);
+        }
+        MemberUserDO user = new MemberUserDO();
+        user.setTenantId(TenantContextHolder.getRequiredTenantId());
+        user.setMobile(mobile);
+        user.setPassword(password == null || password.isEmpty() ? "" : PASSWORD_ENCODER.encode(password));
+        user.setEmail(email);
+        user.setStatus(STATUS_ENABLE);
+        user.setRegisterIp(resolveRegisterIp(ip));
+        user.setNickname("会员" + mobile.substring(7));
+        user.setAvatar("");
+        user.setPoint(0);
+        user.setExperience(0);
+        try {
+            memberUserMapper.insert(user);
+        } catch (DuplicateKeyException ex) {
+            throw exception(PHARMACY_MEMBER_REGISTER_EXISTS);
+        }
+        return user;
+    }
+
+    @Override
+    public void setInitialPassword(MemberUserDO user, String password) {
+        MemberPasswordPolicy.validate(password);
+        if (isPasswordSet(user.getPassword())) {
+            throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
+        int rows = memberUserMapper.updateInitialPassword(user.getId(), TenantContextHolder.getRequiredTenantId(),
+                user.getPassword(), PASSWORD_ENCODER.encode(password), user.getMobile());
+        if (rows != 1) {
+            throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
     }
 
     @Override
@@ -204,6 +257,53 @@ public class MemberUserServiceImpl implements MemberUserService {
     }
 
     @Override
+    public MemberUserDO createEmailMember(Long tenantId, String email, String password, String ip) {
+        if (tenantId == null) {
+            throw exception(PHARMACY_MEMBER_USER_NOT_EXISTS);
+        }
+        if (password != null && !password.isEmpty()) {
+            MemberPasswordPolicy.validate(password);
+        }
+        MemberUserDO memberUser = new MemberUserDO();
+        memberUser.setTenantId(tenantId);
+        memberUser.setMobile(null);
+        memberUser.setEmail(email);
+        memberUser.setPassword(password == null || password.isEmpty() ? "" : PASSWORD_ENCODER.encode(password));
+        memberUser.setStatus(STATUS_ENABLE);
+        memberUser.setRegisterIp(resolveRegisterIp(ip));
+        memberUser.setNickname("邮箱会员");
+        memberUser.setAvatar("");
+        memberUser.setPoint(0);
+        memberUser.setExperience(0);
+        memberUserMapper.insert(memberUser);
+        return memberUser;
+    }
+
+    @Override
+    public void setInitialEmailPassword(MemberUserDO user, String password, Long identityId, String email) {
+        MemberPasswordPolicy.validate(password);
+        if (isPasswordSet(user.getPassword())) {
+            throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
+        int rows = memberUserMapper.updateInitialEmailPassword(user.getId(), TenantContextHolder.getRequiredTenantId(),
+                user.getPassword(), PASSWORD_ENCODER.encode(password), identityId, email);
+        if (rows != 1) {
+            throw exception(PHARMACY_MEMBER_PASSWORD_ALREADY_SET);
+        }
+    }
+
+    @Override
+    public void replaceEmailPassword(MemberUserDO user, String password, Long identityId, String email) {
+        MemberPasswordPolicy.validate(password);
+        // Reuse the identity/password CAS; the first-set method above retains its separate unset guard.
+        int rows = memberUserMapper.updateInitialEmailPassword(user.getId(), TenantContextHolder.getRequiredTenantId(),
+                user.getPassword(), PASSWORD_ENCODER.encode(password), identityId, email);
+        if (rows != 1) {
+            throw exception(EMAIL_PASSWORD_STATE_CHANGED);
+        }
+    }
+
+    @Override
     public void updateMemberUserProfile(Long id, String nickname, String avatar, Integer sex) {
         // 校验会员存在
         validateMemberUserExists(id);
@@ -214,6 +314,14 @@ public class MemberUserServiceImpl implements MemberUserService {
         updateObj.setAvatar(avatar);
         updateObj.setSex(sex);
         memberUserMapper.updateById(updateObj);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateMemberUserProfile(Long id, String nickname, String avatar, Integer sex, String email) {
+        updateMemberUserProfile(id, nickname, avatar, sex);
+        // Explicit email clearing must reach SQL; updateById ignores null fields.
+        memberUserMapper.updateProfileEmail(id, TenantContextHolder.getRequiredTenantId(), email);
     }
 
     /**

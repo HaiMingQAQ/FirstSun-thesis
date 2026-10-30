@@ -185,4 +185,97 @@ class CustomerAiConsultServiceTest {
         doReturn(topic).when(history).require(30L,2L);assertThrows(RuntimeException.class,()->service.consult(req));
         verify(history,never()).lastProductId(anyLong(),anyLong(),anyLong());verify(catalogue,never()).query(anyLong(),any(),any());
     }
+    @Test void checkedCatalogueFactsAreIdenticalInDeltaAnswerPersistenceAndReplay() throws Exception {
+        var models = mock(cn.iocoder.yudao.module.ai.service.model.AiModelService.class);
+        var customerModels = mock(CustomerAiModelClient.class); var client = mock(org.springframework.ai.chat.model.ChatModel.class);
+        when(models.getRequiredDefaultModel(anyInt())).thenReturn(cn.iocoder.yudao.module.ai.dal.dataobject.model.AiModelDO.builder().id(1L).platform("DeepSeek").build());
+        when(customerModels.forModel(any(),eq(0.2),eq(1200))).thenReturn(new CustomerAiModelClient.Session(client,org.springframework.ai.chat.prompt.ChatOptions.builder().build()));
+        when(client.stream(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("缺少通用名和批准文号。")))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
+        var checked = new java.util.ArrayList<String>();
+        var realAnswers = new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);
+        when(answers.answer(eq(req),anyList(),any())).thenAnswer(i -> realAnswers.answer(req,i.getArgument(1),text -> {
+            checked.add(text); ((java.util.function.Consumer<String>)i.getArgument(2)).accept(text);
+        }));
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("searchDrugs","板蓝根",null));
+        var product = new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(71L,"板蓝根颗粒","板蓝根颗粒","盒装",null,"批准丙号",null,null,5,1L);
+        when(catalogue.query(1L,"板蓝根",null)).thenReturn(new CustomerAiCatalogueService.Result(List.of(product),false));
+        var response=service.consult(req); assertEquals("SUCCESS",response.status());
+        assertFalse(response.answer().contains("缺少通用名"));assertTrue(response.answer().contains("通用名：板蓝根颗粒"));
+        assertTrue(response.answer().contains("生产厂家：未提供"));assertEquals(String.join("",checked),response.answer());
+        var saved=org.mockito.ArgumentCaptor.forClass(String.class);verify(mapper).finish(eq(9L),eq("SUCCESS"),saved.capture());
+        assertEquals(response,new ObjectMapper().findAndRegisterModules().readValue(saved.getValue(),cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.class));
+        var row=pending();row.setStatus("SUCCESS");row.setResultJson(saved.getValue());when(mapper.find(2L,"request_1")).thenReturn(row);
+        assertEquals(response,service.consult(req));verify(client,times(1)).stream(any(org.springframework.ai.chat.prompt.Prompt.class));
+    }
+    @Test void mixedRiskReminderSurvivesCheckedDeltaPersistenceAndReplay() throws Exception {
+        var models=mock(cn.iocoder.yudao.module.ai.service.model.AiModelService.class);var customerModels=mock(CustomerAiModelClient.class);
+        var client=mock(org.springframework.ai.chat.model.ChatModel.class);
+        when(models.getRequiredDefaultModel(anyInt())).thenReturn(cn.iocoder.yudao.module.ai.dal.dataobject.model.AiModelDO.builder().id(1L).platform("DeepSeek").build());
+        when(customerModels.forModel(any(),eq(0.2),eq(1200))).thenReturn(new CustomerAiModelClient.Session(client,org.springframework.ai.chat.prompt.ChatOptions.builder().build()));
+        String reminder="有过敏史时请核对规格及禁忌，勿自行加量。";
+        when(client.stream(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("该药缺少通")))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("用名，"+reminder)))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
+        var received=new java.util.ArrayList<String>();var realAnswers=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);
+        when(answers.answer(eq(req),anyList(),any())).thenAnswer(i->realAnswers.answer(req,i.getArgument(1),text->{received.add(text);((java.util.function.Consumer<String>)i.getArgument(2)).accept(text);}));
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("searchDrugs","板蓝根",null));
+        var product=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(81L,"板蓝根颗粒","板蓝根颗粒","盒装",null,"批准辛号",null,null,5,1L);
+        when(catalogue.query(1L,"板蓝根",null)).thenReturn(new CustomerAiCatalogueService.Result(List.of(product),false));
+        var response=service.consult(req);assertEquals("SUCCESS",response.status());assertTrue(response.answer().contains(reminder));
+        assertFalse(response.answer().contains("缺少通用名"));assertEquals(String.join("",received),response.answer());
+        var saved=org.mockito.ArgumentCaptor.forClass(String.class);verify(mapper).finish(eq(9L),eq("SUCCESS"),saved.capture());
+        var row=pending();row.setStatus("SUCCESS");row.setResultJson(saved.getValue());when(mapper.find(2L,"request_1")).thenReturn(row);
+        assertEquals(response,service.consult(req));verify(client,times(1)).stream(any(org.springframework.ai.chat.prompt.Prompt.class));
+    }
+    @Test void conditionalAndUnpunctuatedRemindersPersistExactlyAsDelivered() throws Exception {
+        var models=mock(cn.iocoder.yudao.module.ai.service.model.AiModelService.class);var customerModels=mock(CustomerAiModelClient.class);
+        var client=mock(org.springframework.ai.chat.model.ChatModel.class);
+        when(models.getRequiredDefaultModel(anyInt())).thenReturn(cn.iocoder.yudao.module.ai.dal.dataobject.model.AiModelDO.builder().id(1L).platform("DeepSeek").build());
+        when(customerModels.forModel(any(),eq(0.2),eq(1200))).thenReturn(new CustomerAiModelClient.Session(client,org.springframework.ai.chat.prompt.ChatOptions.builder().build()));
+        String conditional="如通用名缺失请先咨询药师。",reminder="儿童用药前应咨询药师。";
+        when(client.stream(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("如通用名缺失请先")))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("咨询药师。该药缺少通用名且儿童用药前应")))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("咨询药师。")))),
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
+        var delivered=new java.util.ArrayList<String>();var realAnswers=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);
+        when(answers.answer(eq(req),anyList(),any())).thenAnswer(i->realAnswers.answer(req,i.getArgument(1),text->{delivered.add(text);((java.util.function.Consumer<String>)i.getArgument(2)).accept(text);}));
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("searchDrugs","板蓝根",null));
+        var product=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(101L,"板蓝根颗粒","板蓝根颗粒","盒装",null,"批准丑号",null,null,5,1L);
+        when(catalogue.query(1L,"板蓝根",null)).thenReturn(new CustomerAiCatalogueService.Result(List.of(product),false));
+        var response=service.consult(req);assertEquals("SUCCESS",response.status());assertTrue(response.answer().startsWith(conditional));
+        assertTrue(response.answer().contains(reminder));assertFalse(response.answer().contains("该药缺少通用名"));assertEquals(String.join("",delivered),response.answer());
+        var saved=org.mockito.ArgumentCaptor.forClass(String.class);verify(mapper).finish(eq(9L),eq("SUCCESS"),saved.capture());
+        var row=pending();row.setStatus("SUCCESS");row.setResultJson(saved.getValue());when(mapper.find(2L,"request_1")).thenReturn(row);
+        assertEquals(response,service.consult(req));verify(client,times(1)).stream(any(org.springframework.ai.chat.prompt.Prompt.class));
+    }
+    @Test void unavailableBrowsingNoticeAndCardsPersistExactlyAsDeliveredAndReplay() throws Exception {
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("browseDrugs","感冒",null));
+        var product=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(
+                11L,"测试药品资料","测试药品资料","规格","厂家","批准号",null,null,0,1L);
+        when(catalogue.browseCandidates(1L,"感冒")).thenReturn(new CustomerAiCatalogueService.Result(List.of(product),false));
+        var delivered=new java.util.ArrayList<String>();
+        var method=CustomerAiConsultService.class.getDeclaredMethod("consult",CustomerAiConsultReqVO.class,java.util.function.Consumer.class);
+        method.setAccessible(true);
+        var result=(cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO)method.invoke(service,req,(java.util.function.Consumer<String>)delivered::add);
+        assertEquals("SUCCESS",result.status()); assertEquals(List.of(product),result.products());
+        assertTrue(result.answer().contains("找到1种")); assertTrue(result.answer().contains("目前均缺货"));
+        assertTrue(result.answer().contains("仅供查看资料")); assertTrue(result.answer().contains("暂不可购买"));
+        assertFalse(result.answer().contains("暂未查到")); assertEquals(result.answer(),String.join("",delivered));
+        var saved=org.mockito.ArgumentCaptor.forClass(String.class); verify(mapper).finish(eq(9L),eq("SUCCESS"),saved.capture());
+        var row=pending(); row.setStatus("SUCCESS"); row.setResultJson(saved.getValue()); when(mapper.find(2L,"request_1")).thenReturn(row);
+        assertEquals(result,service.consult(req)); verify(intent,times(1)).resolve(anyString()); verifyNoInteractions(answers);
+    }
+    @Test void mixedBrowsingStockKeepsQuantitiesAndOnlyMarksUnavailableCards() {
+        when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("browseDrugs","感冒",null));
+        var available=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(11L,"有货资料","有货资料","规格","厂家","批准号",null,null,3,1L);
+        var unavailable=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(12L,"缺货资料","缺货资料","规格","厂家","批准号",null,null,0,1L);
+        when(catalogue.browseCandidates(1L,"感冒")).thenReturn(new CustomerAiCatalogueService.Result(List.of(available,unavailable),false));
+        var result=service.consult(req); assertEquals(List.of(available,unavailable),result.products());
+        assertTrue(result.answer().contains("缺货商品仅供查看资料，暂不可购买"));
+        assertFalse(result.answer().contains("目前均缺货")); verifyNoInteractions(answers);
+    }
 }

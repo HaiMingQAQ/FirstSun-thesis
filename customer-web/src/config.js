@@ -1,0 +1,8 @@
+// Same-origin /app-api, proxied to the explicitly configured backend only during local acceptance.
+export const baseUrl='';
+export const apiPath='/app-api';
+export const tenantId=__TENANT_ID__;
+export const localMediaOrigin=__LOCAL_MEDIA_ORIGIN__;
+export const localTestLogin=__LOCAL_TEST_LOGIN__&&['127.0.0.1','localhost','[::1]'].includes(location.hostname)&&location.protocol==='http:';
+// Independent of the login flag: payment UI also requires a fresh backend capability=true.
+export const localAcceptance=import.meta.env.MODE==='local-acceptance'&&['127.0.0.1','localhost','[::1]'].includes(location.hostname)&&location.protocol==='http:';

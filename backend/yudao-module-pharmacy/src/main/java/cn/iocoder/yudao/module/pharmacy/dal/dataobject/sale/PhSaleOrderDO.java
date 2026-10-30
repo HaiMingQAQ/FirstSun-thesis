@@ -64,6 +64,9 @@ public class PhSaleOrderDO extends BaseDO {
     /** 原价合计 */
     private BigDecimal subtotal;
 
+    /** 线上订单配送费；柜台销售为0 */
+    private BigDecimal freightAmount;
+
     /** 折扣金额 */
     private BigDecimal discountAmount;
 

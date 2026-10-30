@@ -353,6 +353,12 @@ yudao:
     wechat-login: # 药店微信登录；未配置可信租户/AppID 时拒绝登录
       tenant-id: ${PHARMACY_WECHAT_TENANT_ID:0}
       app-id: ${PHARMACY_WECHAT_APP_ID:}
+    member-email: # 独立 Resend 邮箱认证；密钥仅来自私有环境变量
+      enabled: ${PHARMACY_MEMBER_EMAIL_ENABLED:false}
+      from: ${PHARMACY_MEMBER_EMAIL_FROM:}
+      api-key: ${RESEND_API_KEY:}
+      # resend.dev 必须配置本人测试邮箱；正式已验证域名可留空。
+      test-recipient: ${PHARMACY_MEMBER_EMAIL_TEST_RECIPIENT:}
     member-sms: # 手机号 + 验证码快捷登录
       # 基础配置默认关闭：prod 环境没有 local/dev 覆盖，会落到这里 => 手机号快捷登录整体禁用，
       # 开发验证码在 prod 不可能生效（对应 F-1 要求 3、4）

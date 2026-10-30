@@ -51,6 +51,7 @@ class AdminWxOrderSqlHttpTest {
     private JdbcTemplate db;
     private MockMvc mvc;
     private PermissionApi permissions;
+    private WxOrderSalePostingService salePosting;
 
     @BeforeEach
     void setup() throws Exception {
@@ -118,6 +119,8 @@ class AdminWxOrderSqlHttpTest {
         ReflectionTestUtils.setField(orderService, "paymentFacade", paymentFacade);
         ReflectionTestUtils.setField(orderService, "memberPointSettlementService",
                 mock(MemberPointSettlementService.class));
+        salePosting = mock(WxOrderSalePostingService.class);
+        ReflectionTestUtils.setField(orderService, "salePosting", salePosting);
         var adminService = new AdminWxOrderService(access, orderService, mock(WxOrderLineService.class),
                 session.getMapper(WxOrderMapper.class), employees);
         var controller = new WxOrderController();
@@ -214,6 +217,7 @@ class AdminWxOrderSqlHttpTest {
         login(2001, 100); // This user has only a tenant-200 employee row.
         assertDenied(() -> mvc.perform(put("/pharmacy/member/order/verify")
                 .param("id", "10001").param("pickupCode", "ABC").param("verifyBy", "201")));
+        verifyNoInteractions(salePosting);
 
         login(1001, 100);
         mvc.perform(put("/pharmacy/member/order/verify")
@@ -222,6 +226,8 @@ class AdminWxOrderSqlHttpTest {
         var verified = db.queryForMap("SELECT status,verify_by FROM ph_wx_order WHERE id=10001");
         assertEquals(4, verified.get("STATUS"));
         assertEquals(101L, verified.get("VERIFY_BY"));
+        verify(salePosting).post(10001L);
+        verifyNoMoreInteractions(salePosting);
     }
 
     @Test

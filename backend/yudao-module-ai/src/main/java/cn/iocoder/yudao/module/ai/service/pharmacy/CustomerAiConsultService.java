@@ -82,9 +82,16 @@ public class CustomerAiConsultService {
                 phase = "answer";
                 String answer;
                 if ("browseDrugs".equals(decision.action())) {
-                    answer = result.products().isEmpty()
-                            ? "本店暂未查到与“" + decision.keyword() + "”匹配的可售非处方药。您可以换一个药品名称搜索，或联系门店药师查询。"
-                            : "为您找到以下与“" + decision.keyword() + "”相关的店内非处方药，点击商品卡可查看详情。这是商品浏览结果，选择用药前请核对适应症、禁忌和重复成分。";
+                    if (result.products().isEmpty()) {
+                        answer = "本店暂未查到与“" + decision.keyword() + "”匹配的非处方药资料。您可以换一个药品名称搜索，或联系门店药师查询。";
+                    } else {
+                        boolean allUnavailable = result.products().stream().allMatch(p -> p.availableQty() == 0);
+                        answer = allUnavailable
+                                ? "找到" + result.products().size() + "种与“" + decision.keyword() + "”相关的店内非处方药资料，但本店目前均缺货，仅供查看资料，暂不可购买。点击商品卡可查看详情。"
+                                : "为您找到以下与“" + decision.keyword() + "”相关的店内非处方药，点击商品卡可查看详情。"
+                                    + (result.products().stream().anyMatch(p -> p.availableQty() == 0) ? "缺货商品仅供查看资料，暂不可购买。" : "");
+                        answer += "这是商品浏览结果，选择用药前请核对适应症、禁忌和重复成分。";
+                    }
                     checkedSink.accept(answer);
                 } else {
                     String reference = "advice".equals(decision.action()) && !result.products().isEmpty()

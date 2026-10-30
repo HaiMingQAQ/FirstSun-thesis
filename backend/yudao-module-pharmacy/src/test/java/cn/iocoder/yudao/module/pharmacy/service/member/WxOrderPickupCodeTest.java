@@ -38,6 +38,7 @@ class WxOrderPickupCodeTest {
         ReflectionTestUtils.setField(service, "wxOrderMapper", orders);
         ReflectionTestUtils.setField(service, "wxOrderLineAllocMapper", allocations);
         ReflectionTestUtils.setField(service, "inventoryFacade", inventory);
+        ReflectionTestUtils.setField(service, "salePosting", mock(WxOrderSalePostingService.class));
         PaymentFacade payments = mock(PaymentFacade.class);
         when(payments.createPayOrder(any())).thenReturn("500");
         ReflectionTestUtils.setField(service, "paymentFacade", payments);

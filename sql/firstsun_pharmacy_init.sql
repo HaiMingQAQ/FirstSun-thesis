@@ -1,5 +1,5 @@
 -- FirstSun database baseline V1.0, MySQL >= 8.0.28
--- 46 tables = 33 pharmacy + 4 member + 9 payment. system/infra tables are separate.
+-- 47 tables = 34 pharmacy + 4 member + 9 payment. system/infra tables are separate.
 -- EMPTY DATABASE ONLY. No DROP or sample secrets. Existing tables fail loudly.
 -- Select your intended empty database before executing. See README.md.
 SET NAMES utf8mb4;
@@ -916,6 +916,23 @@ CREATE TABLE `member_user`  (
   UNIQUE KEY uk_member_mobile (tenant_id,mobile),
   PRIMARY KEY (`id`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='member_user';
+
+-- 仅由邮箱验证码独立注册写入，不从 member_user.email 回填登录身份。
+CREATE TABLE `ph_member_email_identity`
+(
+    `id`               bigint       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `normalized_email` varchar(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '已验证的规范化邮箱',
+    `member_id`        bigint       NOT NULL COMMENT '药店会员编号',
+    `creator`          varchar(64)  DEFAULT '' COMMENT '创建者',
+    `create_time`      datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updater`          varchar(64)  DEFAULT '' COMMENT '更新者',
+    `update_time`      datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `deleted`          bit(1)       NOT NULL DEFAULT b'0' COMMENT '是否删除',
+    `tenant_id`        bigint       NOT NULL DEFAULT 0 COMMENT '租户编号',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ph_member_email_identity` (`tenant_id`, `normalized_email`),
+    UNIQUE KEY `uk_ph_member_email_member` (`tenant_id`, `member_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '药店会员已验证邮箱身份';
 
 CREATE TABLE `member_address`  (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '收件地址编号',

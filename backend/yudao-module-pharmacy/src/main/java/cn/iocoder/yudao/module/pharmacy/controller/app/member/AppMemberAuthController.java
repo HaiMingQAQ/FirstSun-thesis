@@ -10,6 +10,7 @@ import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberA
 import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberAuthLoginRespVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberWechatLoginReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberWechatLoginRespVO;
+import cn.iocoder.yudao.module.pharmacy.controller.app.member.vo.auth.AppMemberRegisterReqVO;
 import cn.iocoder.yudao.module.pharmacy.service.member.MemberAuthService;
 import cn.iocoder.yudao.module.pharmacy.service.member.MemberSmsCodeService;
 import cn.iocoder.yudao.module.system.enums.social.SocialTypeEnum;
@@ -53,6 +54,7 @@ public class AppMemberAuthController {
 
     @PostMapping("/login")
     @Operation(summary = "手机号 + 密码登录")
+    @ApiAccessLog(sanitizeKeys = {"password"})
     @PermitAll
     public CommonResult<AppMemberAuthLoginRespVO> login(@RequestBody @Valid AppMemberAuthLoginReqVO reqVO) {
         return success(memberAuthService.login(reqVO));
@@ -66,6 +68,16 @@ public class AppMemberAuthController {
      * 走请求头可以保证「验证码不出现在后端日志里」（对应 F-1 要求 2）。
      */
     private static final String SMS_CODE_HEADER = "X-Sms-Code";
+
+    @PostMapping("/register")
+    @Operation(summary = "独立手机号注册（邮箱和密码选填）")
+    @ApiAccessLog(sanitizeKeys = {"password"})
+    @PermitAll
+    public CommonResult<AppMemberAuthLoginRespVO> register(
+            @RequestBody @Valid AppMemberRegisterReqVO reqVO,
+            @RequestHeader(value = SMS_CODE_HEADER, required = false) String code) {
+        return success(memberAuthService.register(reqVO, code));
+    }
 
     @PostMapping("/login-or-register")
     @Operation(summary = "手机号 + 验证码快捷登录（不存在则自动注册）",

@@ -44,4 +44,26 @@ public interface MemberUserMapper extends BaseMapperX<MemberUserDO> {
     @Update("UPDATE member_user SET point = point + #{delta} WHERE id = #{id} AND deleted = 0")
     int updatePointIncr(@Param("id") Long id, @Param("delta") Integer delta);
 
+    @Update({"<script>UPDATE member_user SET password = #{password}",
+            "WHERE id = #{id} AND tenant_id = #{tenantId} AND mobile = #{mobile} AND status = 0 AND deleted = 0",
+            "<choose><when test='expected == null'>AND password IS NULL</when>",
+            "<otherwise>AND password = #{expected}</otherwise></choose></script>"})
+    int updateInitialPassword(@Param("id") Long id, @Param("tenantId") Long tenantId,
+                              @Param("expected") String expected, @Param("password") String password,
+                              @Param("mobile") String mobile);
+
+    @Update({"<script>UPDATE member_user SET password = #{password}",
+            "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 0 AND deleted = 0",
+            "<choose><when test='expected == null'>AND password IS NULL</when>",
+            "<otherwise>AND password = #{expected}</otherwise></choose>",
+            "AND EXISTS (SELECT 1 FROM ph_member_email_identity ei WHERE ei.id = #{identityId}",
+            "AND ei.tenant_id = #{tenantId} AND ei.member_id = #{id}",
+            "AND ei.normalized_email = #{email} AND ei.deleted = 0)</script>"})
+    int updateInitialEmailPassword(@Param("id") Long id, @Param("tenantId") Long tenantId,
+                                   @Param("expected") String expected, @Param("password") String password,
+                                   @Param("identityId") Long identityId, @Param("email") String email);
+
+    @Update("UPDATE member_user SET email = #{email} WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
+    int updateProfileEmail(@Param("id") Long id, @Param("tenantId") Long tenantId, @Param("email") String email);
+
 }

@@ -17,6 +17,7 @@ public class AppMemberAuthLoginReqVO {
 
     @Schema(description = "密码", requiredMode = Schema.RequiredMode.REQUIRED, example = "123456")
     @NotBlank(message = "密码不能为空")
+    @lombok.ToString.Exclude
     private String password;
 
 }
