@@ -43,7 +43,7 @@ onUnmounted(()=>{disposed=true;halt();conversations.value=[];conversation.value=
     <div v-if="!conversation" class="consult-layout">
       <section class="paper pad">
         <h2>发起咨询</h2>
-        <p class="small muted">向当前门店留言。请勿发送身份证号、密码或支付凭据。处方材料请使用处方入口。</p>
+        <p class="small muted">向当前门店留言。请勿发送身份证号、密码或支付凭据。处方材料请走 <a href="#rx-submit">处方申请</a>，不要发在本会话里。</p>
         <div class="page-actions">
           <button class="btn primary" :disabled="busy||loading" @click="start('PHARMACIST')">药师文字咨询</button>
           <button class="btn" :disabled="busy||loading" @click="start('SERVICE')">门店客服咨询</button>

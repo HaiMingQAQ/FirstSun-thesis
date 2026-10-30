@@ -132,7 +132,7 @@ function appHarness(){
  const location={_hash:'#catalog',get hash(){return this._hash;},set hash(value){this._hash=String(value).startsWith('#')?String(value):'#'+value;}};
  const context={ref:value=>({value}),computed:fn=>({get value(){return fn();}}),watch(){},onMounted(){},onUnmounted(){},nextTick:async()=>{},identity:()=>({...state}),sameIdentity,clearLoginState(){},localTestLogin:false,trade:{reset(){}},window:{addEventListener(){},removeEventListener(){},scrollTo(){}},document:{body:{dataset:{}}},location,history:{replaceState(){}},crypto:{randomUUID:()=>'unit'},URLSearchParams,setTimeout:()=>1,clearTimeout(){},api:{store:{id:407,name:'演示门店'},session:()=>null,profile:async()=>({userId:1}),loadCategories:async()=>{catalogCalls++;return[];},productPage:async()=>{catalogCalls++;return{list:[],total:0};},aiTopics:async()=>[]}};
  const script=source('App.vue').split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm,'');
- vm.runInNewContext(script+'\nglobalThis.view={openConsult,pendingConsult,loginOpen,user,onLoggedIn,closeDialog,parseRoute,route,notConnected};',context);
+ vm.runInNewContext(script+'\nglobalThis.view={openConsult,pendingConsult,loginOpen,user,onLoggedIn,closeDialog,parseRoute,route,routeQuery,notConnected,authCleared};',context);
  return{...context.view,location,catalogCalls:()=>catalogCalls,events};
 }
 
@@ -159,6 +159,42 @@ test('logged-out consult entry uses login and only resumes that action after suc
  h.openConsult();
  assert.equal(h.location.hash,'#consult');
  assert.equal(h.loginOpen.value,false);
+});
+
+test('leaving the page that opened consult cancels resume so login stays on the later route',async()=>{
+ const h=appHarness();
+ h.openConsult();
+ assert.equal(h.pendingConsult.value,true);
+ h.location.hash='#prescriptions?from=1';
+ h.parseRoute();
+ assert.equal(h.pendingConsult.value,false);
+ assert.equal(h.route.value,'prescriptions');
+ assert.equal(h.routeQuery.value,'from=1');
+ await h.onLoggedIn({userId:3,name:'会员'});
+ assert.equal(h.location.hash,'#prescriptions?from=1');
+ h.user.value=null;
+ h.location.hash='#catalog';
+ h.openConsult();
+ h.authCleared();
+ assert.equal(h.pendingConsult.value,false);
+ assert.equal(h.user.value,null);
+ await h.onLoggedIn({userId:4,name:'另一会员'});
+ assert.equal(h.location.hash,'#catalog');
+});
+
+test('consult and prescription stay on separate routes and do not mark each other unavailable',()=>{
+ const app=source('App.vue');
+ const consult=app.indexOf('v-else-if="route===\'consult\'"');
+ const prescription=app.indexOf('v-else-if="isPrescription"');
+ const catalog=app.indexOf('v-else-if="route===\'catalog\'"');
+ assert(consult>0&&prescription>consult&&catalog>prescription);
+ assert(app.includes('href="#rx-submit"'));
+ assert(app.includes('openConsult'));
+ assert(!app.includes("notConnected('药师 / 客服咨询')"));
+ assert(!app.includes("notConnected('处方申请')"));
+ assert(app.includes("notConnected('消息中心')"));
+ assert(source('ConsultationPage.vue').includes('href="#rx-submit"'));
+ assert(source('PrescriptionPages.vue').includes('href="#consult"'));
 });
 
 function component(template,state){return{setup:()=>state,components:{Icon:{props:['name'],render:()=>null}},render:new Function('Vue',compile(template,{mode:'function',prefixIdentifiers:true}).code)(Vue)};}
