@@ -6,7 +6,8 @@ export {clearLoginState};
 let refreshing;
 export default async function request(config){
  const snapshot=identity(),custom={...(config.custom||{})},headers={'Content-Type':'application/json',Accept:'*/*',terminal:'20',platform:'H5'};
- if(/^\/member\/(wx-cart|wx-order|address)\//.test(config.url))custom.skipRefresh=true;
+ // 购物车、订单、地址和处方都绑定当前登录身份，不在迟到的 401 上自动刷新令牌。
+ if(/^\/member\/(wx-cart|wx-order|address|prescription)\//.test(config.url))custom.skipRefresh=true;
  if(!custom.skipTenant)headers['tenant-id']=snapshot.tenant;
  if(custom.isToken!==false&&snapshot.token)headers.Authorization=snapshot.token;
  Object.assign(headers,config.header||{});
