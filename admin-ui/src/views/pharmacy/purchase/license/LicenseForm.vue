@@ -152,13 +152,11 @@ const buildSaveData = (): LicenseApi.SupplierLicenseCreateVO => {
 /** 提交表单 */
 const emit = defineEmits(['success']) // 定义 success 事件，用于操作成功后的回调
 const submitForm = async () => {
-  // 校验表单
-  if (!formRef.value) return
-  const valid = await formRef.value.validate()
-  if (!valid) return
-  // 提交请求
+  if (!formRef.value || formLoading.value) return
   formLoading.value = true
   try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
     const data = buildSaveData()
     if (formType.value === 'create') {
       await LicenseApi.createLicense(data)
@@ -170,7 +168,6 @@ const submitForm = async () => {
       message.success(t('common.updateSuccess'))
     }
     dialogVisible.value = false
-    // 发送操作成功的事件
     emit('success')
   } finally {
     formLoading.value = false

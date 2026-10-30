@@ -98,8 +98,16 @@
               <div class="settle-label">备注</div>
               <el-input v-model="remark" type="textarea" :rows="2" placeholder="备注（选填）" />
             </div>
+            <el-alert
+              v-if="saleUnknown"
+              :title="`订单号 ${unknownOrderNo} 已提交，但小票没有读到。请到销售记录核对。核对前不能再次结算。`"
+              type="warning"
+              :closable="false"
+              class="mb-10px"
+            />
             <div class="settle-actions">
-              <el-button type="primary" size="large" :loading="submitLoading" @click="handleSubmit">
+              <el-button v-if="saleUnknown" size="large" @click="acknowledgeUnknown">已核对，清空并开始新单</el-button>
+              <el-button v-else type="primary" size="large" :loading="submitLoading" @click="handleSubmit">
                 <Icon icon="ep:money" class="mr-5px" /> 现金结算并提交
               </el-button>
               <el-button size="large" :disabled="!lastOrder" @click="handlePrint">
@@ -259,6 +267,7 @@
 <script lang="ts" setup>
 import { SaleOrderApi, SaleOrderSaveReqVO, SaleOrderItemVO, SaleOrderVO } from '@/api/pharmacy/pos/saleOrder'
 import { PosShiftApi } from '@/api/pharmacy/pos/shift'
+import { beginSale, finishSale, type SalePhase } from './settlement'
 
 /** 收银台 */
 defineOptions({ name: 'PharmacyPosIndex' })
@@ -287,6 +296,9 @@ const remark = ref('')
 const cart = ref<CartItem[]>([])
 const paidAmount = ref(0)
 const submitLoading = ref(false)
+const salePhase = ref<SalePhase>('idle')
+const saleUnknown = computed(() => salePhase.value === 'unknown')
+const unknownOrderNo = ref('')
 const openShiftLoading = ref(false)
 const closeShiftLoading = ref(false)
 
@@ -355,6 +367,11 @@ const removeItem = (index: number) => {
 }
 
 const clearCart = () => {
+  if (salePhase.value === 'unknown') {
+    acknowledgeUnknown()
+    return
+  }
+  if (salePhase.value === 'submitting') return
   cart.value = []
   genIdempotency() // 放弃本次结算意图，重置幂等键
 }
@@ -377,7 +394,17 @@ const genIdempotency = () => {
 genIdempotency()
 
 /** 提交现金销售单 */
+const acknowledgeUnknown = () => {
+  if (salePhase.value !== 'unknown') return
+  cart.value = []
+  paidAmount.value = 0
+  remark.value = ''
+  genIdempotency()
+  salePhase.value = 'idle'
+}
+
 const handleSubmit = async () => {
+  if (beginSale(salePhase.value) == null) return
   if (cart.value.length === 0) {
     message.warning('请先添加商品')
     return
@@ -386,6 +413,7 @@ const handleSubmit = async () => {
     message.warning('实收现金不足')
     return
   }
+  salePhase.value = 'submitting'
   submitLoading.value = true
   try {
     const items: SaleOrderItemVO[] = cart.value.map((item) => ({
@@ -419,16 +447,29 @@ const handleSubmit = async () => {
       remark: remark.value
     }
     const orderId = await SaleOrderApi.createSaleOrder(data)
-    message.success('销售成功')
-    genIdempotency() // 新订单新幂等键
-    // 加载小票数据
-    lastOrder.value = await SaleOrderApi.getSaleOrder(orderId)
-    lastOrderLines.value = (lastOrder.value as any).lines || []
+    let receipt: SaleOrderVO | null = null
+    try {
+      receipt = await SaleOrderApi.getSaleOrder(orderId)
+    } catch {
+      receipt = null
+    }
+    if (finishSale(receipt != null) === 'unknown') {
+      salePhase.value = 'unknown'
+      unknownOrderNo.value = pendingOrderNo
+      message.warning('结算请求已返回，但小票读取失败。请到销售记录核对，不要再次结算。')
+      return
+    }
+    lastOrder.value = receipt
+    lastOrderLines.value = (receipt as SaleOrderVO & { lines?: typeof lastOrderLines.value }).lines || []
+    message.success('销售已入账，请核对小票上的应付、实收和找零')
     cart.value = []
     paidAmount.value = 0
     remark.value = ''
-  } catch (err) {
-    // 后端错误（如库存服务未就绪、处方未审）已由拦截器提示
+    genIdempotency()
+    salePhase.value = 'idle'
+  } catch {
+    // 创建失败时保留原订单号。重复单号由服务端拒绝，不能换号重结。
+    if (salePhase.value === 'submitting') salePhase.value = 'idle'
   } finally {
     submitLoading.value = false
   }
