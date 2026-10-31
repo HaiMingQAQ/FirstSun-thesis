@@ -434,6 +434,9 @@ const open = async (type: string, id?: number) => {
       const data = await DrugApi.getDrug(id)
       formData.value = { ...createDefaultFormData(), ...data }
     }
+  } catch {
+    message.error('药品资料读取失败，请关闭后重试')
+    drawerVisible.value = false
   } finally {
     formLoading.value = false
   }
@@ -488,11 +491,11 @@ const createDrugPayload = (): DrugApi.DrugCreateVO => {
 /** 提交表单 */
 const emit = defineEmits(['success'])
 const submitForm = async () => {
-  if (!formRef.value) return
-  const valid = await formRef.value.validate()
-  if (!valid) return
+  if (!formRef.value || formLoading.value) return
   formLoading.value = true
   try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
     const payload = createDrugPayload()
     if (formType.value === 'create') {
       await DrugApi.createDrug(payload)
