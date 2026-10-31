@@ -21,7 +21,7 @@ export interface PrescRecordVO {
   doctorName?: string // 医师姓名
   patientName: string // 患者姓名
   patientAge?: number // 年龄
-  patientIdNo?: string // 身份证(AES)
+  patientIdNo?: string // 身份证密文，页面不展示、不写入日志
   diagnosis?: string // 诊断
   usageDesc?: string // 用法用量
   prescDate?: string // 开方日期
@@ -33,7 +33,8 @@ export interface PrescRecordVO {
   reviewOpinion?: string // 审方意见
   reviewSnapshot?: string // 电子签名
   isSpecial: number // 是否特管(双人复核)
-  dblCheckBy?: number // 双人复核人
+  dblCheckBy?: number // 双人复核人员工档案编号
+  dblCheckByName?: string // 双人复核人姓名
   limitCheck: number // 是否超量复核
   status: number // 0有效/1已完成/2作废
   wxMemberId?: number // 小程序上传人
@@ -41,7 +42,7 @@ export interface PrescRecordVO {
   prescribedItems?: string // JSON: 药品明细
   approvedItems?: string
   approvedUntil?: number
-  uses?: { wxOrderId: number; status: string; releaseReason?: string }[]
+  uses?: { wxOrderId: number; status: string; releaseReason?: string; createTime?: number }[]
   createTime?: string
 }
 
