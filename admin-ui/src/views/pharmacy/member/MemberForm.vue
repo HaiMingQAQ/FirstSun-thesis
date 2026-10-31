@@ -3,7 +3,7 @@
     v-model="drawerVisible"
     :title="drawerTitle"
     direction="rtl"
-    size="600px"
+    size="min(640px, 96vw)"
     :before-close="handleClose"
   >
     <el-form
@@ -20,16 +20,16 @@
         </el-avatar>
       </el-form-item>
       <el-form-item label="手机号" prop="mobile">
-        <el-input v-model="formData.mobile" placeholder="请输入手机号" />
+        <el-input v-model="formData.mobile" maxlength="11" placeholder="请输入手机号" :disabled="!canEdit" />
       </el-form-item>
       <el-form-item label="昵称" prop="nickname">
-        <el-input v-model="formData.nickname" placeholder="请输入昵称" />
+        <el-input v-model="formData.nickname" maxlength="30" placeholder="请输入昵称" :disabled="!canEdit" />
       </el-form-item>
       <el-form-item label="姓名" prop="name">
-        <el-input v-model="formData.name" placeholder="请输入姓名" />
+        <el-input v-model="formData.name" maxlength="30" placeholder="请输入姓名" :disabled="!canEdit" />
       </el-form-item>
       <el-form-item label="性别" prop="sex">
-        <el-radio-group v-model="formData.sex">
+        <el-radio-group v-model="formData.sex" :disabled="!canEdit">
           <el-radio
             v-for="dict in getIntDictOptions(DICT_TYPE.SYSTEM_USER_SEX)"
             :key="dict.value"
@@ -46,23 +46,27 @@
           placeholder="请选择生日"
           value-format="YYYY-MM-DD"
           class="!w-full"
+          :disabled="!canEdit"
         />
       </el-form-item>
       <el-form-item label="邮箱" prop="email">
-        <el-input v-model="formData.email" placeholder="请输入邮箱" />
+        <el-input v-model="formData.email" maxlength="100" placeholder="请输入邮箱" :disabled="!canEdit" />
       </el-form-item>
       <el-form-item label="备注" prop="mark">
         <el-input
           v-model="formData.mark"
           type="textarea"
           :rows="3"
+          maxlength="255"
+          show-word-limit
           placeholder="请输入备注"
+          :disabled="!canEdit"
         />
       </el-form-item>
 
       <el-divider content-position="left">账户信息</el-divider>
       <el-form-item label="会员等级" prop="levelId">
-        <el-select v-model="formData.levelId" placeholder="请选择会员等级" class="!w-full">
+        <el-select v-model="formData.levelId" placeholder="请选择会员等级" class="!w-full" :disabled="!canEdit">
           <el-option
             v-for="item in levelList"
             :key="item.id"
@@ -77,6 +81,7 @@
           :min="0"
           controls-position="right"
           class="!w-200px"
+          :disabled="!canEdit"
         />
       </el-form-item>
       <el-form-item label="经验值" prop="experience">
@@ -85,39 +90,33 @@
           :min="0"
           controls-position="right"
           class="!w-200px"
+          :disabled="!canEdit"
         />
       </el-form-item>
       <el-form-item label="状态" prop="status">
-        <el-radio-group v-model="formData.status">
-          <el-radio
-            v-for="dict in getIntDictOptions(DICT_TYPE.PHARMACY_STATUS)"
-            :key="dict.value"
-            :value="dict.value"
-          >
-            {{ dict.label }}
+        <el-radio-group v-model="formData.status" :disabled="!canEdit">
+          <el-radio v-for="item in MEMBER_STATUS_OPTIONS" :key="item.value" :value="item.value">
+            {{ item.label }}
           </el-radio>
         </el-radio-group>
       </el-form-item>
 
-      <el-divider content-position="left">注册与登录信息</el-divider>
-      <el-form-item label="注册IP">
-        <span>{{ formData.registerIp || '-' }}</span>
-      </el-form-item>
-      <el-form-item label="注册终端">
+      <el-divider v-if="!isCreate" content-position="left">注册与登录信息</el-divider>
+      <el-form-item v-if="!isCreate" label="注册终端">
         <dict-tag :type="DICT_TYPE.TERMINAL" :value="formData.registerTerminal" />
       </el-form-item>
-      <el-form-item label="登录IP">
-        <span>{{ formData.loginIp || '-' }}</span>
-      </el-form-item>
-      <el-form-item label="最后登录">
+      <el-form-item v-if="!isCreate" label="最后登录">
         <span>{{ formatDate(formData.loginDate) || '-' }}</span>
       </el-form-item>
-      <el-form-item label="注册时间">
+      <el-form-item v-if="!isCreate" label="注册时间">
         <span>{{ formatDate(formData.createTime) || '-' }}</span>
+      </el-form-item>
+      <el-form-item v-if="!isCreate && canViewPoints">
+        <el-button @click="openPoints">查看该会员积分</el-button>
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button :disabled="formLoading" type="primary" @click="submitForm">保 存</el-button>
+      <el-button v-if="canEdit" :disabled="formLoading" :loading="formLoading" type="primary" @click="submitForm">保 存</el-button>
       <el-button @click="drawerVisible = false">取 消</el-button>
     </template>
   </el-drawer>
@@ -125,8 +124,10 @@
 <script lang="ts" setup>
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { formatDate } from '@/utils/formatTime'
+import { checkPermi } from '@/utils/permission'
 import * as MemberApi from '@/api/pharmacy/member/user'
 import * as LevelApi from '@/api/pharmacy/member/level'
+import { MEMBER_ENABLED, MEMBER_STATUS_OPTIONS } from './member-status'
 
 defineOptions({ name: 'PharmacyMemberUserForm' })
 
@@ -148,7 +149,7 @@ const createDefaultFormData = (): MemberApi.MemberUserVO => ({
   name: '',
   sex: 0,
   birthday: '',
-  status: 1,
+  status: MEMBER_ENABLED,
   point: 0,
   levelId: 0,
   experience: 0,
@@ -168,6 +169,12 @@ const formRules = reactive({
   nickname: [{ required: true, message: '昵称不能为空', trigger: 'blur' }],
   status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
 })
+const loaded = ref(false)
+const canEdit = computed(
+  () => (isCreate.value && checkPermi(['pharmacy:member:user:create'])) || (!isCreate.value && loaded.value && checkPermi(['pharmacy:member:user:update']))
+)
+const canViewPoints = computed(() => checkPermi(['pharmacy:member:point-record:query']))
+const router = useRouter()
 
 /** 会员等级列表 */
 const levelList = ref<LevelApi.MemberLevelSimpleVO[]>([])
@@ -178,14 +185,20 @@ const loadLevelList = async () => {
 
 /** 打开抽屉：编辑（查看 / 修改） */
 const open = async (id: number) => {
+  if (formLoading.value) return
   drawerVisible.value = true
   isCreate.value = false
+  loaded.value = false
   drawerTitle.value = '会员详情'
   formLoading.value = true
   try {
     await loadLevelList()
     const data = await MemberApi.getMember(id)
     formData.value = { ...createDefaultFormData(), ...data }
+    loaded.value = true
+  } catch {
+    message.error('会员资料读取失败，请关闭后重试')
+    drawerVisible.value = false
   } finally {
     formLoading.value = false
   }
@@ -229,12 +242,17 @@ const buildSaveData = (): MemberApi.MemberUserSaveVO => {
 
 /** 提交表单 */
 const emit = defineEmits(['success'])
+const openPoints = () => {
+  if (!formData.value.id) return
+  router.push({ path: '/pharmacy-base/member/point-record', query: { userId: String(formData.value.id) } })
+}
+
 const submitForm = async () => {
-  if (!formRef.value) return
-  const valid = await formRef.value.validate()
-  if (!valid) return
+  if (!formRef.value || formLoading.value || !canEdit.value) return
   formLoading.value = true
   try {
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
     const data = buildSaveData()
     if (isCreate.value) {
       // 新增：注册 / 登录信息由服务端维护，不提交
@@ -255,6 +273,7 @@ const submitForm = async () => {
 const handleClose = (done: () => void) => {
   formData.value = createDefaultFormData()
   isCreate.value = false
+  loaded.value = false
   formRef.value?.resetFields()
   done()
 }
