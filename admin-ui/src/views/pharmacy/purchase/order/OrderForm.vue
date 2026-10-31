@@ -369,19 +369,18 @@ const buildSaveData = (): OrderApi.PurchaseOrderCreateVO => {
 /** 提交表单 */
 const emit = defineEmits(['success'])
 const submitForm = async () => {
-  if (!formRef.value) return
-  const valid = await formRef.value.validate()
-  if (!valid) return
-  // 明细校验：药品必选、数量与单价合法
-  const invalidLine = formData.value.lines.find(
-    (line) => !line.drugId || !line.orderQty || line.orderQty <= 0 || line.unitPrice === undefined
-  )
-  if (invalidLine) {
-    message.warning('请完整填写每条明细的药品、订购数量与含税单价')
-    return
-  }
+  if (!formRef.value || formLoading.value) return
   formLoading.value = true
   try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const invalidLine = formData.value.lines.find(
+      (line) => !line.drugId || !line.orderQty || line.orderQty <= 0 || line.unitPrice === undefined
+    )
+    if (invalidLine) {
+      message.warning('请完整填写每条明细的药品、订购数量与含税单价')
+      return
+    }
     const data = buildSaveData()
     if (formType.value === 'create') {
       await OrderApi.createPurchaseOrder(data)

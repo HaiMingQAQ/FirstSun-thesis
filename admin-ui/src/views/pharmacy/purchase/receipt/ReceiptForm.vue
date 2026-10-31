@@ -503,19 +503,18 @@ const buildSaveData = (): ReceiptApi.PurchaseReceiptCreateVO => {
 /** 提交表单 */
 const emit = defineEmits(['success'])
 const submitForm = async () => {
-  if (!formRef.value) return
-  const valid = await formRef.value.validate()
-  if (!valid) return
-  // 明细校验：药品、批号、有效期必填，数量大于 0
-  const invalidLine = formData.value.lines.find(
-    (line) => !line.drugId || !line.batchNo || !line.expiryDate || !line.qty || line.qty <= 0
-  )
-  if (invalidLine) {
-    message.warning('请完整填写每条明细的药品、批号、有效期与实收数量')
-    return
-  }
+  if (!formRef.value || formLoading.value) return
   formLoading.value = true
   try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const invalidLine = formData.value.lines.find(
+      (line) => !line.drugId || !line.batchNo || !line.expiryDate || !line.qty || line.qty <= 0
+    )
+    if (invalidLine) {
+      message.warning('请完整填写每条明细的药品、批号、有效期与实收数量')
+      return
+    }
     const data = buildSaveData()
     if (formType.value === 'create') {
       await ReceiptApi.createPurchaseReceipt(data)
