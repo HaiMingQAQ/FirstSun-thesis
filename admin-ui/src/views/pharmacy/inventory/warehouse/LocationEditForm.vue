@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     title="编辑货位"
-    width="520px"
+    width="min(520px, 94vw)"
     :close-on-click-modal="false"
     :before-close="beforeClose"
   >
