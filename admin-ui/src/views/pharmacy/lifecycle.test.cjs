@@ -229,3 +229,55 @@ test('late submit completion cannot clear a new prescription loading lock', asyn
   assert.equal(p.state.reviewLoading.value, true)
   assert.equal(p.state.reviewVisible.value, true)
 })
+
+test('first prescription mount and activation issue only one list request', async () => {
+  const pending = deferred()
+  let requests = 0
+  const p = review({ getPrescRecordPage: () => { requests++; return pending.promise } })
+  const mounted = p.hooks.onMounted()
+  await p.hooks.onActivated()
+  assert.equal(requests, 1)
+  assert.equal(p.state.loading.value, true)
+  pending.resolve({ list: [record(1)], total: 1 })
+  await mounted
+  assert.equal(p.state.loading.value, false)
+  assert.equal(p.state.list.value[0].id, 1)
+})
+
+for (const outcome of ['resolve', 'reject']) {
+  for (const order of ['old-first', 'new-first']) {
+    test(`prescription list resumes after reactivation; ${outcome} ${order} cannot affect new list`, async () => {
+      const pending = []
+      const p = review({ getPrescRecordPage: () => {
+        const request = deferred()
+        pending.push(request)
+        return request.promise
+      } })
+      const mounted = p.hooks.onMounted()
+      await p.hooks.onActivated()
+      p.hooks.onDeactivated()
+      assert.equal(p.state.loading.value, false)
+      const activated = p.hooks.onActivated()
+      assert.equal(pending.length, 2)
+      assert.equal(p.state.loading.value, true)
+      const finishOld = async () => {
+        outcome === 'resolve' ? pending[0].resolve({ list: [record(1)], total: 100 }) : pending[0].reject(new Error('obsolete list failure'))
+        await mounted
+      }
+      if (order === 'old-first') {
+        await finishOld()
+        assert.equal(p.state.list.value.length, 0)
+        assert.equal(p.state.loading.value, true)
+        assert.equal(p.state.listError.value, '')
+      }
+      pending[1].resolve({ list: [record(2)], total: 1 })
+      await activated
+      if (order === 'new-first') await finishOld()
+      assert.equal(p.state.list.value.length, 1)
+      assert.equal(p.state.list.value[0].id, 2)
+      assert.equal(p.state.total.value, 1)
+      assert.equal(p.state.loading.value, false)
+      assert.equal(p.state.listError.value, '')
+    })
+  }
+}

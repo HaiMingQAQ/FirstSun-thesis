@@ -321,6 +321,7 @@ const leaveReview = () => {
   reviewVisible.value = false
   clearImages()
   listGeneration++
+  loading.value = false
   reviewLoading.value = false
   reviewTarget.value = null
   approvedItems.value = []
@@ -499,14 +500,20 @@ const openFromQuery = async () => {
   if (!reviewVisible.value) consumedQuery.value = ''
 }
 
-onMounted(async () => {
+const loadPage = async () => {
+  const pending = getList()
+  const ticket = listGeneration
+  await pending
+  if (pageActive && ticket === listGeneration) await openFromQuery()
+}
+onMounted(() => {
   queryParams.reviewStatus = 0
-  await getList()
-  await openFromQuery()
+  return loadPage()
 })
 onActivated(() => {
+  if (pageActive) return
   pageActive = true
-  openFromQuery()
+  return loadPage()
 })
 onDeactivated(leaveReview)
 onBeforeUnmount(leaveReview)
