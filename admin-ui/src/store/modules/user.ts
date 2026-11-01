@@ -1,9 +1,10 @@
 import { store } from '@/store'
 import { defineStore } from 'pinia'
-import { getAccessToken, removeToken } from '@/utils/auth'
+import { getAccessToken, getTenantId, getVisitTenantId, removeToken } from '@/utils/auth'
 import { CACHE_KEY, useCache, deleteUserCache } from '@/hooks/web/useCache'
 import { getInfo, loginOut } from '@/api/login'
 import { useAiAssistantStoreWithOut } from './aiAssistant'
+import { pendingSends } from '@/views/pharmacy/consultation/reception'
 
 const { wsCache } = useCache()
 
@@ -63,6 +64,7 @@ export const useUserStore = defineStore('admin-user', {
           userInfo = await getInfo()
         } catch (error) {}
       }
+      pendingSends.bindIdentity(userInfo.user.id, getTenantId(), getVisitTenantId())
       this.permissions = new Set(userInfo.permissions || []) // 兜底为 [] https://t.zsxq.com/xCJew
       this.roles = userInfo.roles
       this.user = userInfo.user
@@ -85,12 +87,14 @@ export const useUserStore = defineStore('admin-user', {
       wsCache.set(CACHE_KEY.USER, userInfo)
     },
     async loginOut() {
+      pendingSends.reset()
       await loginOut()
       removeToken()
       deleteUserCache() // 删除用户缓存
       this.resetState()
     },
     resetState() {
+      pendingSends.reset()
       useAiAssistantStoreWithOut().reset()
       this.permissions = new Set<string>()
       this.roles = []

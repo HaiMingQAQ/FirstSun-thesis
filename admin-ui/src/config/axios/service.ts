@@ -15,6 +15,7 @@ import errorCode from './errorCode'
 
 import { resetRouter } from '@/router'
 import { deleteUserCache } from '@/hooks/web/useCache'
+import { pendingSends } from '@/views/pharmacy/consultation/reception'
 import { ApiEncrypt } from '@/utils/encrypt'
 
 const tenantEnable = import.meta.env.VITE_APP_TENANT_ENABLE
@@ -243,6 +244,7 @@ const refreshToken = async () => {
   return await axios.post(base_url + '/system/auth/refresh-token?refreshToken=' + getRefreshToken())
 }
 const handleAuthorized = () => {
+  pendingSends.reset()
   const { t } = useI18n()
   if (!isRelogin.show) {
     // 如果已经到登录页面则不进行弹窗提示

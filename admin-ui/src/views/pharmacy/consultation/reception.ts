@@ -31,20 +31,44 @@ export interface ReceptionFilter {
 }
 
 const pending = new Map<number, SendRequest>()
+let identity = ''
+let epoch = 0
+const resetListeners = new Set<() => void>()
 
 /** 结果未确认的发送在关闭弹窗或离开页面后仍保留原编号，避免换号重发。 */
 export const pendingSends = {
+  capture() {
+    return epoch
+  },
+  isCurrent(expected: number) {
+    return expected === epoch
+  },
+  bindIdentity(userId: number, tenant: unknown, visitTenant: unknown) {
+    const next = JSON.stringify([userId, tenant ?? null, visitTenant ?? null])
+    if (next === identity) return
+    this.reset()
+    identity = next
+  },
+  onReset(listener: () => void) {
+    resetListeners.add(listener)
+    return () => resetListeners.delete(listener)
+  },
   get(id: number) {
     return pending.get(id)
   },
-  remember(send: SendRequest) {
+  remember(send: SendRequest, expected = epoch) {
+    if (expected !== epoch) return
     pending.set(send.conversationId, { ...send })
   },
-  clear(id: number) {
+  clear(id: number, expected = epoch) {
+    if (expected !== epoch) return
     pending.delete(id)
   },
   reset() {
+    epoch++
+    identity = ''
     pending.clear()
+    resetListeners.forEach((listener) => listener())
   }
 }
 
