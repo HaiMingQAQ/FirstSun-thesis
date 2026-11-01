@@ -1,6 +1,7 @@
 import { useCache, CACHE_KEY } from '@/hooks/web/useCache'
 import { TokenType } from '@/api/login/types'
 import { decrypt, encrypt } from '@/utils/jsencrypt'
+import { pendingSends } from '@/views/pharmacy/consultation/reception'
 
 const { wsCache } = useCache()
 
@@ -27,6 +28,7 @@ export const setToken = (token: TokenType) => {
 
 // 删除token
 export const removeToken = () => {
+  pendingSends.reset()
   wsCache.delete(AccessTokenKey)
   wsCache.delete(RefreshTokenKey)
 }
@@ -75,10 +77,12 @@ export const getTenantId = () => {
 }
 
 export const setTenantId = (tenantId: number) => {
+  if (getTenantId() !== tenantId) pendingSends.reset()
   wsCache.set(CACHE_KEY.TenantId, tenantId)
 }
 
 export const removeTenantContext = () => {
+  pendingSends.reset()
   wsCache.delete(CACHE_KEY.TenantId)
   wsCache.delete(CACHE_KEY.VisitTenantId)
 }
@@ -88,5 +92,6 @@ export const getVisitTenantId = () => {
 }
 
 export const setVisitTenantId = (visitTenantId: number) => {
+  if (getVisitTenantId() !== visitTenantId) pendingSends.reset()
   wsCache.set(CACHE_KEY.VisitTenantId, visitTenantId)
 }

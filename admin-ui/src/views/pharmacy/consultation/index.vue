@@ -286,17 +286,20 @@ async function reply() {
   const id = conversation.value.id
   const expected = generation
   const request = nextSend(id, input.value, failed.value)
+  const identity = pendingSends.capture()
   if (!request) return
   busy.value = true
   try {
     await Api.send(request)
-    pendingSends.clear(id)
+    pendingSends.clear(id, identity)
+    if (!pendingSends.isCurrent(identity)) return
     if (!current(expected, id)) return
     failed.value = undefined
     input.value = ''
     await enqueue(() => refreshBody())
   } catch (reason) {
-    pendingSends.remember(request)
+    pendingSends.remember(request, identity)
+    if (!pendingSends.isCurrent(identity)) return
     if (!current(expected, id)) return
     failed.value = request
     threadError.value = errorText(reason, '发送结果未确认，请沿用原编号重试')
@@ -333,6 +336,21 @@ function leave() {
   if (dialog.value) dialog.value = false
 }
 
+const stopIdentityReset = pendingSends.onReset(() => {
+  leave()
+  listGeneration++
+  conversations.value = []
+  total.value = 0
+  thread.value = []
+  conversation.value = undefined
+  input.value = ''
+  failed.value = undefined
+  threadError.value = ''
+  busy.value = false
+  polling.value = false
+  loading.value = false
+})
+
 onMounted(load)
 onActivated(() => {
   active = true
@@ -340,7 +358,10 @@ onActivated(() => {
   schedule()
 })
 onDeactivated(leave)
-onBeforeUnmount(leave)
+onBeforeUnmount(() => {
+  stopIdentityReset()
+  leave()
+})
 </script>
 <style scoped>
 .page-note { color: #617368; font-size: 13px; }

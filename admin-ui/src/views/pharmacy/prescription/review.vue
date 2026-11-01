@@ -99,7 +99,7 @@
       <Pagination :total="total" v-model:page="queryParams.pageNo" v-model:limit="queryParams.pageSize" @pagination="getList" />
     </ContentWrap>
 
-    <el-dialog v-model="reviewVisible" :title="canEdit && submitState !== 'unknown' ? '药师审核' : '审核记录'" width="min(860px, 96vw)" destroy-on-close @closed="finishReview">
+    <el-dialog v-model="reviewVisible" :title="canEdit && submitState !== 'unknown' ? '药师审核' : '审核记录'" width="min(860px, 96vw)" destroy-on-close @close="closeReview" @closed="finishReview">
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" class="mb-12px" />
       <el-descriptions v-if="reviewTarget" :column="2" border class="mb-12px">
         <el-descriptions-item label="处方号">{{ reviewTarget.prescNo }}</el-descriptions-item>
@@ -296,6 +296,7 @@ const canEdit = computed(() => reviewTarget.value?.reviewStatus === 0 && reviewT
 const fieldsLocked = computed(() => !canEdit.value || submitState.value === 'unknown')
 const opinionLabel = computed(() => (reviewForm.reviewStatus === 2 || reviewTarget.value?.limitCheck === 1 ? '审方意见(必填)' : '审方意见'))
 let reviewGeneration = 0
+let pageActive = true
 const consumedQuery = ref('')
 
 const clearImages = () => {
@@ -306,9 +307,32 @@ const clearImages = () => {
 }
 const finishReview = () => {
   // 关闭动画结束时如果已经打开下一张，不能清掉新的加载锁。
+  if (reviewVisible.value || reviewLoading.value) return
+  clearImages()
+  reviewLoading.value = false
+}
+const closeReview = () => {
   if (reviewVisible.value) return
   clearImages()
   reviewLoading.value = false
+}
+const leaveReview = () => {
+  pageActive = false
+  reviewVisible.value = false
+  clearImages()
+  listGeneration++
+  reviewLoading.value = false
+  reviewTarget.value = null
+  approvedItems.value = []
+  approvedUntil.value = ''
+  reviewForm.reviewOpinion = ''
+  reviewForm.reviewSnapshot = ''
+  reviewForm.reviewStatus = undefined
+  reviewForm.dblCheckBy = undefined
+  materialError.value = ''
+  detailError.value = ''
+  submitState.value = 'idle'
+  consumedQuery.value = ''
 }
 const requestedMaximum = (id?: number) => requestedItems.value.find((item) => item.drugId === id)?.qty || 1
 const removeApproved = (drugId?: number) => {
@@ -328,7 +352,7 @@ const applyRecord = (row: PrescRecordVO) => {
 }
 
 const openReview = async (row: Pick<PrescRecordVO, 'id'>) => {
-  if (reviewLoading.value) return
+  if (!pageActive || reviewLoading.value) return
   reviewLoading.value = true
   clearImages()
   const generation = reviewGeneration
@@ -397,10 +421,11 @@ const reloadReview = async () => {
       message.warning('仍不能确认审核结果，请稍后再刷新')
     }
   } catch (reason) {
+    if (generation !== reviewGeneration || reviewTarget.value?.id !== id) return
     submitState.value = 'unknown'
     message.warning(errorText(reason, '刷新审核结果失败，请稍后再试'))
   } finally {
-    reviewLoading.value = false
+    if (generation === reviewGeneration) reviewLoading.value = false
   }
 }
 
@@ -434,8 +459,6 @@ const submitReview = async () => {
     submitted = false
   }
   if (generation !== reviewGeneration || reviewTarget.value?.id !== currentId) {
-    reviewLoading.value = false
-    getList()
     return
   }
   try {
@@ -451,7 +474,7 @@ const submitReview = async () => {
       } catch {
         listError.value = '审核结果已写入，但列表刷新失败，请再搜索核对'
       }
-      reviewVisible.value = false
+      if (generation === reviewGeneration) reviewVisible.value = false
       return
     }
     submitState.value = 'idle'
@@ -466,6 +489,7 @@ const submitReview = async () => {
 }
 
 const openFromQuery = async () => {
+  if (!pageActive) return
   const key = route.query.id == null ? '' : String(route.query.id)
   if (!key || (consumedQuery.value === key && reviewVisible.value)) return
   const id = Number(key)
@@ -480,8 +504,12 @@ onMounted(async () => {
   await getList()
   await openFromQuery()
 })
-onActivated(openFromQuery)
-onUnmounted(finishReview)
+onActivated(() => {
+  pageActive = true
+  openFromQuery()
+})
+onDeactivated(leaveReview)
+onBeforeUnmount(leaveReview)
 </script>
 <style scoped>
 .material-image { width: 120px; height: 120px; margin: 8px; }
