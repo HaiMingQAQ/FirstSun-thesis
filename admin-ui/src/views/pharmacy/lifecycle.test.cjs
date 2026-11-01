@@ -49,6 +49,13 @@ function review(api) {
 
 for (const hook of ['onBeforeUnmount', 'onDeactivated']) {
   test(`open prescription releases URLs on ${hook}, late material cannot return`, async () => {
+    const opened = review({ getPrescRecord: async (id) => record(id), getPrivateMaterial: async () => new Blob(['x'], { type: 'image/png' }) })
+    await opened.state.openReview({ id: 1 })
+    assert.equal(opened.state.materialUrls.value.length, 1)
+    assert.equal(opened.revoked.length, 0)
+    opened.hooks[hook]()
+    assert.equal(opened.state.materialUrls.value.length, 0)
+    assert.deepEqual(opened.revoked, ['blob:0'])
     const late = deferred()
     let calls = 0
     const p = review({ getPrescRecord: async (id) => record(id), getPrivateMaterial: () => ++calls === 1 ? Promise.resolve(new Blob(['x'], { type: 'image/png' })) : late.promise })
