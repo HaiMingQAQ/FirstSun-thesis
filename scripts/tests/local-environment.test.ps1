@@ -87,9 +87,13 @@ Assert ($queries.Count -eq 1) 'Occupied file configuration was overwritten'
 # The complete production manifest stays aligned with the accepted root Compose chain.
 $manifest = Get-Content (Join-Path $root 'deploy/local-migrations.json') -Raw | ConvertFrom-Json
 $mounts = [regex]::Matches((Get-Content (Join-Path $root 'docker-compose.yml') -Raw), '- \./([^:\r\n]+):/docker-entrypoint-initdb.d/(\d+)-')
-Assert ($manifest.Count -eq 44 -and $mounts.Count -eq 44) 'Incomplete initialization chain'
+Assert ($manifest.Count -eq 47 -and $mounts.Count -eq 44) 'Incomplete baseline plus readiness chain'
 for ($i=0; $i -lt 44; $i++) {
     Assert ($manifest[$i].id -eq ($i+1) -and $manifest[$i].path -eq $mounts[$i].Groups[1].Value) "Wrong SQL order at $i"
+}
+$readiness = @('20261102_a_firstsun_consultation_grant.sql','20261102_b_member_status_labels.sql','20261102_c_unrelated_ai_menus_disable.sql')
+for ($i=0; $i -lt 3; $i++) {
+    Assert ($manifest[44+$i].id -eq (45+$i) -and $manifest[44+$i].path -eq ('sql/migrations/' + $readiness[$i])) "Wrong appended readiness SQL at $i"
 }
 $compose = Get-Content (Join-Path $root 'deploy/docker-compose.local.yml') -Raw | ConvertFrom-Json
 Assert ($compose.name -eq 'firstsun-thesis-local') 'Wrong Compose project'
@@ -104,4 +108,4 @@ foreach ($service in @('mysql','redis','backend','admin-ui')) {
     Assert ($compose.services.$service.ports[0] -like '127.0.0.1:*') "Non-local bind for $service"
     Assert ([bool]$compose.services.$service.healthcheck) "No healthcheck for $service"
 }
-Write-Host 'PASS: migration safety, pending-only imports, secret redaction, full 01-44 order and dedicated Compose boundaries.'
+Write-Host 'PASS: migration safety, pending-only imports, secret redaction, unchanged 01-44 plus 45-47 order and dedicated Compose boundaries.'
