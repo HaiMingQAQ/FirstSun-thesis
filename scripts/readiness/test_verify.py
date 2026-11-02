@@ -5,7 +5,10 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import verify
@@ -28,8 +31,8 @@ def fixture(offset=50000):
     before['system_role_menu'] = [{'id': 1, 'role_id': 167, 'tenant_id': 163, 'menu_id': 22300, 'deleted': 0}]
     before['system_dict_type'] = [{'id': 100, 'type': 'pharmacy_member_status', 'deleted': 0, 'remark': 'old'}]
     before['system_dict_data'] = [
-        {'id': 101, 'dict_type': 'pharmacy_member_status', 'deleted': 0, 'value': '0', 'label': '禁用', 'sort': 2, 'list_class': 'info', 'remark': '会员禁用'},
-        {'id': 102, 'dict_type': 'pharmacy_member_status', 'deleted': 0, 'value': '1', 'label': '启用', 'sort': 1, 'list_class': 'success', 'remark': '会员启用'},
+        {'id': 101, 'dict_type': 'pharmacy_member_status', 'deleted': 0, 'value': '0', 'label': '禁用', 'sort': 2, 'color_type': 'info', 'css_class': 'existing-enabled-class', 'remark': '会员禁用'},
+        {'id': 102, 'dict_type': 'pharmacy_member_status', 'deleted': 0, 'value': '1', 'label': '启用', 'sort': 1, 'color_type': 'success', 'css_class': 'existing-disabled-class', 'remark': '会员启用'},
         {'id': 103, 'dict_type': 'unrelated', 'deleted': 0, 'value': '0', 'label': '其他'},
     ]
     for table in verify.PROTECTED:
@@ -41,8 +44,8 @@ def fixture(offset=50000):
     after['system_tenant_package'][0]['menu_ids'] = json.dumps([22300, 22349, offset, offset + 1, offset + 2])
     after['system_role_menu'] += [{'id': i + 2, 'role_id': 167, 'tenant_id': 163, 'menu_id': offset + i, 'deleted': 0} for i in range(3)]
     after['system_dict_type'][0]['remark'] = '会员状态：0启用 / 1禁用'
-    after['system_dict_data'][0].update(label='启用', sort=1, list_class='success', remark='会员启用')
-    after['system_dict_data'][1].update(label='禁用', sort=2, list_class='info', remark='会员禁用')
+    after['system_dict_data'][0].update(label='启用', sort=1, color_type='success', remark='会员启用')
+    after['system_dict_data'][1].update(label='禁用', sort=2, color_type='info', remark='会员禁用')
     return before, after
 
 
@@ -106,6 +109,68 @@ class ReadinessTests(unittest.TestCase):
             mutate(after)
             with self.assertRaises(ValueError):
                 verify.compare(before, after)
+
+    def test_nonempty_dictionary_css_class_cannot_change(self):
+        for index in [0, 1]:
+            before, after = fixture()
+            verify.compare(before, after)
+            after['system_dict_data'][index]['css_class'] = ''
+            with self.assertRaisesRegex(ValueError, 'Unrelated row field changed'):
+                verify.compare(before, after)
+
+    def test_failure_retains_before_summary_written_before_migration_without_raw_rows(self):
+        before, _ = fixture()
+        canary = 'SYNTHETIC_SECRET_MUST_NOT_BE_RETAINED'
+        before['ai_api_key'][0]['api_key'] = canary
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            events = []
+
+            def fail_migration(file):
+                summary = json.loads((directory / 'BEFORE.json').read_text(encoding='utf8'))
+                self.assertEqual(summary['digest'], verify.digest(before))
+                self.assertEqual(summary['stage'], 'BEFORE_MIGRATION')
+                self.assertEqual(summary['tables']['ai_api_key'], {'count': 1, 'digest': verify.digest(before['ai_api_key'])})
+                events.append({'exitCode': 1, 'sqlSHA256': 'synthetic-failure'})
+                raise ValueError('synthetic migration failure')
+
+            db = SimpleNamespace(directory=directory, events=events, identity=lambda: None,
+                                 snapshot=lambda: before, migrate=fail_migration)
+            argv = ['verify.py', '--apply', '--mysql', 'mysql', '--client-file', 'private', '--database', 'firstsun_readiness_unit', '--expected-uuid', 'expected', '--private-evidence-dir', str(directory)]
+            with patch.object(sys, 'argv', argv), patch.object(verify, 'Mysql', return_value=db):
+                with self.assertRaisesRegex(ValueError, 'synthetic migration failure'):
+                    verify.main()
+            failed = json.loads((directory / 'FAILED.json').read_text(encoding='utf8'))
+            self.assertTrue(failed['beforeSummarySaved'])
+            self.assertEqual(failed['stage'], 'first_apply')
+            self.assertEqual(failed['beforeSummary']['digest'], verify.digest(before))
+            self.assertEqual(failed['events'], events)
+            self.assertFalse(failed['rawRowsRetained'])
+            for file in directory.iterdir():
+                self.assertNotIn(canary, file.read_text(encoding='utf8'))
+
+    def test_before_summary_write_failure_prevents_any_migration(self):
+        before, _ = fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            db = SimpleNamespace(directory=directory, events=[], identity=lambda: None,
+                                 snapshot=lambda: before)
+            original_open = Path.open
+
+            def fail_before(file, *args, **kwargs):
+                if file.name == 'BEFORE.json':
+                    raise OSError('synthetic evidence write failure')
+                return original_open(file, *args, **kwargs)
+
+            argv = ['verify.py', '--apply', '--mysql', 'mysql', '--client-file', 'private', '--database', 'firstsun_readiness_unit', '--expected-uuid', 'expected', '--private-evidence-dir', str(directory)]
+            with patch.object(sys, 'argv', argv), patch.object(verify, 'Mysql', return_value=db), patch.object(Path, 'open', fail_before):
+                with self.assertRaisesRegex(OSError, 'synthetic evidence write failure'):
+                    verify.main()
+            failed = json.loads((directory / 'FAILED.json').read_text(encoding='utf8'))
+            self.assertFalse(failed['beforeSummarySaved'])
+            self.assertEqual(failed['stage'], 'before_evidence_write')
+            self.assertEqual(failed['beforeSummary']['digest'], verify.digest(before))
+            self.assertEqual(failed['events'], [])
 
     def test_original_44_migrations_and_manifest_prefix_are_byte_identical(self):
         old = json.loads(subprocess.check_output(['git', 'show', 'd955f9a75bf26de082667bf55607edfb9ba6ed34:deploy/local-migrations.json'], cwd=verify.ROOT))

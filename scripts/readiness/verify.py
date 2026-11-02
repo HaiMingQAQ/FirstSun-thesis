@@ -80,9 +80,9 @@ def compare(before, after):
                 unchanged_except(old, new, {'remark'} | AUDIT)
                 check(new['remark'] == '会员状态：0启用 / 1禁用', 'Dictionary type text incorrect')
             elif table == 'system_dict_data' and old['dict_type'] == 'pharmacy_member_status' and old['deleted'] == 0 and old['value'] in ['0', '1']:
-                unchanged_except(old, new, {'label', 'sort', 'list_class', 'remark'} | AUDIT)
+                unchanged_except(old, new, {'label', 'sort', 'color_type', 'remark'} | AUDIT)
                 expected = ('启用', 1, 'success', '会员启用') if old['value'] == '0' else ('禁用', 2, 'info', '会员禁用')
-                check(tuple(new[k] for k in ['label', 'sort', 'list_class', 'remark']) == expected,
+                check(tuple(new[k] for k in ['label', 'sort', 'color_type', 'remark']) == expected,
                       'Member dictionary polarity incorrect')
             else:
                 check(old == new, 'Unrelated row changed in ' + table)
@@ -181,9 +181,23 @@ def main():
     check(re.fullmatch(r'firstsun_readiness_[a-z0-9_]+', args.database), 'Isolated schema prefix required')
     check(args.expected_uuid.strip(), 'Explicit expected UUID required')
     db = Mysql(args)
+    before_summary = None
+    before_summary_saved = False
+    stage = 'identity'
     try:
         db.identity()
+        stage = 'before_snapshot'
         before = db.snapshot()
+        before_summary = {'stage': 'BEFORE_MIGRATION', 'database': args.database,
+                          'expectedUuid': args.expected_uuid, 'digest': digest(before),
+                          'tables': {table: {'count': len(rows), 'digest': digest(rows)}
+                                     for table, rows in before.items()},
+                          'rawRowsRetained': False}
+        stage = 'before_evidence_write'
+        with (db.directory / 'BEFORE.json').open('x', encoding='utf8') as evidence:
+            json.dump(before_summary, evidence, indent=2)
+        before_summary_saved = True
+        stage = 'first_apply'
         if args.expect_rejection:
             code = db.migrate(MIGRATIONS[args.expect_rejection - 45], True)
             check(code != 0, 'Invalid fixture was not refused')
@@ -194,18 +208,25 @@ def main():
         else:
             for file in MIGRATIONS:
                 db.migrate(file)
+            stage = 'first_apply_comparison'
             after = db.snapshot()
             result = compare(before, after)
+            stage = 'replay'
             for file in MIGRATIONS:
                 db.migrate(file)
+            stage = 'replay_comparison'
             check(after == db.snapshot(), 'Replay changed rows, grants or timestamps')
             result['replayExactEquality'] = True
-        result.update({'database': args.database, 'beforeDigest': digest(before),
+        result.update({'database': args.database, 'beforeDigest': before_summary['digest'],
+                       'beforeSummarySaved': before_summary_saved,
                        'events': db.events, 'rawRowsRetained': False})
         (db.directory / 'RESULT.json').write_text(json.dumps(result, indent=2), encoding='utf8')
         print(json.dumps({'passed': True, 'database': args.database, 'evidence': str(db.directory)}))
     except Exception:
-        (db.directory / 'FAILED.json').write_text(json.dumps({'events': db.events, 'stopped': True}, indent=2), encoding='utf8')
+        (db.directory / 'FAILED.json').write_text(json.dumps(
+            {'stage': stage, 'beforeSummarySaved': before_summary_saved,
+             'beforeSummary': before_summary, 'events': db.events,
+             'rawRowsRetained': False, 'stopped': True}, indent=2), encoding='utf8')
         raise
 
 
