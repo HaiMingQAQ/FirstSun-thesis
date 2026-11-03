@@ -14,4 +14,4 @@ ENV JAVA_OPTS="-Xms512m -Xmx512m -Djava.security.egd=file:/dev/./urandom"
 ENV ARGS=""
 
 EXPOSE 48080
-CMD java ${JAVA_OPTS} -jar app.jar ${ARGS}
+CMD ["sh", "-c", "exec java ${JAVA_OPTS} -jar app.jar ${ARGS}"]

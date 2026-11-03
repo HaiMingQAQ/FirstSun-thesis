@@ -174,5 +174,17 @@
   {
     "id": 44,
     "path": "sql/migrations/20261018_a_wx_order_sale_posting.sql"
+  },
+  {
+    "id": 45,
+    "path": "sql/migrations/20261102_a_firstsun_consultation_grant.sql"
+  },
+  {
+    "id": 46,
+    "path": "sql/migrations/20261102_b_member_status_labels.sql"
+  },
+  {
+    "id": 47,
+    "path": "sql/migrations/20261102_c_unrelated_ai_menus_disable.sql"
   }
 ]
