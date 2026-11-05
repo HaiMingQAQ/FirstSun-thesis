@@ -1,0 +1,32 @@
+{
+  "environment": "isolated-local-test",
+  "dailyDatabase": false,
+  "mockPaymentOnly": true,
+  "externalProvidersDisabled": true,
+  "appBaseUrl": "http://127.0.0.1:18080/app-api",
+  "adminBaseUrl": "http://127.0.0.1:18080/admin-api",
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 13306,
+    "schema": "replace_with_isolated_schema",
+    "expectedUuid": "00000000-0000-0000-0000-000000000000",
+    "cli": "C:/tools/mysql.exe",
+    "defaultsExtraFile": "C:/private/otc-mysql-readonly.cnf"
+  },
+  "fixture": {
+    "tenantId": 0,
+    "storeId": 0,
+    "drugId": 0,
+    "memberMobile": "00000000000",
+    "memberDevSmsCode": "replace_privately",
+    "adminUsername": "replace_privately",
+    "adminPassword": "replace_privately"
+  },
+  "runId": "replace_with_unique_run_id",
+  "executionPermit": {
+    "id": "replace_with_explicit_permit_id",
+    "runId": "replace_with_unique_run_id",
+    "maxNewOrders": 1,
+    "confirmed": false
+  }
+}
