@@ -7,6 +7,11 @@ const { createSqlAccess } = require('./sql.cjs')
 
 const REQUIRED_ADAPTER_CHECKS = ['isolation', 'databaseReadOnly', 'fixtures', 'permissions', 'mockCapability', 'replayApproval']
 
+function hasExplicitLoginBuildFlags(body) {
+  // Vite/Rolldown may use backticks as ordinary static JavaScript string quotes.
+  return /captchaEnable\s*:\s*(["'`])false\1/.test(body) && /tenantEnable\s*:\s*(["'`])true\1/.test(body)
+}
+
 async function fetchCheck(url, label, timeoutMs) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -61,7 +66,7 @@ async function runReadiness(config, options = {}) {
     if (assetUrl.origin !== config.adminUrl) throw new Error('Reviewed LoginForm asset must be served by the admin origin')
     const loginAsset = await fetchCheck(assetUrl, 'Reviewed admin LoginForm asset', config.timeoutMs)
     if (crypto.createHash('sha256').update(loginAsset.body).digest('hex') !== config.review.loginFormAsset.sha256) throw new Error('Served admin LoginForm asset differs from independent review')
-    if (!/captchaEnable\s*:\s*["']false["']/.test(loginAsset.body) || !/tenantEnable\s*:\s*["']true["']/.test(loginAsset.body)) throw new Error('Reviewed LoginForm asset must contain explicit captchaEnable:false and tenantEnable:true build values')
+    if (!hasExplicitLoginBuildFlags(loginAsset.body)) throw new Error('Reviewed LoginForm asset must contain explicit captchaEnable:false and tenantEnable:true build values')
     checks.push({ id: 'reviewed-admin-login-build', pass: true, sha256: config.review.loginFormAsset.sha256, captchaDisabled: true, tenantEnabled: true })
     const health = await fetchCheck(new URL(config.apiHealthPath, `${config.apiUrl}/`), 'Backend health', config.timeoutMs)
     let parsed
@@ -144,4 +149,4 @@ async function readinessCommand(config) {
   return result.ok ? 0 : 2
 }
 
-module.exports = { runReadiness, readinessCommand, REQUIRED_ADAPTER_CHECKS, loadAdapter }
+module.exports = { runReadiness, readinessCommand, REQUIRED_ADAPTER_CHECKS, loadAdapter, hasExplicitLoginBuildFlags }
