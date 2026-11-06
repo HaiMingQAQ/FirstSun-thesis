@@ -157,7 +157,7 @@ function lint() {
 }
 
 function setup() {
-  const cliPath = require.resolve('playwright/cli')
+  const cliPath = require.resolve('@playwright/test/cli')
   const result = spawnSync(process.execPath, [cliPath, 'install', 'chromium'], { stdio: 'inherit' })
   return result.status ?? 1
 }

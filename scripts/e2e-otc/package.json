@@ -11,7 +11,8 @@
     "setup": "node src/cli.cjs setup",
     "readiness": "node src/cli.cjs readiness",
     "oneclick": "node src/cli.cjs oneclick",
-    "lint": "node src/cli.cjs lint"
+    "lint": "node src/cli.cjs lint",
+    "test": "node --test tests/cli-resolution.test.cjs"
   },
   "dependencies": {
     "@playwright/test": "1.65.0",
