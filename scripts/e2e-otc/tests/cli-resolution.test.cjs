@@ -22,3 +22,23 @@ test('readiness still rejects missing or non-literal login build flags', () => {
   assert.equal(hasExplicitLoginBuildFlags('captchaEnable:`true`,tenantEnable:`true`'), false)
   assert.equal(hasExplicitLoginBuildFlags('captchaEnable:`false`,tenantEnable:`false`'), false)
 })
+
+const { captureSession } = require('../src/api.cjs')
+
+test('session capture reads the browser authorization and tenant from allHeaders', async () => {
+  const listeners = []
+  const page = { on: (name, callback) => listeners.push(callback), isClosed: () => false }
+  const session = captureSession(page, '/app-api/', 'http://127.0.0.1:18190')
+  await listeners[0]({ url: () => 'http://127.0.0.1:18190/app-api/member/user/get',
+    headers: () => ({}), allHeaders: async () => ({ authorization: 'Bearer test-token', 'tenant-id': '901' }) })
+  assert.equal(session.headers.authorization, 'Bearer test-token')
+  assert.equal(session.headers['tenant-id'], '901')
+})
+
+test('session capture turn-off error is explicit', async () => {
+  const listeners = []
+  const page = { on: (name, callback) => listeners.push(callback), isClosed: () => false }
+  const session = captureSession(page, '/app-api/', 'http://127.0.0.1:18190')
+  await listeners[0]({ url: () => 'http://127.0.0.1:18190/app-api/member/user/get', allHeaders: async () => { throw new Error('sensitive transport details') } })
+  assert.equal(session.captureError, 'Browser request authentication headers could not be observed')
+})

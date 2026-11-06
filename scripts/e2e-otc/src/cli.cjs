@@ -76,7 +76,8 @@ async function oneclick(config) {
       const evidenceFailure = flow?.result === 'EVIDENCE_ERROR'
       const result = machineResult(config, runDir, evidenceFailure ? 'EVIDENCE_ERROR' : 'FAIL', checks, {
         orderId: flow?.orderId || null, orderNo: flow?.orderNo || null,
-        failedStage: flow?.stages?.at(-1)?.name || 'playwright-flow', error: flow?.error || `Playwright exited ${exitCode}`
+        failedStage: flow?.stages?.at(-1)?.name || 'playwright-flow', lastConfirmedCheckpoint: flow?.lastConfirmedCheckpoint || null,
+        failure: flow?.failure || null, error: flow?.error || `Playwright exited ${exitCode}`
       })
       writeJson(path.join(runDir, 'summary.json'), result)
       process.stdout.write(`${JSON.stringify(result)}\n`)

@@ -4,7 +4,9 @@ const crypto = require('node:crypto')
 const { REPO_ROOT } = require('./config.cjs')
 
 function safeError(error) {
-  const message = String(error?.message || 'Unexpected error')
+  let message = String(error?.message || 'Unexpected error')
+  // Never archive entered credentials from Playwright action annotations.
+  message = message.replace(/^(Fill|Fill password) ".*"(?=\s*$)/gm, '$1 "[REDACTED]"')
   return message.replace(/(password|token|authorization|secret|验证码|提货码)\s*[:=]\s*[^\s,;]+/ig, '$1=[REDACTED]').slice(0, 500)
 }
 
