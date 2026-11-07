@@ -38,6 +38,8 @@ docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.
 
 启动和重建都不会自动执行SQL、初始化种子或清空数据库。旧迁移安全函数保留在 `scripts/local-migration-helpers.ps1`，仅供离线检查或明确授权的迁移工具复用，日常入口不会调用。迁移清单与配套说明仍在 `deploy/local-migrations.json`、`docs/backend-readiness.md`；已验证的迁移不能为了启动环境重新运行一遍。
 
+隔离测试库按 `deploy/local-migrations.json` 当前 **01–47 + `firstsun_local_migration` 迁移账本**初始化；快照恢复的区别、手工命令及 **108/109 张 BASE TABLE** 口径见 [数据库初始化路径说明](docs/database-init-paths.md)。
+
 正常停止使用入口脚本，保留所有卷。禁止 `down -v`、全局prune或用空库替代原库。`.env`、`.local`、数据库、日志、凭据和编译产物不提交Git。
 
 本次收口验证了两个前端构建、镜像打包、Nginx配置、Compose解析和Windows入口。服务保持停止。SERVICE咨询有原隔离环境HTTP通过证据；最终SQL独立核对、OTC完整交易及药师处方仍未验收，不代表真实支付、退款、页面操作或生产交付通过。

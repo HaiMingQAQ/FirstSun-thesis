@@ -1,0 +1,21 @@
+{
+  "name": "firstsun-otc-playwright-acceptance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fail-closed UI and scoped OTC accounting acceptance harness",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "setup": "node src/cli.cjs setup",
+    "readiness": "node src/cli.cjs readiness",
+    "oneclick": "node src/cli.cjs oneclick",
+    "lint": "node src/cli.cjs lint"
+  },
+  "dependencies": {
+    "@playwright/test": "1.65.0",
+    "mysql2": "3.24.6",
+    "playwright": "1.65.0"
+  }
+}
