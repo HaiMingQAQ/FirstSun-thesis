@@ -170,7 +170,8 @@
     line-height: 15px;
     text-align: center;
     white-space: normal;
-    word-break: break-all;
+    word-break: keep-all;
+    overflow-wrap: break-word;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;

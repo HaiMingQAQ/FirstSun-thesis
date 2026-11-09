@@ -178,7 +178,19 @@ async function ensureStore() {
 }
 
 // ---------- 药品分类（客户端契约：首位为「全部药品」，供首页 slice(1) 使用） ----------
-const CATEGORY_ICONS = { 0: 'medal', 1: 'fire', 2: 'home', 3: 'heart', 4: 'shop', 5: 'list' };
+// 图标按分类名匹配：后端 cat_type 当前全部为 0（通用分类），按 cat_type 映射会让
+// 所有入口落到同一个兜底图标。这里按名称关键词给可区分的线性图标，未命中用 shop。
+const CATEGORY_ICON_RULES = [
+  [/处方/, 'locked'],
+  [/感冒|发热|退烧|咳嗽/, 'fire'],
+  [/消化|肠胃|胃肠/, 'heart'],
+  [/维生素|营养|保健/, 'star'],
+  [/中成|中药/, 'medal'],
+  [/器械|耗材|冷链|储存/, 'gear'],
+  [/常用|日常/, 'shop'],
+];
+const categoryIcon = (name) =>
+  (CATEGORY_ICON_RULES.find(([pattern]) => pattern.test(name || '')) || [])[1] || 'shop';
 let categoryCache = null;
 async function categories() {
   if (categoryCache) return categoryCache;
@@ -186,7 +198,7 @@ async function categories() {
   const mapped = (list || []).map((c) => ({
     id: c.id,
     name: c.catName,
-    icon: CATEGORY_ICONS[c.catType] || 'list',
+    icon: categoryIcon(c.catName),
   }));
   categoryCache = [{ id: 'all', name: '全部药品', icon: 'list' }, ...mapped];
   return categoryCache;
