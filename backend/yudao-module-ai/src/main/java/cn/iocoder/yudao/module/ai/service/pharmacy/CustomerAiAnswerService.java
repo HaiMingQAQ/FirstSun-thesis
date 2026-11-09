@@ -68,9 +68,8 @@ public class CustomerAiAnswerService {
         var completed = new java.util.concurrent.atomic.AtomicBoolean();
         Consumer<String> flush = text -> {
             String safe = safeSentence(text, products);
-            // 连续多句命中安全守卫时都会被替换成同一句兜底提示，连发会让正文出现重复句，这里合并
-            if (GUARD_FALLBACK.equals(safe) && answer.length() >= GUARD_FALLBACK.length()
-                    && answer.substring(answer.length() - GUARD_FALLBACK.length()).equals(GUARD_FALLBACK)) return;
+            // 多句命中安全守卫时都会被替换成同一句兜底提示，一条回答里只保留一次，避免正文重复
+            if (GUARD_FALLBACK.equals(safe) && answer.indexOf(GUARD_FALLBACK) >= 0) return;
             answer.append(safe); sink.accept(safe);
         };
         session.client().stream(new Prompt(List.of(new SystemMessage(POLICY), new UserMessage(input)), session.options()))
@@ -109,16 +108,27 @@ public class CustomerAiAnswerService {
         return hits.stream().filter(h -> h.drugId() == null || ids.contains(h.drugId())).limit(4).toList();
     }
 
+    /** 同一条药品的小节合并成“药品·小节、小节”，多条药品用分号隔开，避免正文末尾挂一长串重复药名。 */
     private static String citation(List<PharmacyKnowledgeService.Hit> evidence) {
         if (evidence.isEmpty()) return "";
-        String labels = evidence.stream().map(PharmacyKnowledgeService.Hit::label)
-                .filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.joining("、"));
+        var grouped = new java.util.LinkedHashMap<String, java.util.LinkedHashSet<String>>();
+        for (var hit : evidence) {
+            if (hit.section() == null) continue;
+            String name = hit.drugName() == null ? "用药常识" : hit.drugName();
+            grouped.computeIfAbsent(name, k -> new java.util.LinkedHashSet<>()).add(hit.section());
+        }
+        String labels = grouped.entrySet().stream()
+                .map(e -> e.getKey() + "·" + String.join("、", e.getValue()))
+                .collect(java.util.stream.Collectors.joining("；"));
         return labels.isBlank() ? "" : "\n依据说明书：" + labels + "。";
     }
     static String safeSentence(String text, List<Product> products) {
         boolean unsafe = text.matches("(?is).*(你(患有|得了)|确诊为|保证治|包治|无需审方|已接通.*医生|https?://|sk-[a-z0-9]|\\d+\\s*(mg|毫克|毫升|元|粒|片|袋|次/日)).*");
+        // 说明书里的限制性表述（不宜/禁用/忌/慎用/请…）本身带“服用”字样，但不是推荐，
+        // 不能因为命中“服用”就整句替换，否则 RAG 引用的禁忌和注意事项会被误杀。
+        boolean precautionary = text.matches("(?s).*(不宜|不可|不能|不应|不要|禁用|忌|避免|慎用|勿|须|需|应|请).*");
         boolean recommendation = java.util.regex.Pattern.compile("(?<!不)(?<!不能)(?<!不直接)推荐|可考虑|可以选择|可选|建议.*(服|吃)").matcher(text).find()
-                || (!text.contains("？") && !text.contains("?") && text.matches("(?s).*服用.*") && !text.contains("正在服用"));
+                || (!precautionary && !text.contains("？") && !text.contains("?") && text.matches("(?s).*服用.*") && !text.contains("正在服用"));
         var referenced = products.stream().filter(p ->
                 (p.name() != null && text.contains(p.name())) || (p.genericName() != null && !p.genericName().isBlank() && text.contains(p.genericName())));
         if (unsafe) return GUARD_FALLBACK;
