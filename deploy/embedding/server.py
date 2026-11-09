@@ -64,23 +64,43 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, {"error": {"message": "not found"}})
 
+    def _read_body(self):
+        """读取请求体。JDK HttpClient 默认用 chunked 编码，此时没有 Content-Length。"""
+        encoding = (self.headers.get("Transfer-Encoding") or "").lower()
+        if "chunked" in encoding:
+            data = b""
+            while True:
+                line = self.rfile.readline().strip()
+                if not line:
+                    continue
+                size = int(line.split(b";")[0], 16)
+                if size == 0:
+                    self.rfile.readline()
+                    break
+                data += self.rfile.read(size)
+                self.rfile.read(2)  # 每块结尾的 CRLF
+            return data
+        length = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(length) if length > 0 else b""
+
     def do_POST(self):
         if not self.path.startswith("/v1/embeddings"):
             self._send(404, {"error": {"message": "not found"}})
             return
         try:
-            length = int(self.headers.get("Content-Length") or 0)
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            body = self._read_body()
+            payload = json.loads(body or b"{}")
             raw = payload.get("input")
             texts = [raw] if isinstance(raw, str) else list(raw or [])
             texts = [t if isinstance(t, str) else str(t) for t in texts]
             if not texts:
+                self.log_message("空 input，原始请求体: %s", body[:300])
                 self._send(400, {"error": {"message": "input 不能为空"}})
                 return
-            if len(texts) > MAX_BATCH:
-                self._send(400, {"error": {"message": f"单次最多 {MAX_BATCH} 条"}})
-                return
-            vectors = embed(texts)
+            # 上层可能一次提交上百条片段：这里切片处理，不拒绝请求
+            vectors = []
+            for start in range(0, len(texts), MAX_BATCH):
+                vectors.extend(embed(texts[start:start + MAX_BATCH]))
             self._send(
                 200,
                 {
