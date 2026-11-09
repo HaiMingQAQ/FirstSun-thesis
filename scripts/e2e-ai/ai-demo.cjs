@@ -178,9 +178,12 @@ async function loginH5(page) {
   await page.waitForTimeout(300);
   await inputs.nth(1).fill(CODE);
   await page.locator('uni-button.fs-primary').click();
-  await page.waitForTimeout(3500);
+  await page.waitForTimeout(4000);
+  // 登录成功会跳会员中心；AI 页的输入框只在一级导航上，用 URL 判断更稳
+  const url = page.url();
+  if (/\/pages\/pharmacy\/user/.test(url)) return 'logged-in';
   const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-  return /我的|退出|个人中心|AI 问药|首页/.test(body) ? 'logged-in' : '登录态未确认';
+  return /会员中心|退出登录/.test(body) ? 'logged-in' : `登录态未确认(${url})`;
 }
 
 /** 手机端提问：等最后一条回答稳定且不再处于「停止」状态 */
@@ -188,14 +191,15 @@ async function askH5(page, text, timeout = 150000) {
   const box = page.locator('.ai-compose textarea, .ai-compose input').first();
   await box.fill(text);
   await page.waitForTimeout(400);
-  await page.locator('.ai-compose button.fs-primary').click();
+  // 注意：uni-app 编译后按钮是 <uni-button class="fs-primary">，不是 <button>
+  await page.locator('.ai-compose .fs-primary').first().click();
   const deadline = Date.now() + timeout;
   let last = '';
   let stable = 0;
   while (Date.now() < deadline) {
     await page.waitForTimeout(1200);
     const cur = (await page.locator('.answer').allInnerTexts().catch(() => [])).at(-1) || '';
-    const busy = await page.locator('.ai-compose button.fs-secondary').count();
+    const busy = await page.locator('.ai-compose .fs-secondary').count();
     if (cur && cur.trim() === last && !busy) {
       if (++stable >= 2) return cur.trim();
     } else {
