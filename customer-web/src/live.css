@@ -6,3 +6,116 @@
 @media(max-width:700px){.address-option{padding:12px;gap:9px}.address-option strong{font-size:12px}.address-option span span{font-size:11px}.address-option>.tag{font-size:9px;height:fit-content}.customer-page .paper-head{flex-wrap:wrap}.customer-page .paper-head>span{font-size:10px}.customer-page .customer-tabs{gap:13px;flex-wrap:wrap}.summary-box .price{font-size:23px}.customer-page .order-bottom>span:first-child{width:100%}.customer-page .order-status p{overflow-wrap:anywhere}.customer-page .page-actions>.btn{flex:1}}
 .consult-layout{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:18px;align-items:start}.consult-thread{min-width:0}.consult-row{display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%;text-align:left;padding:16px 18px;border-top:1px solid var(--line)}.consult-row-title{display:flex;gap:8px;align-items:center}.consult-bubble{padding:14px;background:#f4f6f2;border-radius:12px;margin:12px 48px 12px 0}.consult-bubble.mine{background:var(--tint);margin:12px 0 12px 48px}.consult-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}.consult-compose{display:flex;gap:12px;align-items:flex-end;margin-top:16px}.consult-compose textarea{flex:1;min-width:0;min-height:72px;padding:12px;border:1px solid var(--line);border-radius:6px;resize:vertical}
 @media(max-width:700px){.consult-layout{grid-template-columns:1fr}.consult-bubble,.consult-bubble.mine{margin-left:0;margin-right:0}}
+
+/* ============ FirstSun 首页视觉重做 v2（live.css 为主要样式层；prototype.css 不动） ============ */
+:root{--green:#0E5E3F;--deep:#0A4630;--tint:#E8F5EE;--surface:#F7F9F8;--radius:14px;--green-soft:#E8F5EE;--green-tint:#F2F7F4;--amber:#92400E;--amber-bg:#FEF3C7;--amber-btn:#B45309;--blue:#0369A1;--blue-bg:#E0F2FE;--shadow-soft:0 2px 10px rgba(14,94,63,.06);--shadow-hover:0 12px 28px rgba(14,94,63,.12)}
+/* 顶栏：购物车实色按钮 + 角标（数量为 0 时 v-if 隐藏） */
+.tool.cart-tool{position:relative;height:42px;padding:0 18px;border-radius:10px;background:var(--green);color:#fff;font-weight:600;box-shadow:0 4px 12px rgba(14,94,63,.22)}
+.tool.cart-tool:hover{background:var(--deep);color:#fff}
+.cart-count{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#C2410C;color:#fff;font-size:11px;line-height:20px;text-align:center;border:2px solid #fff}
+/* Hero：浅绿渐变 + 信任条 */
+.shop-search{background:linear-gradient(120deg,#DDF0E4 0%,#E8F5EE 42%,#F4FAF6 72%,#FFFFFF 100%);border:1px solid #D8EAE0;border-radius:20px;padding:36px 40px 28px;gap:56px}
+.shop-search h1{font-size:34px;letter-spacing:-1px}
+.shop-kicker{color:var(--green);font-weight:600}
+.search-area .search-box{height:58px}
+.shop-trust{grid-column:1/-1;margin-top:26px;padding-top:20px;border-top:1px solid rgba(14,94,63,.14);display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.shop-trust>div{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:#23443A}
+.shop-trust .trust-ic{width:36px;height:36px;flex:none;border-radius:10px;background:#fff;border:1px solid #D8EAE0;display:flex;align-items:center;justify-content:center;color:var(--green)}
+.shop-trust .trust-ic svg{width:19px;height:19px}
+.shop-trust small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+/* 热门搜索：胶囊按钮 */
+.search-shortcuts{flex-wrap:wrap;gap:8px}
+.search-shortcuts>span{flex:none}
+.search-shortcuts button{padding:4px 12px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:13px;color:#44524B}
+.search-shortcuts button:hover{border-color:var(--green);color:var(--green);background:var(--green-soft);text-decoration:none}
+/* 服务卡对齐 */
+.ai-entry,.shop-service{min-height:104px;border-radius:16px}
+.ai-entry{background:linear-gradient(135deg,#0E5E3F,#0A4630);box-shadow:0 10px 24px rgba(14,94,63,.22)}
+.ai-entry:hover{background:linear-gradient(135deg,#0E5E3F,#0A4630)}
+.ai-entry .service-symbol{background:rgba(255,255,255,.14);border-radius:12px;width:48px;height:48px;color:#D9EADF}
+.ai-entry .entry-eyebrow{color:#BFDCCB}
+.shop-service{background:#fff;box-shadow:var(--shadow-soft)}
+.shop-service:hover{border-color:#B9D2C4;box-shadow:var(--shadow-hover)}
+.shop-service .service-symbol{width:48px;height:48px;border-radius:12px;background:var(--green-soft);color:var(--green)}
+/* 分类：6 列网格，3 组功能色（绿 / 处方琥珀 / 器械蓝） */
+.shop-categories{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;border-radius:16px;box-shadow:var(--shadow-soft);padding:14px}
+.shop-categories .category-btn{flex-direction:column;gap:10px;min-width:0;min-height:96px;padding:16px 6px 14px;border-radius:12px;font-size:14px}
+.shop-categories .category-btn:hover{background:var(--green-tint)}
+.shop-categories .category-btn .cat-ic{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center}
+.shop-categories .category-btn .cat-ic svg{width:24px;height:24px}
+.cat-ic.cat-green{background:#E8F5EE;color:#0E5E3F}
+.cat-ic.cat-amber{background:#FEF3C7;color:#92400E}
+.cat-ic.cat-blue{background:#E0F2FE;color:#0369A1}
+.shop-categories .category-btn.active{background:var(--green);color:#fff;font-weight:600;box-shadow:0 8px 18px rgba(14,94,63,.25)}
+.shop-categories .category-btn.active:hover{background:var(--deep)}
+.shop-categories .category-btn.active .cat-ic{background:rgba(255,255,255,.16);color:#fff}
+/* 商品卡：白底图片区、深色大号价格（.00 小号化）、柔和阴影 */
+.shop-products .products{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.shop-products .product-card{border-radius:16px;box-shadow:var(--shadow-soft)}
+.shop-products .product-card:hover{transform:translateY(-4px);border-color:#AAC3B5;box-shadow:var(--shadow-hover)}
+.shop-products .product-photo{height:208px;background:#fff;border-bottom:1px solid #EEF2EF}
+.shop-products .product-photo.missing{background:#F7F9F8}
+.shop-products .product-body{padding:16px 20px 6px}
+.shop-products .product-body h3{font-size:18px}
+.shop-products .product-bottom{padding:12px 20px 18px}
+.shop-products .price{color:#1A1A1A;font-size:26px;font-weight:700}
+.shop-products .price small{font-size:14px;font-weight:600}
+.shop-products .price small.dec{font-size:14px;font-weight:600}
+.shop-products .stock{font-size:12px;white-space:nowrap}
+.shop-products .product-bottom>div{flex:1;min-width:0}
+.shop-products .stock.out{color:#B45309}
+.tag.rx{color:#92400E;background:#FEF3C7}
+/* 处方卡区分（真实字段 product.rx：isRx=1） */
+.product-card.rx-card{border-color:#F59E0B;box-shadow:0 2px 10px rgba(146,64,14,.08)}
+.product-card.rx-card:hover{border-color:#D97706;box-shadow:0 12px 28px rgba(146,64,14,.14)}
+.rx-note{display:block;font-size:13px;color:#92400E;font-weight:600}
+.rx-btn{display:flex;align-items:center;gap:6px;flex:none;height:40px;padding:0 16px;border-radius:999px;background:#B45309;color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+.rx-btn:hover{background:#92400E}
+.rx-btn svg{width:16px;height:16px}
+/* 加购：胶囊按钮；加购后变数量步进器 */
+.shop-products .add-btn{width:auto;height:40px;padding:0 16px;border-radius:999px;background:var(--green);color:#fff;border:0;font-size:13px;font-weight:600;gap:6px;white-space:nowrap}
+.shop-products .add-btn:hover:not(:disabled){background:var(--deep)}
+.shop-products .add-btn:disabled{background:#CBD5D1}
+.shop-products .add-btn svg{width:16px;height:16px}
+.qty-stepper{display:flex;align-items:center;gap:2px;flex:none;height:40px;border-radius:999px;background:var(--green);color:#fff;padding:0 4px}
+.qty-stepper button{width:32px;height:32px;border-radius:50%;font-size:18px;line-height:1;color:#fff;display:flex;align-items:center;justify-content:center}
+.qty-stepper button:hover:not(:disabled){background:rgba(255,255,255,.18)}
+.qty-stepper button svg{width:16px;height:16px}
+.qty-stepper b{min-width:28px;text-align:center;font-size:14px}
+/* 详情价与正文价保持深色（仅改色，不动文案与逻辑） */
+.detail-price .price{color:#1A1A1A}
+/* 工具条 + 加载更多（接现有 page/pageSize 分页） */
+.result-toolbar{font-size:13px}
+.load-more-wrap{text-align:center;margin-top:24px}
+.load-more{height:46px;padding:0 36px;border-radius:999px;border:1px solid var(--green);color:var(--green);font-weight:600;background:#fff}
+.load-more:hover:not(:disabled){background:var(--green-soft)}
+.load-more-note{margin-top:10px;font-size:12px;color:#8A9490;text-align:center}
+.load-more-note.loaded-all{margin-top:24px}
+/* 页脚资质行（无真实证书编号，不编造） */
+.shop-footer{flex-wrap:wrap}
+.footer-creds{display:flex;flex-wrap:wrap;gap:8px 20px;width:100%;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.footer-creds b{color:#23443A}
+/* 响应式：1280 无溢出；窄屏分类 3 列、商品卡 2 列、加购保留“加入” */
+@media(max-width:1100px){
+.shop-search{display:grid;grid-template-columns:1fr;gap:24px;padding:24px 20px}
+.shop-categories{grid-template-columns:repeat(3,minmax(0,1fr))}
+.shop-products .products{grid-template-columns:repeat(2,minmax(0,1fr))}
+.shop-services{grid-template-columns:1fr 1fr}
+.ai-entry{grid-column:1/-1}
+.shop-trust{grid-template-columns:repeat(3,1fr)}
+}
+@media(max-width:640px){
+.shop-products .product-card.rx-card .product-bottom{flex-wrap:wrap;row-gap:8px}
+.shop-products .product-card.rx-card .product-bottom>div{flex:1 1 100%}
+.shop-products .product-card.rx-card .rx-btn{margin-left:auto}
+.shop-search h1{font-size:26px}
+.shop-trust{grid-template-columns:1fr;gap:12px}
+.shop-products .products{gap:12px}
+.shop-products .product-photo{height:150px}
+.shop-products .product-body h3{font-size:15px}
+.shop-products .price{font-size:21px}
+.shop-products .add-btn{padding:0 10px}
+.shop-products .add-btn .add-tail{display:none}
+.shop-products .rx-btn{padding:0 10px}
+.shop-products .product-bottom{padding:12px 12px 15px}
+}
