@@ -37,7 +37,7 @@ class CustomerAiAnswerServiceTest {
             sink.complete();
         }));
         var request=new CustomerAiConsultReqVO();request.setContent("肚子疼");
-        String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels).answer(request,List.of(),received::add);
+        String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels, NoKnowledgeService.INSTANCE).answer(request,List.of(),received::add);
         assertEquals("请问疼痛持续多久了？可以联系门店药师。",answer);
         verify(client,never()).call(any(Prompt.class));
     }
@@ -58,7 +58,7 @@ class CustomerAiAnswerServiceTest {
         when(client.stream(any(Prompt.class))).thenReturn(Flux.just(checked, terminal));
         var request = new CustomerAiConsultReqVO(); request.setContent("流鼻涕");
         var received = new ArrayList<String>();
-        var service = new CustomerAiAnswerService(models, new ObjectMapper(), customerModels);
+        var service = new CustomerAiAnswerService(models, new ObjectMapper(), customerModels, NoKnowledgeService.INSTANCE);
         assertEquals("模型回答未完成", assertThrows(IllegalStateException.class, () -> service.answer(request, List.of(), received::add)).getMessage());
         assertEquals(List.of("注意休息。"), received);
         received.clear();
@@ -112,7 +112,7 @@ class CustomerAiAnswerServiceTest {
             sink.complete();
         }));
         var request = new CustomerAiConsultReqVO(); request.setContent("查询明净片资料");
-        String answer = new CustomerAiAnswerService(models, new ObjectMapper(), customerModels).answer(request, List.of(product), received::add);
+        String answer = new CustomerAiAnswerService(models, new ObjectMapper(), customerModels, NoKnowledgeService.INSTANCE).answer(request, List.of(product), received::add);
         assertEquals(String.join("", received), answer);
         assertFalse(answer.contains("缺少通")); assertFalse(answer.contains("捏造"));
         verify(client, never()).call(any(Prompt.class));
@@ -124,7 +124,7 @@ class CustomerAiAnswerServiceTest {
         var stop=new ChatResponse(List.of(new Generation(new AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())));
         when(client.stream(any(Prompt.class))).thenReturn(Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("未注明通用药物名称和制造单位。")))),stop));
         var product=new Product(57L,"清宁片","清宁片","盒装",null,"批准丁号",null,null,3,8L);
-        var service=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);var request=new CustomerAiConsultReqVO();
+        var service=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels, NoKnowledgeService.INSTANCE);var request=new CustomerAiConsultReqVO();
         request.setContent("请查询编号 57 的药品名称、价格和本店可售库存。");var received=new ArrayList<String>();
         String facts=service.answer(request,List.of(product),received::add);
         assertFalse(facts.contains("未注明"));assertTrue(facts.contains("通用名：清宁片"));assertTrue(facts.contains("生产厂家：未提供"));
@@ -166,7 +166,7 @@ class CustomerAiAnswerServiceTest {
             sink.next(new ChatResponse(List.of(new Generation(new AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build()))));sink.complete();
         }));
         var product=new Product(63L,"舒润片","舒润片","盒装",null,"批准庚号",null,null,3,8L);var req=new CustomerAiConsultReqVO();req.setContent("用药前要注意什么");
-        String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels).answer(req,List.of(product),received::add);
+        String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels, NoKnowledgeService.INSTANCE).answer(req,List.of(product),received::add);
         assertEquals(String.join("",received),answer);assertTrue(answer.contains(reminder));assertFalse(answer.contains("缺少通用名"));
     }
     @Test void conditionalFieldRisksAreNotAssertionsAboutCurrentProducts() {
@@ -204,7 +204,7 @@ class CustomerAiAnswerServiceTest {
             sink.next(new ChatResponse(List.of(new Generation(new AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build()))));sink.complete();
         }));
         var product=new Product(93L,"舒润片","舒润片","盒装",null,"批准子号",null,null,3,8L);var req=new CustomerAiConsultReqVO();req.setContent("用药前要注意什么");
-        String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels).answer(req,List.of(product),received::add);
+        String answer=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels, NoKnowledgeService.INSTANCE).answer(req,List.of(product),received::add);
         assertEquals(String.join("",received),answer);assertTrue(answer.startsWith(conditional));assertTrue(answer.contains(reminder));
         assertFalse(answer.contains("该药缺少通用名"));
     }

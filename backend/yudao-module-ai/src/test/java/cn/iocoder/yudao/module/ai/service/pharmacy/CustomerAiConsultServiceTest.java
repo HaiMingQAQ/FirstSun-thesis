@@ -194,7 +194,7 @@ class CustomerAiConsultServiceTest {
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("缺少通用名和批准文号。")))),
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
         var checked = new java.util.ArrayList<String>();
-        var realAnswers = new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);
+        var realAnswers = new CustomerAiAnswerService(models,new ObjectMapper(),customerModels, NoKnowledgeService.INSTANCE);
         when(answers.answer(eq(req),anyList(),any())).thenAnswer(i -> realAnswers.answer(req,i.getArgument(1),text -> {
             checked.add(text); ((java.util.function.Consumer<String>)i.getArgument(2)).accept(text);
         }));
@@ -219,7 +219,7 @@ class CustomerAiConsultServiceTest {
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("该药缺少通")))),
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("用名，"+reminder)))),
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
-        var received=new java.util.ArrayList<String>();var realAnswers=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);
+        var received=new java.util.ArrayList<String>();var realAnswers=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels, NoKnowledgeService.INSTANCE);
         when(answers.answer(eq(req),anyList(),any())).thenAnswer(i->realAnswers.answer(req,i.getArgument(1),text->{received.add(text);((java.util.function.Consumer<String>)i.getArgument(2)).accept(text);}));
         when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("searchDrugs","板蓝根",null));
         var product=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(81L,"板蓝根颗粒","板蓝根颗粒","盒装",null,"批准辛号",null,null,5,1L);
@@ -241,7 +241,7 @@ class CustomerAiConsultServiceTest {
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("咨询药师。该药缺少通用名且儿童用药前应")))),
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage("咨询药师。")))),
                 new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new org.springframework.ai.chat.messages.AssistantMessage(""),org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
-        var delivered=new java.util.ArrayList<String>();var realAnswers=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels);
+        var delivered=new java.util.ArrayList<String>();var realAnswers=new CustomerAiAnswerService(models,new ObjectMapper(),customerModels, NoKnowledgeService.INSTANCE);
         when(answers.answer(eq(req),anyList(),any())).thenAnswer(i->realAnswers.answer(req,i.getArgument(1),text->{delivered.add(text);((java.util.function.Consumer<String>)i.getArgument(2)).accept(text);}));
         when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("searchDrugs","板蓝根",null));
         var product=new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(101L,"板蓝根颗粒","板蓝根颗粒","盒装",null,"批准丑号",null,null,5,1L);
