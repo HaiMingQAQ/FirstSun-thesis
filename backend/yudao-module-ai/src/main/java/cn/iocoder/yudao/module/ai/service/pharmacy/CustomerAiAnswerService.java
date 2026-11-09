@@ -22,6 +22,8 @@ public class CustomerAiAnswerService {
     private final AiModelService models;
     private final ObjectMapper json;
     private final CustomerAiModelClient customerModels;
+    /** 安全守卫命中时的统一兜底句；连续命中会合并，避免正文重复同一句。 */
+    static final String GUARD_FALLBACK = "具体用药请让本店药师结合症状和药品说明核对。\n";
     private static final String POLICY = """
             你是 FirstSun 顾客 AI 问药助手，以自然、简短中文回答，通常150-300字。
             可以解释常见症状和药品知识、提供居家护理参考、提出最多2个必要的澄清问题。
@@ -59,6 +61,9 @@ public class CustomerAiAnswerService {
         var completed = new java.util.concurrent.atomic.AtomicBoolean();
         Consumer<String> flush = text -> {
             String safe = safeSentence(text, products);
+            // 连续多句命中安全守卫时都会被替换成同一句兜底提示，连发会让正文出现重复句，这里合并
+            if (GUARD_FALLBACK.equals(safe) && answer.length() >= GUARD_FALLBACK.length()
+                    && answer.substring(answer.length() - GUARD_FALLBACK.length()).equals(GUARD_FALLBACK)) return;
             answer.append(safe); sink.accept(safe);
         };
         session.client().stream(new Prompt(List.of(new SystemMessage(POLICY), new UserMessage(input)), session.options()))
@@ -88,12 +93,12 @@ public class CustomerAiAnswerService {
                 || (!text.contains("？") && !text.contains("?") && text.matches("(?s).*服用.*") && !text.contains("正在服用"));
         var referenced = products.stream().filter(p ->
                 (p.name() != null && text.contains(p.name())) || (p.genericName() != null && !p.genericName().isBlank() && text.contains(p.genericName())));
-        if (unsafe) return "具体用药请让本店药师结合症状和药品说明核对。\n";
+        if (unsafe) return GUARD_FALLBACK;
         if (recommendation) {
             // Never pass through a model recommendation, even when it also names a verified product.
             // Render only database names so mixed or fabricated recommendations cannot escape this gate.
             String names = referenced.map(Product::name).distinct().collect(java.util.stream.Collectors.joining("、"));
-            if (names.isBlank()) return "具体用药请让本店药师结合症状和药品说明核对。\n";
+            if (names.isBlank()) return GUARD_FALLBACK;
             return "可查看下方匹配的非处方商品：" + names + "。选择前请核对说明书中的适应症、禁忌和重复成分。\n";
         }
         if (products.isEmpty()) return text;
