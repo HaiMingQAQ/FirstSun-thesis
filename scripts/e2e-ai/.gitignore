@@ -1,0 +1,5 @@
+# 运行产物：截图与结果属本机证据，不入库
+shots/
+ai-demo-result.json
+node_modules/
+package-lock.json
