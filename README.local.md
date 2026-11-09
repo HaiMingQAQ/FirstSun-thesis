@@ -8,12 +8,22 @@ Windows 安装并打开 Docker Desktop（Linux containers），在仓库根目�
 
 | 文件 | 操作 |
 | --- | --- |
-| `start-local.bat` | 复用现有镜像与数据卷，启动五个服务并等待健康检查 |
+| `start-local.bat` | 复用现有镜像与数据卷，不自动构建/拉取镜像；启动五个服务并等待健康检查 |
 | `stop-local.bat` | 正常停止，保留容器和全部持久数据 |
 | `status.bat` | 查看状态 |
-| `rebuild-local.bat` | 构建顾客端产物和三个应用镜像，再启动服务 |
+| `rebuild-local.bat` | 显式构建顾客端产物和三个应用镜像，再启动并等待五个服务健康 |
 
 脚本固定连接本机 `desktop-linux` context。共享父目录已有统一入口时，仓库入口转到父目录；独立clone时，直接调用本仓库 `scripts/firstsun.ps1`。私有配置位于所选环境根目录 `.env`，可参考 `deploy/.env.thesis.local.example`；示例不含可用凭据。必须填写已有数据库的正确凭据，不会生成新密码或重设原账号。
+
+**本文件描述开发工作区这一版本的启动器行为。** 2026-11-08，共享父目录 `D:/github-3/FirstSun` 的 `.env` 中 `FIRSTSUN_SOURCE_DIR` 仍选择 `FirstSun-thesis` 的main；本轮改进尚待PR合并并同步该main后生效。从开发工作区双击入口也会转到父目录，不能据此声称已经启动或部署开发版。
+
+## 预检与失败定位
+
+启动/重建前核对本机Docker Desktop Linux引擎、`.env`必填项、Compose配置、所需已有镜像、external持久卷和目标端口。普通启动要求五个服务镜像已存在；重建要求MySQL/Redis基础镜像已存在，再显式构建三个应用镜像。缺镜像不会在普通启动时自动拉取或构建，按提示恢复镜像或使用重建入口。
+
+输出中文编号四阶段：`[1/4]` 检查工作区、私有配置和Docker引擎；`[2/4]` 检查镜像、持久卷和端口；`[3/4]` 执行所选操作；`[4/4]` 查看服务状态与本机入口。具体检查随操作而定。
+
+端口检查按 `firstsun` 服务已有发布端口区分自身占用与外部冲突；发现冲突会指出对应服务/端口，不自动结束其他进程。失败输出阶段、受控原因和处理建议；执行启动/重建/创建或读取状态失败时，尽可能显示当前服务状态，读取失败则明确说明。按提示使用 `status.bat` 及输出的Compose日志命令定位；该命令带绝对 `.env` 和Compose文件路径，避免在不同目录选错环境。引擎不可用时，先处理Docker Desktop，不能把无法读取状态当成服务全部停止。
 
 已有本机统一环境保留原 `firstsun-thesis-local` 的 MySQL、Redis、日志卷。卷名可在 `.env` 的 `FIRSTSUN_MYSQL_VOLUME`、`FIRSTSUN_REDIS_VOLUME`、`FIRSTSUN_LOGS_VOLUME` 指向已确认的现有卷；它们均为external卷，不会在缺失时悄悄创建空库。新机器先由环境负责人明确数据来源和卷，不能把空库启动视为迁移完成。
 
@@ -21,10 +31,10 @@ Windows 安装并打开 Docker Desktop（Linux containers），在仓库根目�
 
 ```sh
 docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml config --quiet
-docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml up -d --no-build
+docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml up -d --no-build --pull never --wait --wait-timeout 300
 ```
 
-这些命令要求本机已有所需镜像与持久卷；它们不会自动初始化业务数据。
+这些直接调用Compose的命令要求本机已有所需镜像与持久卷；不包含Windows入口的预检或构建记录，也不会自动初始化业务数据。
 
 ## 地址与构建
 
@@ -32,7 +42,15 @@ docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.
 
 后端和管理端沿用各自Dockerfile构建。顾客端Dockerfile仅打包 `customer-web/dist`；`rebuild-local.bat` 会先调用本机Node/Vite构建该目录，需先准备好 `customer-web/package.json` 中的依赖。已有本机依赖可在清单与锁文件一致时共享，不复制另一套仓库。
 
-既有顾客端 `npm ci` 的 `Invalid Version` 问题未在本次环境收口中修改；本次两个前端构建使用已安装且清单、锁文件一致的依赖。全新依赖安装仍是单独待办，不宣称已通过。
+日常main已通过PR #15修复顾客端 `npm ci` 锁文件问题，本开发分支已合并main（#19）并同步该修复。该修复不等于本轮重新完成干净安装验收；此前两个前端构建复用已安装依赖的记录也不能代替这项验证。重建入口不会自动执行顾客端 `npm ci`，须先准备与所选源码匹配的依赖。
+
+## 源码版本与镜像构建记录
+
+入口显示实际所选源码目录、分支、HEAD及dirty（有无未提交修改），并按所选 `.env` 输出管理端、顾客端和后端地址。源码提交变化不意味着已有镜像已经更新，`start-local.bat`仍复用已有镜像；需要打包变化时显式重建。
+
+只有顾客端/应用镜像构建及随后 `up --wait` 全部成功，才在环境根目录 `.local/firstsun-build.json` 记录提交、dirty状态、三个应用镜像ID和时间。共享父目录转接时记录位于父目录 `.local`；独立clone时位于该仓库 `.local`。构建或等待健康失败不会覆盖上次成功记录。
+
+无记录、记录无效、镜像ID不一致或上次重建含未提交源码时，不能证明镜像对应提交，显示版本未知；当前源码提交或dirty状态变化会提示其与记录的关系。这里比较的是本地镜像标签与成功构建记录，**不是对实际运行容器镜像版本的独立核验**，也不证明业务或页面通过。
 
 ## 数据与验收边界
 
@@ -42,4 +60,15 @@ docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.
 
 正常停止使用入口脚本，保留所有卷。禁止 `down -v`、全局prune或用空库替代原库。`.env`、`.local`、数据库、日志、凭据和编译产物不提交Git。
 
-本次收口验证了两个前端构建、镜像打包、Nginx配置、Compose解析和Windows入口。服务保持停止。SERVICE咨询有原隔离环境HTTP通过证据；最终SQL独立核对、OTC完整交易及药师处方仍未验收，不代表真实支付、退款、页面操作或生产交付通过。
+此前环境收口记录验证过两个前端构建、镜像打包、Nginx配置、Compose解析和Windows入口，当时服务保持停止；这些是历史记录，不是当前容器状态。本轮Docker引擎不可用，文档更新没有验证新版启动器的真实五服务启动/重建；离线检查也不能替代该验证。
+
+SERVICE咨询已有原生隔离环境HTTP通过证据，独立SQL收尾以相应报告范围为准。后续单笔OTC已取得原生隔离环境真实API流程及SQL账务核对的限定通过记录，支付为mock；不能继续笼统写OTC完全未验，也不能把它推广为日常Docker库或完整UI通过。药师处方、真实支付/退款、完整页面操作和生产交付仍未取得这里所述范围的通过结论。
+## 2026-11-08：原账号与业务数据库恢复
+
+用户已选择恢复原生环境的账号和业务数据。日常仍使用同一个 `firstsun` Docker 项目及原 MySQL/Redis 数据卷；原生数据库保留并已正常关闭，本次没有合并两套库的业务行。
+
+- 应用通过私有 `.env` 的 `FIRSTSUN_APP_DATABASE=firstsun_followup_20261012` 连接完整恢复副本；`MYSQL_DATABASE` 仍保留原初始化库，原 `firstsun_thesis_local` 演示库未覆盖。不要删除或重跑初始化来切换账号。
+- 恢复前核对原库 UUID/数据目录/运行标记，并在只读状态重新导出。导入的 109 张表、8,889 行在登录检查前完成全表列/索引、行数和逐行数据指纹比对；16 个会员、1 个已验证邮箱身份与原库一致。
+- 顾客页面按 `FIRSTSUN_TENANT_ID=901` 构建；该值在构建时生效，变更后须重新构建顾客端。`FIRSTSUN_REDIS_DATABASE=1` 使用原 Redis 容器中确认空闲的逻辑库，保留旧缓存；`FIRSTSUN_ORDER_EXPIRY_ENABLED=false` 沿用原环境设置，避免恢复时自动改动历史订单。
+- 邮箱配置来自既有私有配置，保留本人测试收件人限制。实际网页代理的一次不存在账号密码登录返回预期凭据错误码 `1030006027`，无令牌、无邮件；只新增一条测试登录日志，其余业务表和原库/原演示库数据核对不变。本人正确密码登录与收件仍由用户操作确认。
+- 私有快照、配置及校验记录位于共享根目录 `.local/data-restoration`，不进入 Git，不复制到公开报告。恢复不是执行全部迁移清单，也不把旧库标成仓库初始化账本已全部应用。
