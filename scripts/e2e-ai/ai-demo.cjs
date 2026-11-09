@@ -1,33 +1,38 @@
 /**
- * FirstSun AI 演示动线（三幕串联）
+ * FirstSun AI 演示动线（四幕串联）
  *
  * ACT 1 电脑端顾客 AI：查药（价格/库存只走商品卡）→ 症状咨询 → 越权拒绝 → 从商品卡加购
  * ACT 2 管理端 AI：当前门店库存 → 改价预览 → 人工确认后落库
  * ACT 3 联动回验：顾客端商品详情价格随 AI 操作变化（默认还原）
+ * ACT 4 手机端顾客 AI：同一会员在 H5 问药，验证手机/电脑共用同一套后端与知识库
  *
  * 用法：
- *   node ai-demo.cjs [1|2|3|all] [--keep]
+ *   node ai-demo.cjs [1|2|3|4|all] [--keep]
  *
  * 环境变量（均有本机默认值）：
- *   WEB_URL / ADMIN_URL / MEMBER_MOBILE / DEV_SMS_CODE / ADMIN_USERNAME / ADMIN_PASSWORD
+ *   WEB_URL / ADMIN_URL / H5_URL / MEMBER_MOBILE / DEV_SMS_CODE / ADMIN_USERNAME / ADMIN_PASSWORD
  *   AI_DEMO_DRUG_ID / AI_DEMO_PRICE_FIELD / AI_DEMO_NEW_PRICE / AI_DEMO_OLD_PRICE
+ *   AI_DEMO_H5_QUESTION
  *
  * 前置条件：
- *   - cups 服务在跑：顾客端 4193、管理端 28081、后端 28080
+ *   - 服务在跑：顾客端 4193、管理端 28081、手机端 5173、后端 28080
  *   - 顾客端为 local-acceptance 构建（含本机手机号登录入口）
+ *   - 手机端为 local-acceptance 构建（含 H5 测试登录入口）
  *   - 管理端存在「药店业务 → AI 助手」菜单（menu 22350）
  *   - .env 已开 FIRSTSUN_MOCK_PAYMENT_ENABLED（本脚本不涉及支付，但同一套构建依赖它）
  */
-const { chromium } = require('playwright');
+const { chromium, devices } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
 const WEB = process.env.WEB_URL || 'http://127.0.0.1:4193/';
 const ADMIN = process.env.ADMIN_URL || 'http://127.0.0.1:28081';
+const H5 = process.env.H5_URL || 'http://127.0.0.1:5173';
 const MOBILE = process.env.MEMBER_MOBILE || '13800138000';
 const CODE = process.env.DEV_SMS_CODE || '123456';
 const ADMIN_USER = process.env.ADMIN_USERNAME || '0407';
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || '123456';
+const H5_QUESTION = process.env.AI_DEMO_H5_QUESTION || '板蓝根颗粒有什么禁忌？';
 
 const DRUG_ID = Number(process.env.AI_DEMO_DRUG_ID || 163167); // 板蓝根颗粒（青叶）
 // 顾客端与订单金额取 memberPrice ?? retailPrice，会员登录看到会员价，
@@ -37,7 +42,7 @@ const NEW_PRICE = process.env.AI_DEMO_NEW_PRICE || '18.90';
 const OLD_PRICE = process.env.AI_DEMO_OLD_PRICE || '19.50';
 
 const args = process.argv.slice(2);
-const stage = args.find((a) => ['1', '2', '3', 'all'].includes(a)) || 'all';
+const stage = args.find((a) => ['1', '2', '3', '4', 'all'].includes(a)) || 'all';
 const KEEP = args.includes('--keep');
 
 const shotsDir = path.join(__dirname, 'shots');
@@ -159,6 +164,46 @@ async function readDetailPrice(page) {
   await page.waitForTimeout(3500);
   const text = await page.locator('.detail-price .price').innerText().catch(() => '');
   return text.replace(/\s+/g, '');
+}
+
+/** 手机端 H5 登录（local-acceptance 构建才有测试登录入口） */
+async function loginH5(page) {
+  await page.goto(`${H5}/pages/pharmacy/login`, { waitUntil: 'networkidle', timeout: 60000 });
+  await page.waitForTimeout(1200);
+  const inputs = page.locator('input');
+  if (!(await inputs.count())) throw new Error('手机端登录页无输入框，请确认 H5 为 local-acceptance 构建');
+  await inputs.nth(0).fill(MOBILE);
+  const consent = page.locator('.fs-check');
+  if (await consent.count()) await consent.first().click();
+  await page.waitForTimeout(300);
+  await inputs.nth(1).fill(CODE);
+  await page.locator('uni-button.fs-primary').click();
+  await page.waitForTimeout(3500);
+  const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+  return /我的|退出|个人中心|AI 问药|首页/.test(body) ? 'logged-in' : '登录态未确认';
+}
+
+/** 手机端提问：等最后一条回答稳定且不再处于「停止」状态 */
+async function askH5(page, text, timeout = 150000) {
+  const box = page.locator('.ai-compose textarea, .ai-compose input').first();
+  await box.fill(text);
+  await page.waitForTimeout(400);
+  await page.locator('.ai-compose button.fs-primary').click();
+  const deadline = Date.now() + timeout;
+  let last = '';
+  let stable = 0;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(1200);
+    const cur = (await page.locator('.answer').allInnerTexts().catch(() => [])).at(-1) || '';
+    const busy = await page.locator('.ai-compose button.fs-secondary').count();
+    if (cur && cur.trim() === last && !busy) {
+      if (++stable >= 2) return cur.trim();
+    } else {
+      stable = 0;
+    }
+    last = cur.trim();
+  }
+  return last;
 }
 
 (async () => {
@@ -291,6 +336,22 @@ async function readDetailPrice(page) {
       await admin.close();
     }
     await page.close();
+  }
+
+  // ---------------- ACT 4 手机端 ----------------
+  if (stage === '4' || stage === 'all') {
+    const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'zh-CN' });
+    const page = await ctx.newPage();
+    log('\n[ACT4] 手机端 H5 登录…', await loginH5(page));
+    await page.goto(`${H5}/pages/pharmacy/ai`, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.waitForTimeout(2500);
+    await shot(page, 'h5-ai-home');
+    const response = await askH5(page, H5_QUESTION);
+    log('[ACT4]', H5_QUESTION);
+    log('回答:', response.slice(0, 400));
+    await shot(page, 'h5-ai-answer');
+    result.acts.h5 = { question: H5_QUESTION, answer: response, hasAnswer: response.length > 20 };
+    await ctx.close();
   }
 
   result.finishedAt = new Date().toISOString();

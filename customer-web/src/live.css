@@ -119,3 +119,8 @@
 .shop-products .rx-btn{padding:0 10px}
 .shop-products .product-bottom{padding:12px 12px 15px}
 }
+/* AI 回答区较窄时，商品卡的加购按钮原本固定 30px 宽，按钮内文字被迫逐字换行。
+   与商品列表保持一致：按钮按内容撑开、文字不换行，并隐藏「购物车」后缀。 */
+.ai-products .add-btn{width:auto;min-width:32px;height:30px;padding:0 10px;gap:4px;white-space:nowrap}
+.ai-products .add-btn span{white-space:nowrap}
+.ai-products .add-btn .add-tail{display:none}
