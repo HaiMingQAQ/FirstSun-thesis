@@ -61,7 +61,7 @@ public class PharmacyKnowledgeServiceImpl implements PharmacyKnowledgeService {
     private String corpusPath;
     @Value("${firstsun.ai.knowledge.top-k:4}")
     private int defaultTopK;
-    @Value("${firstsun.ai.knowledge.threshold:0.35}")
+    @Value("${firstsun.ai.knowledge.threshold:0.28}")
     private double threshold;
 
     // ==================== 重建索引 ====================
@@ -149,16 +149,17 @@ public class PharmacyKnowledgeServiceImpl implements PharmacyKnowledgeService {
     private Filter.Expression filter(Long tenantId, boolean saleableOnly) {
         FilterExpressionBuilder b = new FilterExpressionBuilder();
         if (saleableOnly) {
-            // Qdrant 的 payload 过滤只接受字符串或数值，布尔值会抛 “Invalid value type for EQ”，故入库时用 1/0
-            return b.and(b.eq("tenantId", tenantId), b.eq("saleable", 1)).build();
+            // Qdrant 只接受字符串/数值做相等过滤（布尔会抛 Invalid value type for EQ）；
+            // 而 Spring AI 写入 payload 时会把元数据统一转成字符串，所以这里也按字符串比较。
+            return b.and(b.eq("tenantId", String.valueOf(tenantId)), b.eq("saleable", "1")).build();
         }
-        return b.eq("tenantId", tenantId).build();
+        return b.eq("tenantId", String.valueOf(tenantId)).build();
     }
 
     private VectorStore vectorStore() {
         var model = models.getRequiredDefaultModel(AiModelTypeEnum.EMBEDDING.getType());
-        return models.getOrCreateVectorStore(model.getId(), Map.of("tenantId", Long.class,
-                "drugId", Long.class, "saleable", Integer.class));
+        return models.getOrCreateVectorStore(model.getId(), Map.of("tenantId", String.class,
+                "drugId", String.class, "saleable", String.class));
     }
 
     // ==================== 文档构造 ====================
@@ -166,12 +167,12 @@ public class PharmacyKnowledgeServiceImpl implements PharmacyKnowledgeService {
     private Document document(Long tenantId, Long drugId, String kind, String code, String drugName,
                               String sectionKey, String sectionTitle, String text, boolean saleable) {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("tenantId", tenantId);
+        metadata.put("tenantId", String.valueOf(tenantId));
         metadata.put("kind", kind);
         metadata.put("drugCode", code);
         metadata.put("section", sectionKey);
         metadata.put("sectionTitle", sectionTitle);
-        metadata.put("saleable", saleable ? 1 : 0);
+        metadata.put("saleable", saleable ? "1" : "0");
         if (drugId != null) metadata.put("drugId", drugId);
         if (drugName != null) metadata.put("drugName", drugName);
         // 正文带上药品名与小节名，向量里才有检索所需的语义（片段本身可能不含药名）
