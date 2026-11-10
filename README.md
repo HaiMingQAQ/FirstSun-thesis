@@ -1,196 +1,212 @@
-# FirstSun · 面向顾客与管理者的药店智能助手
+# FirstSun · 融合 AI 助手的多端药店管理系统
 
-毕业设计题目：**《面向顾客与管理者的药店智能助手系统设计与实现》**。
+毕业设计题目：**《融合 AI 助手的多端药店管理系统设计与实现》**。
 
-FirstSun 在药店课程项目基础上，整合顾客端商品查询、购物与咨询页面，以及管理端药品、库存、订单和采购业务。顾客 AI 使用受控接口查询门店商品；管理端 AI 查询药品与当前门店库存，涉及业务修改时先展示预览，再由用户确认。
+FirstSun 在药店课程项目基础上，整合**电脑顾客端**（`customer-web`）、**uni-app 顾客端**（`mall-uniapp`，H5 / 微信小程序）与**管理端**（`admin-ui`），共用一个 Spring Boot 后端。顾客 AI 通过受控接口查询当前门店商品；管理端 AI 可查询药品与门店库存，涉及业务修改时只生成预览，由人工确认后才执行。
 
-本仓库用于教学、毕设展示和开发验证。商品、会员、处方与咨询测试均使用演示资料；医生咨询仅为模拟说明，真实支付与 AI 诊疗不在范围内。
+本仓库用于教学、毕设展示和开发验证。商品、会员、处方与咨询使用演示资料，**不是生产数据**。真实支付、真实医生接诊、AI 诊疗和生产部署都不在当前完成范围内。
 
-> **状态说明（2026-10-02）**：本页基于当前源码、已审查提交和本机验证记录整理；编写文档没有重复执行构建或业务测试。微信原生运行、真机和正式远程发布仍未验证。
+> **状态说明（2026-11-11）**：本页按当前 `main`（`305c36db`）的源码、已合并 PR、[HANDOFF.md](HANDOFF.md)、[README.local.md](README.local.md) 和部署文件整理。“已实现”指源码已在 `main` 中，不代表所有能力都在同一基线上联合验收通过。具体验证范围见文末“当前进度”。
 
 ## 项目来源与个人工作
 
 | 层次 | 来源与范围 |
 | --- | --- |
-| 开源基础 | 基于 yudao / RuoYi-Vue-Pro 后端、yudao-ui-admin-vue3 管理端及芋道商城 uni-app 顾客端进行二次开发，复用认证、租户、权限、持久化、文件服务、模型配置及前端基础组件。上游说明与版权保留在各子项目中。 |
-| 团队课程项目 | 前期 FirstSun 团队项目提供药品与门店基础资料、供应商与采购收货、批次库存、POS、处方审核、会员和线上订单等业务基础，以及管理端 AI 查询与受控药品操作原型。各模块的完成范围以对应交付记录为准。 |
-| 个人毕设增量 | 在团队基线之上进行顾客页面移植与接口整合，新增顾客 AI 查询、私有处方材料与购买约束、业务通知和门店人工文字咨询；已实现并本地验证流式回答、后端话题历史、会员头像昵称及独立 Windows 本机启动入口。实现与复用范围见文末开发记录。 |
+| 开源基础 | 基于 yudao / RuoYi-Vue-Pro 后端、yudao-ui-admin-vue3 管理端和芋道商城 uni-app 顾客端做二次开发，复用认证、租户、权限、持久化、文件服务、模型配置和前端基础组件。上游说明与版权保留在各子项目中。 |
+| 团队课程项目 | 前期 FirstSun 团队项目提供药品与门店基础资料、供应商与采购收货、批次库存、POS、处方审核、会员、线上订单等业务基础，以及管理端 AI 查询和受控药品操作原型。 |
+| 个人毕设增量 | 在团队基线上移植并整合顾客页面，新增电脑顾客端、顾客 AI 查询（流式回答、话题历史、商品卡）、私有处方材料与购买约束、业务通知、门店人工文字咨询、邮箱会员认证、药品说明书 RAG 检索，以及统一的本机 Docker 部署入口。 |
 
-页面设计参考独立 UI 原型，并移植到实际 uni-app 页面。HTML 原型、合成接口截图和本地 Mock 用于设计或测试，不代表真实业务接通。开源框架、团队业务模块及个人增量分别说明，避免将整套仓库归为个人从零开发。
+开源框架、团队业务模块和个人增量分开说明，整套仓库不是个人从零开发的。
 
-## 当前截图
+## 功能模块
 
-以下顾客截图来自 2026-10-02 的实际 H5 页面，连接本机后端与演示数据库；使用测试账户。它们不是微信真机截图，也不证明医学输出正确或完整购物闭环通过。
+**电脑顾客端（`customer-web`，Vue 3 + Vite）**
 
-| 顾客首页 | 顾客 AI | 账户话题历史 |
-| --- | --- | --- |
-| <img src="docs/images/customer-home-h5-20261002.png" width="240" alt="顾客首页，演示门店与五项导航"> | <img src="docs/images/customer-ai-h5-20261002.png" width="240" alt="顾客 AI H5 页面，显示演示回答与模拟医生入口"> | <img src="docs/images/customer-history-h5-20261002.png" width="240" alt="AI 账户历史与测试话题"> |
+- 首页、推荐、找药购药：分类、按通用名或商品名搜索、“加载更多”分批展示、当前门店价格和库存。
+- 商品详情：商品信息、说明书页签、询问 AI、咨询药师 / 客服入口。
+- 处方药：商品卡不显示价格，标注“凭处方购买 · 需药师审核后结算”；顾客上传私有处方材料、查看审核状态。核准后的结算与付款尚未在电脑端开放。
+- AI 购药助手：话题历史、流式回答；商品事实（名称、价格、库存）由服务端商品卡提供。
+- 购物车、普通 OTC 结算、订单列表与详情；模拟支付默认关闭，只用于明确授权的隔离测试环境。
+- 会员：邮箱注册、验证码登录、密码登录；资料、头像、修改密码；业务通知；门店人工文字咨询。
 
-管理端采购页面使用仓库已有交付截图，反映此前独立管理后台演示环境，尚未重新采集当前毕设基线截图。
+**uni-app 顾客端（`mall-uniapp`）**：H5 与微信小程序开发编译，复用同一套后端 API。微信原生运行和真机尚未验收。
 
-![管理端采购订单列表：此前交付环境截图](docs/images/purchase-orders.png)
+**管理端（`admin-ui`，Vue 3 + TypeScript + Element Plus）**
 
-三张顾客截图已归档到 `docs/images/`，仅展示本地演示账户与测试问答，不含会员令牌。其他原始证据继续保存在 Git 忽略的本机目录。
+- 基础资料：药品分类、门店、员工、药品档案（含会员价、线上可售、审核状态）、药品条码。
+- 库存、采购：仓库与批次库存、供应商与证照、采购订单与收货。
+- 会员管理：会员档案、等级、积分明细、收货地址、购物车、小程序订单。
+- 处方支付管理：处方登记、处方审核、处方台账、支付单与退款单查询。
+- 药店 POS：收银台、销售单、退货单、收银班次、支付明细、销售统计。
+- 门店文字咨询接待；药店 AI 助手（查询药品、门店库存与预警，生成药品变更或采购草稿预览，写操作须再次确认）。
+- 与药店无关的上游 AI 页面（绘画、音乐、写作、思维导图等）已停用或隐藏（PR #11 及后续提交）。
 
-## 顾客与管理端流程
+**AI 与知识库**
 
-**顾客主流程：AI 查询药品信息 → 筛选商品 → 模拟下单 → 后台处理。**
+- 顾客 AI 只读查询当前门店允许展示的商品，不开放 AI 下单、诊断或开方；提示词和正则双层拦截越权请求。
+- 药品说明书 RAG：代码已合入 `main`（提交 `d493721c` 及后续修正），包括 Qdrant 向量库、本地向量化服务 `deploy/embedding`（BAAI/bge-small-zh-v1.5）和按租户过滤的检索。语料 `deploy/knowledge/corpus.json` 是**演示语料，不是官方说明书原文**。召回效果的验证只有 `scripts/e2e-ai` 演示脚本，运行产物不入库；仓库里没有正式验收记录。
 
-顾客 AI 根据问题查询当前门店允许展示的商品，商品卡中的名称、价格、库存、编号及查询时间由服务端提供；点击卡片进入商品详情，再由顾客选择商品、数量并提交订单。AI 不直接创建订单。下单结果和后台状态由业务接口决定，历史回答中的价格与库存不代替下单时校验。
-
-当前已有 AI 到商品详情的真实本地 H5 联调、购物页面与接口适配，以及订单后台处理基础。完整主流程仍需在同一当前基线中统一验收。本机默认关闭模拟支付，运行启动入口不会自动走通支付后履约流程。测试支付仅在另建并确认隔离的测试实例中使用，不发生真实扣款。
-
-顾客端还提供私有处方材料提交与审核状态、业务通知、门店人工文字咨询、账户话题历史和资料编辑。处方流程需要人工药师审核，人工咨询需要本店有权限的员工领取并回复；不会生成假回复或承诺实时有人接待。相关流程已有独立本地演示数据联调记录，微信原生运行尚待验证。
-
-**管理端目标流程：AI 查询库存预警 → 查看依据 → 人工确认采购处理。**
-
-当前 AI 工具可查询药品档案及当前员工所属门店的批次库存，返回可用量、冻结量、批次和效期；原有库存模块有独立效期预警，采购模块提供人工创建、提交和审批等操作。**低库存预警汇总、AI 依据卡片与采购关联处理尚未形成已验收闭环**，仍是毕设后续工作。现有药品修改预览确认不能当作采购确认能力。
-
-医院／药店导航属于可选扩展；医生咨询仅展示模拟说明。真实医生接诊、自动诊断、开方和真实支付均不作为当前能力。
-
-## 技术栈与目录
+## 技术栈
 
 | 部分 | 当前使用技术 |
 | --- | --- |
-| 顾客端 | uni-app、Vue 3、Pinia、Vite；H5 与微信小程序开发编译 |
+| 电脑顾客端 | Vue 3、Vite，Nginx 托管静态产物并反向代理 `/app-api` |
+| uni-app 顾客端 | uni-app、Vue 3、Pinia、Vite；H5 与微信小程序 |
 | 管理端 | Vue 3、TypeScript、Element Plus、Vite、pnpm |
-| 后端 | Java 17、Spring Boot 3、MyBatis Plus、Maven |
-| AI | 复用 yudao 模型管理与 Spring AI，受控业务查询、SSE 流式输出、请求去重与账户历史 |
-| 数据与运行 | MySQL 8、Redis 7、Docker Compose、Nginx |
+| 后端 | Java 17、Spring Boot 3、MyBatis Plus、Maven（yudao-server） |
+| AI | yudao 模型管理 + Spring AI，SSE 流式输出，Qdrant 向量库，本地 embedding 服务 |
+| 数据与运行 | MySQL 8、Redis 7、Qdrant 1.12、Docker Compose |
+| 测试 | Node 测试、后端单元测试、Playwright（OTC 验收与 AI 演示脚本） |
+
+## 截图
+
+以下截图于 2026-11-11 从**本地演示环境**采集：共享 Linux 电脑上的 Docker Compose 栈，数据库为本机演示库副本，宽度 1280。采集时只放行登录请求，其余写请求一律拦截。会员昵称、头像、邮箱、手机号、AI 历史话题和员工姓名已在截图前遮挡或模糊。截图只说明页面形态，不证明业务闭环、医学内容或支付流程已经验收。
+
+### 电脑顾客端
+
+| 首页 | 找药购药 |
+| --- | --- |
+| <img src="docs/images/readme/customer-01-home.png" width="420" alt="电脑顾客端首页"> | <img src="docs/images/readme/customer-02-catalog.png" width="420" alt="找药购药商品列表"> |
+| **商品详情** | **处方申请入口** |
+| <img src="docs/images/readme/customer-03-drug-detail.png" width="420" alt="商品详情页"> | <img src="docs/images/readme/customer-04-prescription-entry.png" width="420" alt="提交处方申请页"> |
+| **个人中心（已遮挡）** | **AI 购药助手（入口，历史已模糊）** |
+| <img src="docs/images/readme/customer-05-account.png" width="420" alt="个人中心"> | <img src="docs/images/readme/customer-06-ai.png" width="420" alt="AI 购药助手"> |
+
+### 管理端
+
+| 登录页 | 首页 |
+| --- | --- |
+| <img src="docs/images/readme/admin-01-login.png" width="420" alt="管理端登录页"> | <img src="docs/images/readme/admin-02-dashboard.png" width="420" alt="管理端首页"> |
+| **药品档案** | **门店管理** |
+| <img src="docs/images/readme/admin-03-drug-records.png" width="420" alt="药品档案列表"> | <img src="docs/images/readme/admin-04-stores.png" width="420" alt="门店管理"> |
+| **员工管理（姓名等列已模糊）** | **药店 AI 助手** |
+| <img src="docs/images/readme/admin-05-staff.png" width="420" alt="员工管理"> | <img src="docs/images/readme/admin-06-ai-assistant.png" width="420" alt="药店 AI 助手"> |
+
+此前的截图仍保留在 `docs/images/`：2026-10-02 的 uni-app H5 截图和更早的管理端采购页，作为历史记录。
+
+## 顾客与管理端流程
+
+**顾客主流程：AI 查询药品信息 → 筛选商品 → 下单（模拟支付）→ 门店处理。**
+
+顾客 AI 根据问题查询当前门店允许展示的商品。商品卡里的名称、价格、库存由服务端提供，回答正文不给价格；点击卡片进入商品详情，由顾客自己选择商品和数量后下单。AI 不直接创建订单。下单结果和后台状态由业务接口决定，历史回答里的价格和库存不能代替下单时的校验。
+
+处方药需要人工药师审核；人工咨询需要本店有权限的员工领取并回复。系统不会生成假回复，也不承诺实时有人接待。
+
+**管理端目标流程：AI 查询库存预警 → 查看依据 → 人工确认采购处理。**
+
+AI 助手可查询药品档案和当前门店批次库存，并生成药品变更或采购草稿的预览，写操作必须人工再次确认。“低库存预警 → AI 依据 → 采购关联处理”**尚未形成已验收闭环**，仍是后续工作。
+
+## 本地启动
+
+日常环境是一个 Docker Compose 项目 `firstsun`，定义在 `deploy/docker-compose.local.yml`，根目录 `docker-compose.yml` 引用同一份配置。共七个服务：MySQL、Redis、Qdrant、embedding、后端、管理端、电脑顾客端。详细说明见 [README.local.md](README.local.md)。
+
+**Windows（Docker Desktop，Linux containers）**，在仓库根目录：
+
+| 入口 | 作用 |
+| --- | --- |
+| `start-local.bat` | 复用已有镜像和数据卷启动并等待健康检查，不自动构建或拉取 |
+| `rebuild-local.bat` | 先构建顾客端产物和应用镜像，再启动 |
+| `status.bat` / `stop-local.bat` | 查看状态 / 正常停止（保留容器和数据卷） |
+
+**非 Windows**可以直接用同一份 Compose（需要已有镜像和 external 数据卷）：
+
+```sh
+docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml config --quiet
+docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml up -d --no-build --pull never --wait --wait-timeout 300
+```
+
+默认只绑定 `127.0.0.1`，实际端口以私有 `.env` 为准：
+
+| 服务 | 默认地址 |
+| --- | --- |
+| 管理端 | <http://127.0.0.1:28081> |
+| 电脑顾客端 | <http://127.0.0.1:4193> |
+| 后端健康检查 | <http://127.0.0.1:28080/actuator/health> |
+| MySQL / Redis | `127.0.0.1:23327` / `127.0.0.1:26397` |
+| Qdrant | `127.0.0.1:26333`（embedding 只在容器网络内） |
+
+注意事项：
+
+- 私有配置放在环境根目录的 `.env`，参考 [deploy/.env.thesis.local.example](deploy/.env.thesis.local.example)。示例里没有可用凭据，`.env` 不进 Git。
+- 启动和重建**都不会执行 SQL**。新建隔离测试库时按 [deploy/local-migrations.json](deploy/local-migrations.json) 的 01–47 顺序导入，并记录迁移账本 `firstsun_local_migration`，完成后应有 109 张 BASE TABLE。步骤见 [数据库初始化路径说明](docs/database-init-paths.md)。
+- 顾客端租户 `FIRSTSUN_TENANT_ID` 在**构建时**写入，修改后要重新构建顾客端。
+- 邮箱登录需要在 `.env` 中配置 `PHARMACY_MEMBER_EMAIL_*` 和 `RESEND_API_KEY`；未配置时邮箱认证返回“暂不可用”。
+- 不要用 `down -v`、全局 prune 或空库替换来处理环境问题。
+- 账号和密码由环境负责人提供，不写进 README。
+
+### uni-app 顾客端预览
+
+```powershell
+Set-Location mall-uniapp
+npm ci --ignore-scripts
+$env:SHOPRO_DEV_BASE_URL = 'http://127.0.0.1:28080'
+$env:SHOPRO_TENANT_ID = '<租户编号>'
+npm run dev:h5 -- --host 127.0.0.1 --port 4189     # H5 预览
+npm run dev:mp-weixin                              # 微信开发编译，产物在 dist/dev/mp-weixin
+```
+
+回环地址只供同一台电脑使用。正式微信构建需要 HTTPS 部署地址和合法域名配置，见 [微信构建说明](mall-uniapp/README.deploy.md)。
+
+## 目录结构
 
 ```text
 FirstSun-thesis/
-├─ admin-ui/                    # 管理后台
-├─ backend/                     # 框架、药店业务与 AI 服务
-├─ mall-uniapp/                 # 顾客 uni-app 页面与 API 适配器
-├─ deploy/                      # 本机及历史交付环境配置
-├─ scripts/local-environment.ps1
-├─ sql/migrations/              # 顺序执行的业务增量
-├─ docs/                        # 设计、交付和验收记录
-├─ README.local.md              # Windows 本机环境详细说明
-├─ start-local.bat              # 启动本机四服务
-├─ rebuild-local.bat            # 重建后端和管理端
-└─ stop-local.bat               # 停止服务并保留数据
+├─ admin-ui/              # 管理端（Vue 3 + Element Plus）
+├─ customer-web/          # 电脑顾客端（Vue 3 + Vite，Nginx 托管）
+├─ mall-uniapp/           # uni-app 顾客端（H5 / 微信小程序）与 API 适配器
+├─ uni-h5-cli-root/       # uni-app H5 命令行构建辅助
+├─ backend/               # 后端：yudao 框架、药店业务、AI 模块
+├─ deploy/
+│  ├─ docker-compose.local.yml  # 本机统一环境（7 个服务）
+│  ├─ embedding/                # 本地向量化服务
+│  ├─ knowledge/corpus.json     # 说明书演示语料
+│  ├─ local-migrations.json     # 初始化清单 01–47
+│  └─ sql/                      # 部署辅助 SQL（RAG 基线等）
+├─ sql/                   # 业务初始化与 migrations 增量
+├─ scripts/               # 启动器、readiness、OTC 验收（e2e-otc）、AI 演示（e2e-ai）
+├─ docs/                  # 设计、交付、验收记录与截图
+├─ HANDOFF.md             # 协作交接与证据边界
+├─ README.local.md        # 本机统一环境说明
+└─ start-local.bat / rebuild-local.bat / status.bat / stop-local.bat
 ```
 
-顾客端默认 `PHARMACY_DEMO=false`，通过真实 API 适配器访问后端；仓库保留的本地 Mock 不作为业务成功依据。AI 查询复用现有 Service 与权限边界，不开放任意 SQL。顾客端商品工具限定普通非处方、非特管、非含麻黄碱及可售商品；模型文本过滤不能保证临床正确性，演示回答不得用于实际诊疗决策。
+## 当前进度
 
-## Windows 本机启动
-
-启动步骤与 [本机环境说明](README.local.md)、批处理入口和 Compose 配置已对应，并有 01 提供的本机验证记录。该入口启动后端、管理后台、MySQL 和 Redis，**不编译顾客端**。
-
-准备 Docker Desktop 的 Linux containers，确保 `desktop-linux` context 指向本机 Windows named pipe，Docker Compose 支持 `up --wait`，建议至少 6 GB 可用内存。首次构建需能访问镜像、Maven 和 npm 依赖源。运行四服务不要求宿主机安装 Java、Maven 或 Node；另行编译小程序需 Node.js 22 与 npm。
-
-在仓库根目录运行：
-
-```powershell
-Set-Location -LiteralPath 'D:\github-3\FirstSun-thesis'
-.\start-local.bat
-```
-
-首次启动生成被 Git 忽略的 `deploy/.env.thesis.local`，创建专用数据库配置并按 `deploy/local-migrations.json` 执行初始化及增量；缺少应用镜像时由 Compose 构建。已有应用镜像会被复用，源码变化后使用重建入口。
-
-| 服务 | 默认本机入口 |
-| --- | --- |
-| 管理后台 | <http://127.0.0.1:28081> |
-| 后端健康检查 | <http://127.0.0.1:28080/actuator/health> |
-| 顾客 API 基址 | `http://127.0.0.1:28080`，客户端追加 `/app-api` |
-| MySQL / Redis | `127.0.0.1:23327` / `127.0.0.1:26397`，凭据仅见本地配置 |
-
-管理端演示登录：租户 `FirstSun`，账号 `0407`，密码 `123456`。这是初始化演示账号，只用于本机测试，不作为生产凭据，也不能作为顾客会员令牌使用。
-
-修改后端或管理端代码后重建；结束时停止服务：
-
-```powershell
-.\rebuild-local.bat
-.\stop-local.bat
-```
-
-停止保留容器、数据卷与日志。数据库迁移记录校验已应用 SQL 的哈希，后续仅执行连续增量；已执行脚本有变化、迁移中断或非空库缺少可信记录时会停止。不要用删除数据卷或反复导入初始化 SQL 来处理失败。运行日志位于 `.local/`，详细诊断方式见本机环境说明。
-
-## 顾客端预览与微信开发编译
-
-在另一个 PowerShell 窗口执行：
-
-```powershell
-Set-Location -LiteralPath 'D:\github-3\FirstSun-thesis\mall-uniapp'
-npm ci --ignore-scripts
-$env:SHOPRO_DEV_BASE_URL = 'http://127.0.0.1:28080'
-$env:SHOPRO_TENANT_ID = '163'
-npm run dev:h5 -- --host 127.0.0.1 --port 4189
-```
-
-打开 <http://127.0.0.1:4189/pages/pharmacy/index>。H5 使用 history 路由，不加 `#/`；4189 是此命令指定的预览端口，与四服务入口分开。H5 可预览公开商品页面；当前真实模式登录页仅提供微信小程序入口，**没有可直接使用的 H5 微信登录流程**。已有会员态 H5 联调使用本地测试账户会话，不代表浏览器首次打开即可登录体验全部功能；本稿不提供或写入测试令牌。
-
-微信开发编译使用同样的环境变量，在 `mall-uniapp` 执行：
-
-```powershell
-npm run dev:mp-weixin
-```
-
-将 `mall-uniapp/dist/dev/mp-weixin` 导入微信开发者工具，确认包含 `app.json`，启动路由为 `pages/pharmacy/index`。本机 HTTP 调试需在“详情 → 本地设置”确认关闭合法域名校验；修改配置后重新启动编译命令，再在工具中编译。源码已有微信登录凭证验证路径，但实际微信登录、原生头像选择、流式显示与真机仍未完成验收。
-
-回环地址仅供同一电脑的模拟器使用，手机不能通过自己的 `127.0.0.1` 访问这套服务。正式微信构建需要实际 HTTPS 部署地址及微信合法域名配置，详见 [微信构建说明](mall-uniapp/README.deploy.md)。发布构建参数校验成功不等于部署或真机验收成功。
-
-## 环境配置
-
-私有配置仅保存于 Git 忽略的 `deploy/.env.thesis.local`。首次入口会生成数据库与 Redis 密码，并按脚本白名单复用已有授权本地配置中的 AI、开发验证码及微信应用设置；不导入旧数据库连接。新机器应参考 [配置样例](deploy/.env.thesis.local.example) 补齐缺失项，避免用空白样例覆盖已生成配置。
-
-| 参数 | 用途与边界 |
-| --- | --- |
-| `MYSQL_DATABASE`、`MYSQL_USER`、密码及 `REDIS_PASSWORD` | 本套持久化服务凭据；首次初始化后保持一致，不写进 README、截图或提交。 |
-| `BACKEND_PORT`、`ADMIN_PORT`、`MYSQL_PORT`、`REDIS_PORT` | 默认端口见上表；端口应互不相同。修改后端地址后重建管理端，并重新编译顾客端。 |
-| `PHARMACY_AI_API_KEY`、`PHARMACY_AI_BASE_URL`、`PHARMACY_AI_MODEL` | 服务端模型配置；缺少配置不阻止四服务启动，但 AI 不可用。模型配置与启用方式见顾客 AI 记录。 |
-| `PHARMACY_DEV_SMS_CODE` | 后端 local/dev 开发验证码；不发送真实短信，不公开其值。当前真实模式顾客登录页使用微信入口。 |
-| `PHARMACY_WECHAT_TENANT_ID`、`PHARMACY_WECHAT_APP_ID`、`WX_MINIAPP_APPID`、`WX_MINIAPP_SECRET` | 微信身份验证相关配置；须与实际开发工程一致。存在配置项和源码不代表真实微信登录已验收。 |
-| `SHOPRO_DEV_BASE_URL`、`SHOPRO_TENANT_ID` | 顾客端开发地址与租户；前端不能包含模型密钥或微信 Secret。 |
-
-模型服务会接收咨询内容，当前历史保存在会员账户中。删除话题会清除问题与回答正文，防重复所需元数据仍保留，不宣称同时删除服务商记录或备份。头像使用框架公开文件接口，本机入口将默认存储配置为数据库；处方材料使用独立私有接口。
-
-本机入口强制关闭测试支付，不提供开启选项。它使用独立 Compose 项目、网络与数据卷；`local` profile 本身不作为隔离证明。
-
-## 已完成与待验证范围
-
-“已完成”指源码存在且有对应范围的交付或验证记录，不代表全部功能在当前基线联合通过。
+“已完成”指源码存在，并有对应范围的交付或验证记录；不代表全部功能在当前基线上联合通过。
 
 | 能力 | 当前状态 |
 | --- | --- |
-| 管理后台药品、采购、库存、会员与订单基础 | 团队课程项目已有模块与局部验收，毕设复用；历史全量报告中的缺陷须结合当前源码逐项复核。 |
-| 顾客商品、筛选、购物车、结算和订单页面 | 已有实际接口适配及页面实现；基础购物 UI 记录含合成响应测试，不能作为完整真实购物闭环证据。 |
-| 顾客 AI 与商品卡 | 已实现只读商品查询，并有真实本地后端、模型及演示数据库的 H5 联调；不开放 AI 下单、诊断或处方工具。 |
-| SSE、话题历史、头像昵称 | 已审查并纳入本地阶段提交，有定向测试与真实后端 H5 联调；原生微信交互仍未验证。 |
-| 私有处方、审核约束、通知与资格恢复 | 已有独立本地 HTTP 和双端页面验证；不判断处方的临床真实性，不等于实际线上购药服务。 |
-| 门店人工文字咨询 | 已实现持久消息、人工领取回复与已读，有独立本地双端联调；不接医生、语音视频或真实微信消息推送。 |
-| 管理端 AI 药品与库存查询、药品修改预览确认 | 已有原型与历史验证；本轮未重新验收全部管理端 AI 功能。 |
-| 管理端 AI 低库存预警到采购处理 | 计划实现／整合，尚未联合验收。 |
-| Windows 四服务启动、重建、停止与数据保留 | 已有 01 提供的本机验证记录；本稿编写仅作只读对应检查。 |
-| 微信开发目标 | 已有当前产物编译记录；原生运行、真实微信登录、原生头像昵称、SSE、键盘、安全区与真机未验证。 |
-| 支付与远程部署 | 真实支付不在范围内；测试支付有独立环境定向记录，本机默认关闭。当前毕设远程发布未验收，旧管理端交付不代表双端部署通过。 |
-| HTML 原型与医院／药店导航 | 原型仅用于设计参考；导航是可选扩展，未列为当前完成能力。 |
+| 管理端药品、库存、采购、会员、处方、POS 基础 | 团队项目模块，毕设复用；PR #7–#12 做了页面改进，各 PR 只做了定向测试和构建，登录后的业务点击验收仍缺。 |
+| 电脑顾客端（PR #6 及后续提交） | 商品、详情、AI、购物车、OTC 结算、订单、处方申请、咨询、通知、个人中心已有页面和接口；PR #6 记录 245 条 Node 测试通过。登录后的咨询收发、处方提交仍需在当前 `main` 上重新联调。 |
+| scoped OTC 账务闭环 | **只在限定范围内验证**：2026-11-05 在 readiness **隔离库**、租户 901 上，一笔“下单 → **模拟支付** → 拣货 → 核销”的 HTTP + SQL 对账达到 `RECONCILED_PASS`。这不是浏览器 UI 闭环，不是真实支付，也不是生产流程。 |
+| OTC Playwright 验收脚本 | 脚本已合入（PR #19，fail-closed）；完整 UI 演示闭环尚未宣称通过。 |
+| 顾客 AI、流式回答、话题历史 | 已实现，有历史本地联调和测试记录；不提供诊断或开方。 |
+| 药品说明书 RAG（Qdrant） | 代码与演示语料已合入；仓库里没有正式验收记录，只有演示脚本。不使用官方说明书，不能宣称医学准确。 |
+| 管理端 AI 低库存预警 → 采购处理 | 计划实现 / 整合，尚未联合验收。 |
+| 本机统一部署入口 | PR #14 及后续提交合入；2026-11-11 已在 Linux 共享电脑上用同一份 Compose 起齐 7 个服务并通过健康检查，两端登录页均可打开。 |
+| 微信小程序 | 有编译记录；原生运行、真实微信登录、真机仍未验证。 |
+| 真实支付、退款来源关联、正式短信、生产部署 | 未完成，不在当前范围。 |
 
-## 开发记录、验证与贡献
+历史数据：2026-10-26（源码 `f8363422`）有 989 条自动化测试通过记录，之后没有重跑。这个数字不等于完整业务演示闭环通过。
 
-开发者应先阅读 [文档导航](docs/README.md) 与 [开发规范](docs/开发规范与AI协作规则.md)，沿用现有权限、接口和状态流。变更按“独立分支 → 定向验证 → 审查”推进；说明新增、复用、未验证范围，并保留上游与团队贡献。
+## 开发记录与贡献
 
-需要修改顾客端时，可在 `mall-uniapp` 使用现有 `npm run test:pharmacy`、`npm run test:build-config` 和 `npm run build:h5`。适配器或合成测试通过不代替实际 HTTP、数据库事务、微信或真机验证。微信发布构建按实际部署参数执行，不填虚构域名。
+开发者先阅读 [HANDOFF.md](HANDOFF.md)、[文档导航](docs/README.md) 与 [开发规范](docs/开发规范与AI协作规则.md)。变更按“独立分支 → 定向验证 → PR 审查”推进，并说明新增、复用和未验证的范围。
 
 | 记录 | 内容 |
 | --- | --- |
-| [顾客 AI 开发与验收](docs/customer-ai-development.md) | 模型与商品查询边界、流式、历史、会员资料及本地证据。 |
-| [私有处方与业务通知](docs/prescription-business-development.md) | 材料鉴权、人工审核、订单明细与未支付资格恢复。 |
-| [门店人工文字咨询](docs/store-consultation-development.md) | 会话归属、领取、消息去重、已读和双端验证。 |
-| [基础购物 UI 交付](docs/miniapp-shopping-ui-handoff.md) | 原型移植与合成 UI 测试；其中旧端口、四栏导航与未开放能力描述已有后续更新。 |
-| [历史验收报告](docs/acceptance/reports/) | 对应历史基线的结论与缺陷，不作为当前全量通过证明。 |
-| [管理端历史交付部署](deploy/README-deploy.md) | 管理端独立交付的构建、隔离与运维说明；当前本机使用 `README.local.md`。 |
+| [顾客 AI 开发与验收](docs/customer-ai-development.md) | 模型与商品查询边界、流式、历史、会员资料 |
+| [私有处方与业务通知](docs/prescription-business-development.md) | 材料鉴权、人工审核、订单明细与资格恢复 |
+| [门店人工文字咨询](docs/store-consultation-development.md) | 会话归属、领取、消息去重、已读 |
+| [数据库初始化路径](docs/database-init-paths.md) | 快照恢复与仓库 SQL 初始化，108 / 109 张表口径 |
+| [后端就绪说明](docs/backend-readiness.md) | readiness 迁移与前置条件 |
+| [OTC 一键测试方案](docs/acceptance/otc-playwright-oneclick-plan.md) / [scripts/e2e-otc](scripts/e2e-otc/README.md) | OTC 验收设计与脚本 |
+| [AI 演示动线](scripts/e2e-ai/README.md) | 顾客端 AI、管理端 AI 与手机端联动演示 |
+| [历史验收报告](docs/acceptance/reports/) | 对应历史基线，不代表当前全量通过 |
+| [管理端历史交付部署](deploy/README-deploy.md) | 旧管理端独立交付说明；当前本机环境以 README.local.md 为准 |
 
-提交不得包含真实凭据、会员令牌、患者资料、运行日志、数据库卷或个人环境文件。仓库包含上游大量模块，源码存在不意味着模块已在 FirstSun 服务启用或验收。
+提交里不得包含真实凭据、会员令牌、患者资料、运行日志、数据库卷或个人环境文件。仓库包含大量上游模块，源码存在不等于该模块已在 FirstSun 中启用或验收。
 
 ## License
 
-保留并遵守 [backend/LICENSE](backend/LICENSE)、[admin-ui/LICENSE](admin-ui/LICENSE) 与 [mall-uniapp/LICENSE](mall-uniapp/LICENSE) 中的 MIT 许可及版权声明。各子项目 README 保留 yudao、RuoYi-Vue-Pro、商城端及相关依赖来源；药品图片与占位资源说明见对应静态资源目录。二次开发、展示和分发时继续保留上游许可、第三方资源授权及团队贡献记录。
-
-## GitHub 同步状态
-
-本地阶段成果已分组提交，当前远端 main 仍是 d6d72ae 基线。继承的禁用 AI 测试中疑似令牌曾进入已公开历史；当前源码已移除硬编码，但撤销／轮换状态尚未确认。同步准备不代表已授权推送，详见 [阶段同步记录](docs/github-stage-sync-20261002.md) 与 [历史凭据来源清单](docs/inherited-credential-inventory-20261002.md)。不公开原值，不自行重写历史或强推。
-
-此前管理后台课程交付 README 可通过 d6d72ae 的 Git 历史查看；管理端交付步骤继续保留在 `deploy/README-deploy.md`，不能将该历史交付视为当前双端远程验收。
+遵守并保留 [backend/LICENSE](backend/LICENSE)、[admin-ui/LICENSE](admin-ui/LICENSE) 与 [mall-uniapp/LICENSE](mall-uniapp/LICENSE) 中的 MIT 许可和版权声明。各子项目 README 保留了 yudao、RuoYi-Vue-Pro、商城端及相关依赖的来源说明。二次开发、展示和分发时，继续保留上游许可、第三方资源授权和团队贡献记录。
