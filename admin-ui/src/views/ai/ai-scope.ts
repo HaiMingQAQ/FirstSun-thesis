@@ -1,4 +1,6 @@
-// 通用创作菜单仍写在数据库里。页面停用后不再调用对应接口；菜单记录留给协调方停用。
+// 通用创作菜单仍写在数据库里。这些页面属于 yudao 官方 AI 大模型模块，未接入（表结构未导入、
+// 无 API key/模型配置）。前端在 generateRoutes 里统一把这些入口从菜单栏/路由/面包屑中隐藏。
+// 「药店 AI」（pharmacy/ai/index）是本项目自建的 AI 问药能力，不属于官方模块，始终保留。
 
 export interface AiEntry {
   id?: number
@@ -16,7 +18,9 @@ export const CLOSED_AI_ENTRIES: AiEntry[] = [
   { id: 825, name: 'AI 写作', path: '/ai/write', component: 'ai/write/index/index.vue' },
   { id: 826, name: '写作管理', path: '/ai/write', component: 'ai/write/manager/index.vue' },
   { id: 831, name: 'AI 思维导图', path: '/ai/mind-map', component: 'ai/mindmap/index/index.vue' },
-  { id: 832, name: '导图管理', path: '/ai/mind-map', component: 'ai/mindmap/manager/index.vue' }
+  { id: 832, name: '导图管理', path: '/ai/mind-map', component: 'ai/mindmap/manager/index.vue' },
+  { id: 850, name: 'AI 知识库', path: '/ai/knowledge', component: 'ai/knowledge/knowledge/index' },
+  { id: 911, name: 'AI 工作流', path: '/ai/workflow', component: 'ai/workflow/index.vue' }
 ]
 
 export const KEPT_AI_ENTRIES: AiEntry[] = [
@@ -25,7 +29,6 @@ export const KEPT_AI_ENTRIES: AiEntry[] = [
   { id: 800, name: '模型配置', path: '/ai/model', component: 'ai/model/model/index.vue' },
   { id: 806, name: '聊天角色', path: '/ai/chat-role', component: 'ai/model/chatRole/index.vue' },
   { id: 811, name: '聊天管理', path: '/ai/chat-conversation', component: 'ai/chat/manager/index.vue' },
-  { id: 850, name: 'AI 知识库', path: '/ai/knowledge', component: 'ai/knowledge/knowledge/index' },
   { id: 855, name: '工具管理', path: '/ai/tool', component: 'ai/model/tool/index.vue' },
   { name: '药店 AI', path: '/pharmacy/ai', component: 'pharmacy/ai/index' }
 ]

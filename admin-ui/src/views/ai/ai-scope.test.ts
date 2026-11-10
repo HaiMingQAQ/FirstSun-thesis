@@ -8,17 +8,20 @@ import {
   filterClosedAiMenus
 } from './ai-scope.ts'
 
-test('绘画、音乐、写作和思维导图被收口，模型和药店 AI 保留', () => {
+test('绘画、音乐、写作、思维导图、知识库和工作流被收口，模型和药店 AI 保留', () => {
   const closed = CLOSED_AI_ENTRIES.map((entry) => entry.component)
   assert.ok(closed.includes('ai/image/index/index.vue'))
   assert.ok(closed.includes('ai/music/index/index.vue'))
   assert.ok(closed.includes('ai/write/index/index.vue'))
   assert.ok(closed.includes('ai/mindmap/index/index.vue'))
+  assert.ok(closed.includes('ai/knowledge/knowledge/index'))
+  assert.ok(closed.includes('ai/workflow/index.vue'))
   assert.equal(isClosedAiComponent('ai/model/model/index.vue'), false)
   assert.equal(isClosedAiComponent('pharmacy/ai/index'), false)
   assert.ok(KEPT_AI_ENTRIES.some((entry) => entry.name === '模型配置'))
   assert.ok(KEPT_AI_ENTRIES.some((entry) => entry.name === '药店 AI'))
-  assert.ok(KEPT_AI_ENTRIES.some((entry) => entry.name === 'AI 知识库'))
+  assert.equal(KEPT_AI_ENTRIES.some((entry) => entry.name === 'AI 知识库'), false)
+  assert.equal(KEPT_AI_ENTRIES.some((entry) => entry.name === 'AI 工作流'), false)
 })
 
 test('停用菜单通过 component 或 id 都能识别', () => {
@@ -32,6 +35,9 @@ test('停用菜单通过 component 或 id 都能识别', () => {
 test('component 缺省 .vue 后缀也能识别为停用（数据库导图管理实际无 .vue）', () => {
   assert.equal(isClosedAiMenu({ component: 'ai/mindmap/manager/index' }), true)
   assert.equal(isClosedAiComponent('ai/mindmap/manager/index'), true)
+  assert.equal(isClosedAiMenu({ component: 'ai/knowledge/knowledge/index' }), true)
+  assert.equal(isClosedAiMenu({ id: 911 }), true)
+  assert.equal(isClosedAiMenu({ id: 850 }), true)
 })
 
 test('filterClosedAiMenus 递归摘除停用菜单及其子节点', () => {
