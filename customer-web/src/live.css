@@ -57,12 +57,11 @@
 .shop-products .product-photo.missing{background:#F7F9F8}
 .shop-products .product-body{padding:16px 20px 6px}
 .shop-products .product-body h3{font-size:18px}
-.shop-products .product-bottom{padding:12px 20px 18px}
+.shop-products .product-bottom{display:grid;grid-template-columns:minmax(0,1fr) 124px;align-items:end;padding:12px 20px 18px}
 .shop-products .price{color:#1A1A1A;font-size:26px;font-weight:700}
 .shop-products .price small{font-size:14px;font-weight:600}
 .shop-products .price small.dec{font-size:14px;font-weight:600}
 .shop-products .stock{font-size:12px;white-space:nowrap}
-.shop-products .product-bottom>div{flex:1;min-width:0}
 .shop-products .stock.out{color:#B45309}
 .tag.rx{color:#92400E;background:#FEF3C7}
 /* 处方卡区分（真实字段 product.rx：isRx=1） */
@@ -73,15 +72,22 @@
 .rx-btn:hover{background:#92400E}
 .rx-btn svg{width:16px;height:16px}
 /* 加购：胶囊按钮；加购后变数量步进器 */
-.shop-products .add-btn{width:auto;height:40px;padding:0 16px;border-radius:999px;background:var(--green);color:#fff;border:0;font-size:13px;font-weight:600;gap:6px;white-space:nowrap}
+.shop-products .product-bottom :is(.add-btn,.rx-btn,.qty-stepper){width:100%;height:40px}
+.shop-products .add-btn{padding:0 8px;border-radius:999px;background:var(--green);color:#fff;border:1px solid transparent;font-size:13px;font-weight:600;gap:5px;white-space:nowrap}
 .shop-products .add-btn:hover:not(:disabled){background:var(--deep)}
 .shop-products .add-btn:disabled{background:#CBD5D1}
 .shop-products .add-btn svg{width:16px;height:16px}
+.shop-products .rx-btn{justify-content:center;padding:0 8px}
 .qty-stepper{display:flex;align-items:center;gap:2px;flex:none;height:40px;border-radius:999px;background:var(--green);color:#fff;padding:0 4px}
 .qty-stepper button{width:32px;height:32px;border-radius:50%;font-size:18px;line-height:1;color:#fff;display:flex;align-items:center;justify-content:center}
 .qty-stepper button:hover:not(:disabled){background:rgba(255,255,255,.18)}
 .qty-stepper button svg{width:16px;height:16px}
 .qty-stepper b{min-width:28px;text-align:center;font-size:14px}
+.shop-products .qty-stepper{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;padding:0 3px;border:1px solid #bacfc4;background:var(--green-tint);color:var(--green)}
+.shop-products .qty-stepper button{width:100%;color:inherit}
+.shop-products .qty-stepper button:hover:not(:disabled){background:var(--green-soft)}
+.shop-products .qty-stepper button:disabled{opacity:.42}
+.shop-products .qty-stepper b{min-width:0}
 /* 详情价与正文价保持深色（仅改色，不动文案与逻辑） */
 .detail-price .price{color:#1A1A1A}
 /* 工具条 + 加载更多（接现有 page/pageSize 分页） */
@@ -95,7 +101,7 @@
 .shop-footer{flex-wrap:wrap}
 .footer-creds{display:flex;flex-wrap:wrap;gap:8px 20px;width:100%;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
 .footer-creds b{color:#23443A}
-/* 响应式：1280 无溢出；窄屏分类 3 列、商品卡 2 列、加购保留“加入” */
+/* 响应式：窄屏分类 3 列、商品卡 2 列 */
 @media(max-width:1100px){
 .shop-search{display:grid;grid-template-columns:1fr;gap:24px;padding:24px 20px}
 .shop-categories{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -104,20 +110,17 @@
 .ai-entry{grid-column:1/-1}
 .shop-trust{grid-template-columns:repeat(3,1fr)}
 }
+@media(max-width:700px){
+.shop-products .product-bottom{grid-template-columns:minmax(0,1fr);padding:12px 12px 15px}
+.shop-products .product-bottom :is(.add-btn,.rx-btn){font-size:12px;gap:4px}
+}
 @media(max-width:640px){
-.shop-products .product-card.rx-card .product-bottom{flex-wrap:wrap;row-gap:8px}
-.shop-products .product-card.rx-card .product-bottom>div{flex:1 1 100%}
-.shop-products .product-card.rx-card .rx-btn{margin-left:auto}
 .shop-search h1{font-size:26px}
 .shop-trust{grid-template-columns:1fr;gap:12px}
 .shop-products .products{gap:12px}
 .shop-products .product-photo{height:150px}
 .shop-products .product-body h3{font-size:15px}
 .shop-products .price{font-size:21px}
-.shop-products .add-btn{padding:0 10px}
-.shop-products .add-btn .add-tail{display:none}
-.shop-products .rx-btn{padding:0 10px}
-.shop-products .product-bottom{padding:12px 12px 15px}
 }
 /* AI 回答区较窄时，商品卡的加购按钮原本固定 30px 宽，按钮内文字被迫逐字换行。
    与商品列表保持一致：按钮按内容撑开、文字不换行，并隐藏「购物车」后缀。 */

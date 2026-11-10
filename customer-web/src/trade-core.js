@@ -32,7 +32,7 @@ export function createTradeApi({request,cartApi,orderApi,identity}){
   creation(){if(creation&&!owns(creation.owner))creation=null;return creation;},
   beginCheckout(){const c=api.creation();if(c?.pending||c?.unknown)throw Error('上一笔创建结果尚未确认，请先去订单列表核对');creation=null;},
   cart:storeId=>member(async()=>storeRows(unwrap(await cartApi.getCartList()),storeId)),
-  add:(storeId,p,qty=1)=>member(async()=>{if(p.rx||p.device)throw Error('本批仅支持普通非处方药购物车');if(!Number.isSafeInteger(qty)||qty<1)throw Error('请输入有效数量');return unwrap(await cartApi.addCart({storeId,drugId:p.id,qty}));}),
+  add:(storeId,p,qty=1)=>member(async()=>{if(p.rx)throw Error('处方药不能普通加购，请先提交处方申请');if(!Number.isSafeInteger(qty)||qty<1)throw Error('请输入有效数量');return unwrap(await cartApi.addCart({storeId,drugId:p.id,qty}));}),
   quantity:(storeId,id,qty)=>member(async check=>{if(!Number.isSafeInteger(qty)||qty<1)throw Error('数量至少为1');await rowAt(storeId,id,check);return unwrap(await cartApi.updateCartQty(id,qty));}),
   select:(storeId,id,selected)=>member(async check=>{await rowAt(storeId,id,check);return unwrap(await cartApi.updateCartSelected(id,selected?1:0));}),
   remove:(storeId,id)=>member(async check=>{await rowAt(storeId,id,check);return unwrap(await cartApi.deleteCart(id));}),

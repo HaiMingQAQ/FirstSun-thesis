@@ -92,5 +92,5 @@ test('desktop entries open prescription pages without removing ordinary cart beh
  assert(!app.includes('处方申请 · 未接入'));assert(!app.includes("notConnected('处方申请')"));assert(!app.includes("notConnected('我的处方')"));
  assert(app.includes("notConnected('消息中心')"));assert(app.includes('openConsult'));assert(app.includes('ConsultationPage'));
  assert(!app.includes("notConnected('药师 / 客服咨询')"));assert(!app.includes("notConnected('人工咨询')"));
- assert(app.includes(':disabled="adding||stockWarning||detail.stock<=0||detail.device"'));
+ assert(app.includes('v-else class="btn primary" :disabled="adding||stockWarning||detail.stock<=0" @click="addToCart(detail)"'));
 });
