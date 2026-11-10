@@ -16,7 +16,7 @@ function setup(api={},trade={}){
  const context={ref:value=>({value}),computed:fn=>({get value(){return fn();}}),watch(){},nextTick:fn=>Promise.resolve().then(fn),onMounted(){},onUnmounted:fn=>unmounted.push(fn),
   api:{store:{id:9101,name:'Fixture store'},loadCategories:async()=>[],productPage:async({pageNo})=>({list:Array.from({length:9},(_,i)=>({id:(pageNo-1)*9+i+1})),total:18}),product:async id=>({id}),...api},
   trade:{reset(){},cart:async()=>rows(2),add:async()=>{},quantity:async()=>{},remove:async()=>{},...trade},account:{logout:async()=>{}},identity:()=>({...state}),sameIdentity:(a,b)=>a.token===b.token&&a.tenant===b.tenant&&a.epoch===b.epoch,clearLoginState(){},localTestLogin:false,
-  window:{scrollTo(){},addEventListener(){},removeEventListener(){}},document:{body:{dataset:{}}},location:{hash:'#catalog'},history:{replaceState(){}},crypto:{randomUUID:()=> 'fixture-id'},URLSearchParams,
+  window:{scrollTo(){},addEventListener(){},removeEventListener(){}},document:{body:{dataset:{}},addEventListener(){},removeEventListener(){}},location:{hash:'#catalog'},history:{replaceState(){}},crypto:{randomUUID:()=> 'fixture-id'},URLSearchParams,
   setTimeout:()=>0,clearTimeout(){},setInterval:()=>0,clearInterval(){}};
  const script=app.split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm,'');
  vm.runInNewContext(script+'\nglobalThis.view={items,count,page,route,query,category,loadCatalog,loadMore,parseRoute,search,pickCategory,user,cartQtyById,cartCount,refreshCart,decreaseCart,addToCart,adding,dialog,catalogError,catalogLoading,resetPrivate};',context);

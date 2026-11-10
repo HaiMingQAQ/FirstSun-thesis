@@ -127,3 +127,19 @@
 .ai-products .add-btn{width:auto;min-width:32px;height:30px;padding:0 10px;gap:4px;white-space:nowrap}
 .ai-products .add-btn span{white-space:nowrap}
 .ai-products .add-btn .add-tail{display:none}
+
+/* 顶栏汉堡菜单：≤700px 时六个导航链接原本横排挤在第二行（390px 下已折行），
+   改为收进下拉面板，顶栏回到单行 64px，品牌与工具按钮不再被挤。 */
+#header .nav-toggle{display:none;align-items:center;justify-content:center;flex:none;width:40px;height:40px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+#header .nav-toggle svg{width:20px;height:20px}
+#header .nav-toggle.open{border-color:#c9ddd2;background:#eef5f0;color:var(--green)}
+@media(max-width:700px){
+#header{height:64px;min-height:64px;flex-wrap:nowrap;align-items:center;align-content:center;padding-inline:14px;column-gap:10px;row-gap:0}
+#header .nav-toggle{display:inline-flex}
+#header .nav{display:none}
+#header .nav.open{display:flex;position:absolute;top:100%;left:0;right:0;width:auto;height:auto;flex-direction:column;justify-content:flex-start;gap:0;padding:6px 0;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 18px 30px rgba(18,43,36,.11)}
+#header .nav.open a{min-height:48px;padding:0 18px;font-size:15px;border-bottom:1px solid #eff4f0}
+#header .nav.open a:last-child{border-bottom:0}
+#header .nav.open a.active{background:#f1f6f2;font-weight:600}
+#header .nav.open a.active:after{display:none}
+}
