@@ -2,7 +2,9 @@
 
 This harness is a fail-closed Playwright flow for one ordinary OTC, store-pickup order in an explicitly isolated local stack. It is scoped to tenant `901` and store `9101`; payment is mock-only. Customer and admin use separate browser contexts and perform real UI login. The harness does not use `storageState`, token login, or `data-testid` selectors. It is not a production payment or general-purpose acceptance runner.
 
-The implementation has not been run end to end against a browser or application stack, and no `PASS_OTC_UI` result has been produced. A successful static check is not a readiness result. The application-specific SQL reconciliation adapter and the independently reviewed isolated-stack manifest are not included here. Without both, precheck is blocked and the full flow cannot run; do not describe the stack as ready based on this repository alone.
+**Local execution record (2026-11-07, shared computer):** one isolated tenant `901` / store `9101` order produced `PASS_OTC_UI` for the five UI/SQL stages and same-order mock-payment/verification replay. It was order `4` / `WX-9101-20261107-0004`, amount 12.34 yuan, run ID `otc-timestamp-20261107T104745Z-883c5fed`. The evidence and SQL adapter remain outside this repository. The run used checkout `fix/otc-playwright-cli-exports` at `3a02c0ba5c43cfc20c12fa941977706b5a35a22c` with three local uncommitted harness changes; it does not prove that `main` alone or the committed PR #20 head passes. The adapter SHA-256 was `e8b52f1dc80ec1b8774a9c415cf8234faf054c35c633f41f3992e2a4720559cd`.
+
+This is one scoped mock-payment result, not real payment, production operation, general replay-safety proof, or full-system, consultation, or prescription acceptance. It is single-process local evidence, not a new independent review signature, and other machines or AI environments may not have the external files. The application-specific SQL adapter and isolated-stack manifest are not included here; without them, a new checkout cannot establish readiness or reproduce this result from the repository alone.
 
 ## Setup and commands
 
@@ -17,7 +19,7 @@ npm run oneclick -- --env-file /absolute/path/to/otc.env
 npm run lint
 ```
 
-`setup` accepts the CLI env-file option and installs the Playwright Chromium browser; it does not validate readiness. `readiness` checks the reviewed stack, endpoints, database account, fixture and login UI without running the order flow. `oneclick` repeats readiness and then runs the UI flow. `lint` checks JavaScript syntax. These commands have not been run against a real local stack in this change. On another machine paths and available loopback ports can differ; the current coder's test environment is this local machine, and its readiness has not been verified.
+`setup` accepts the CLI env-file option and installs the Playwright Chromium browser; it does not validate readiness. `readiness` checks the reviewed stack, endpoints, database account, fixture and login UI without running the order flow. `oneclick` repeats readiness and then runs the UI flow. `lint` checks JavaScript syntax. The dated result above is from the shared computer's existing local evidence, not a run performed by the PR #19 change itself. On another machine paths, available loopback ports, adapter and manifest differ; readiness must be established again there.
 
 For CLI commands, exit `0` means the requested command completed successfully (`oneclick` emits `PASS_OTC_UI` only after all required evidence is present); `1` means flow/assertion failure; `2` means configuration or precheck blocked; `3` means required evidence could not be created or verified. `setup` and `lint` have their own command outcomes and do not establish readiness.
 
