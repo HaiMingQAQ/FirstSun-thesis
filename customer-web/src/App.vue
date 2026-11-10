@@ -19,6 +19,7 @@ import AccountPage from './AccountPage.vue';
 import account from './account.js';
 import TradePages from './TradePages.vue';
 import ConsultationPage from './ConsultationPage.vue';
+import NotificationsPage from './NotificationsPage.vue';
 import PrescriptionPages from './PrescriptionPages.vue';
 import SearchSuggestions from './SearchSuggestions.vue';
 import trade from './trade.js';
@@ -65,6 +66,21 @@ let disposed=false,generation=0,controller,active,typingTimer,toastTimer,publicG
 const isTrade=computed(()=>['cart','checkout','orders','order-detail'].includes(route.value));
 const isPrescription=computed(()=>['prescriptions','rx-submit','rx-detail'].includes(route.value));
 const authName=computed(()=>user.value?.name||'会员');
+const noticeUnread=ref(0);
+let noticeRequest=0;
+async function refreshNoticeCount(){
+  const request=++noticeRequest, owner=identity();
+  if(!user.value){noticeUnread.value=0;return;}
+  try{
+    const count=await api.unreadNotifications();
+    if(!disposed&&request===noticeRequest&&sameIdentity(owner,identity())){
+      noticeUnread.value=Number.isSafeInteger(count)&&count>0?count:0;
+    }
+  }catch{
+    if(!disposed&&request===noticeRequest&&sameIdentity(owner,identity()))noticeUnread.value=0;
+  }
+}
+watch([()=>user.value?.userId,route],refreshNoticeCount);
 const currentOwner=()=>JSON.stringify(identity());
 const newId=()=>`consult_${Date.now()}_${crypto.randomUUID().slice(0,8)}`;
 function notify(t){toastText.value=t;clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastText.value='',3500);}
@@ -73,7 +89,7 @@ function notConnected(name){dialog.value=`${name}尚未接入。登录、找药�
 // 只在会员仍停在点击咨询时的地址上，登录成功才进入咨询；期间改去其他页面则保留那个页面。
 function openConsult(){if(authBusy.value)return;if(!user.value){pendingConsult.value=true;consultFrom=location.hash;loginOpen.value=true;return;}go('consult');}
 function stop(){generation++;historyLoading.value=false;controller?.abort();clearTimeout(typingTimer);typingTimer=null;if(active?.loading){active.loading=false;active.status='STOPPED';active.error='已停止接收回复；请求可能仍在处理，稍后可重载话题查看结果。';}busy.value=false;}
-function resetPrivate(){closeSuggestions();stop();trade.reset();cartReadGeneration++;cartWriteGeneration++;cartCount.value=0;cartQtyById.value={};adding.value=false;pendingConsult.value=false;consultFrom='';if(location.hash.startsWith('#ai?'))history.replaceState(null,'','#ai');messages.value=[];topics.value=[];topicId.value=null;topicStore.value=null;moreTurns.value=false;moreTopics.value=false;historyError.value='';historyLoading.value=false;input.value='';user.value=null;historyOpen.value=false;pendingDeleteId.value=null;clearPending.value=false;deleting.value=false;dialog.value='';}
+function resetPrivate(){closeSuggestions();stop();trade.reset();cartReadGeneration++;cartWriteGeneration++;cartCount.value=0;cartQtyById.value={};adding.value=false;pendingConsult.value=false;consultFrom='';if(location.hash.startsWith('#ai?'))history.replaceState(null,'','#ai');messages.value=[];topics.value=[];topicId.value=null;topicStore.value=null;moreTurns.value=false;moreTopics.value=false;historyError.value='';historyLoading.value=false;input.value='';user.value=null;noticeRequest++;noticeUnread.value=0;historyOpen.value=false;pendingDeleteId.value=null;clearPending.value=false;deleting.value=false;dialog.value='';}
 function authCleared(){resetPrivate();authReady.value=true;}
 function passwordChanged(){if(disposed)return;authScreen.value='login';authChannel.value='email';passwordNotice.value='密码已更新，请重新登录';loginOpen.value=true;}
 async function logout(){if(authBusy.value)return;authBusy.value=true;resetPrivate();try{await account.logout();}finally{authBusy.value=false;}notify('已退出登录');}
@@ -105,7 +121,7 @@ async function openLinkedTopic(id){
  await opening;
  if(route.value==='ai'&&g===generation&&owner===currentOwner()&&String(topicId.value)===id)loadTopics();
 }
-function parseRoute(){closeSuggestions();navOpen.value=false;if(pendingConsult.value&&location.hash!==consultFrom)pendingConsult.value=false;const [key,qs]=location.hash.slice(1).split('?'),params=new URLSearchParams(qs);const next=['home','ai','catalog','recommend','detail','cart','checkout','orders','order-detail','account','consult','prescriptions','rx-submit','rx-detail'].includes(key)?key:'home';if(route.value==='ai'&&next!=='ai')stop();route.value=next;routeOrderId.value=params.get('id')||'';routeQuery.value=qs||'';document.body.dataset.page=next;window.scrollTo(0,0);if(next==='catalog')loadCatalog();else if(next==='detail')loadDetail(params.get('id'));else if(next==='ai'&&user.value){if(params.get('topic')&&String(topicId.value)!==params.get('topic'))openLinkedTopic(params.get('topic'));else loadTopics();}}
+function parseRoute(){closeSuggestions();navOpen.value=false;if(pendingConsult.value&&location.hash!==consultFrom)pendingConsult.value=false;const [key,qs]=location.hash.slice(1).split('?'),params=new URLSearchParams(qs);const next=['home','ai','catalog','recommend','detail','cart','checkout','orders','order-detail','account','consult','notifications','prescriptions','rx-submit','rx-detail'].includes(key)?key:'home';if(route.value==='ai'&&next!=='ai')stop();route.value=next;routeOrderId.value=params.get('id')||'';routeQuery.value=qs||'';document.body.dataset.page=next;window.scrollTo(0,0);if(next==='catalog')loadCatalog();else if(next==='detail')loadDetail(params.get('id'));else if(next==='ai'&&user.value){if(params.get('topic')&&String(topicId.value)!==params.get('topic'))openLinkedTopic(params.get('topic'));else loadTopics();}}
 async function addToCart(p){if(!user.value){loginOpen.value=true;return;}if(adding.value||disposed)return;const owner=identity(),storeId=api.store.id,write=++cartWriteGeneration;const current=()=>!disposed&&write===cartWriteGeneration&&!!user.value&&sameIdentity(owner,identity())&&storeId===api.store.id;adding.value=true;cartReadGeneration++;try{if(!storeId)throw Error('请先读取门店商品');await trade.add(storeId,p,1);if(current()){notify('已加入当前门店购物车');await refreshCart();}}catch(e){if(current())dialog.value=e.message;}finally{if(!disposed&&write===cartWriteGeneration)adding.value=false;}}
 let backdropStarted=false,backdropEnded=false,backdropPointer;
 function closeDialog(){backdropStarted=false;backdropEnded=false;loginOpen.value=false;pendingConsult.value=false;consultFrom='';dialog.value='';authScreen.value='login';authChannel.value='email';passwordNotice.value='';}
@@ -126,8 +142,8 @@ onMounted(async()=>{
 onUnmounted(()=>{disposed=true;stop();clearTimeout(toastTimer);window.removeEventListener('hashchange',parseRoute);window.removeEventListener('firstsun-auth-clear',authCleared);window.removeEventListener('firstsun-password-changed',passwordChanged);window.removeEventListener('firstsun-stock-error',stockFailed);navDoc?.removeEventListener('pointerdown',navOutside);navDoc?.removeEventListener('keydown',navEscape);wideQuery?.removeEventListener?.('change',navResized);});
 </script>
 <template>
-<header id="header" :class="{'home-header':route==='home'}"><button type="button" class="nav-toggle" :class="{open:navOpen}" :aria-expanded="navOpen?'true':'false'" aria-controls="global-nav" :aria-label="navOpen?'收起导航菜单':'展开导航菜单'" @click="toggleNav"><Icon :name="navOpen?'x':'menu'"/></button><a class="brand" href="#home" aria-label="FirstSun 网上药房首页"><span class="wordmark">FirstSun<span class="brand-dot">.</span></span><span class="brand-sub">网上药房</span></a><nav id="global-nav" class="nav" :class="{open:navOpen}" aria-label="全局导航" @click="navOpen=false"><a href="#home" :class="{active:route==='home'}" :aria-current="route==='home'?'page':null">首页</a><a href="#catalog" :class="{active:route==='catalog'||route==='detail'}">找药购药</a><a href="#recommend" :class="{active:route==='recommend'}" :aria-current="route==='recommend'?'page':null" aria-label="商品推荐">推荐</a><a href="#ai" class="ai-nav" :class="{active:route==='ai'}"><Icon name="sparkles"/>AI 助手<span class="nav-ai-label">AI</span></a><a href="#prescriptions" :class="{active:isPrescription}">我的处方</a><a href="#orders" :class="{active:route==='orders'||route==='order-detail'}">我的订单</a></nav><div class="header-tools"><button type="button" class="prototype local-auth-entry" v-if="localTestLogin" :disabled="authBusy||!!user" aria-label="打开本机手机号验收" @click="openLocalLogin">独立本机验收</button><button class="tool" aria-label="消息中心" @click="notConnected('消息中心')"><Icon name="bell"/></button><button class="tool cart-tool" aria-label="购物车" @click="go('cart')"><Icon name="shopping-bag"/><span class="label">购物车</span><span v-if="cartCount>0" class="cart-count">{{cartCount}}</span></button><button v-if="!user" class="tool auth-entry" aria-label="登录" :disabled="authBusy" @click="loginOpen=true"><Icon name="circle-user-round"/><span>登录</span></button><button v-else class="tool auth-entry" @click="go('account')" aria-label="个人中心"><MemberAvatar :src="user.avatar" alt=""/><span>{{authName}}</span></button></div></header>
-<AccountPage v-if="route==='account'" :key="user?.userId||'guest'" :user="user" @profile="user=$event" @logout="logout" @login="loginOpen=true"/><TradePages v-else-if="isTrade" :key="route+':'+routeOrderId+':'+(user?.userId||'guest')" :route="route" :order-id="routeOrderId" :user="user" @login="loginOpen=true" @notice="notify" @cart-read="syncCartRows" @cart-changed="refreshCart"/><ConsultationPage v-else-if="route==='consult'" :key="'consult:'+(user?.userId||'guest')" :user="user" @login="loginOpen=true"/><PrescriptionPages v-else-if="isPrescription" :key="route+':'+routeQuery+':'+(user?.userId||'guest')" :route="route" :query="routeQuery" :user="user" @login="loginOpen=true" @notice="notify"/><main v-else-if="route==='home'" class="shop-page shop-home">
+<header id="header" :class="{'home-header':route==='home'}"><button type="button" class="nav-toggle" :class="{open:navOpen}" :aria-expanded="navOpen?'true':'false'" aria-controls="global-nav" :aria-label="navOpen?'收起导航菜单':'展开导航菜单'" @click="toggleNav"><Icon :name="navOpen?'x':'menu'"/></button><a class="brand" href="#home" aria-label="FirstSun 网上药房首页"><span class="wordmark">FirstSun<span class="brand-dot">.</span></span><span class="brand-sub">网上药房</span></a><nav id="global-nav" class="nav" :class="{open:navOpen}" aria-label="全局导航" @click="navOpen=false"><a href="#home" :class="{active:route==='home'}" :aria-current="route==='home'?'page':null">首页</a><a href="#catalog" :class="{active:route==='catalog'||route==='detail'}">找药购药</a><a href="#recommend" :class="{active:route==='recommend'}" :aria-current="route==='recommend'?'page':null" aria-label="商品推荐">推荐</a><a href="#ai" class="ai-nav" :class="{active:route==='ai'}"><Icon name="sparkles"/>AI 助手<span class="nav-ai-label">AI</span></a><a href="#prescriptions" :class="{active:isPrescription}">我的处方</a><a href="#orders" :class="{active:route==='orders'||route==='order-detail'}">我的订单</a><a href="#consult" class="consult-nav" :class="{active:route==='consult'}" :aria-current="route==='consult'?'page':null"><Icon name="headset"/>药师 / 客服</a></nav><div class="header-tools"><button type="button" class="prototype local-auth-entry" v-if="localTestLogin" :disabled="authBusy||!!user" aria-label="打开本机手机号验收" @click="openLocalLogin">独立本机验收</button><a href="#notifications" class="tool notice-tool" :aria-label="user&&noticeUnread?'消息通知，'+noticeUnread+' 条未读':'消息通知'" :aria-current="route==='notifications'?'page':null" title="消息通知"><Icon name="bell"/><span v-if="user&&noticeUnread" class="notice-badge" aria-hidden="true">{{noticeUnread>99?'99+':noticeUnread}}</span></a><button class="tool cart-tool" aria-label="购物车" @click="go('cart')"><Icon name="shopping-bag"/><span class="label">购物车</span><span v-if="cartCount>0" class="cart-count">{{cartCount}}</span></button><button v-if="!user" class="tool auth-entry" aria-label="登录" :disabled="authBusy" @click="loginOpen=true"><Icon name="circle-user-round"/><span>登录</span></button><button v-else class="tool auth-entry" @click="go('account')" aria-label="个人中心"><MemberAvatar :src="user.avatar" alt=""/><span>{{authName}}</span></button></div></header>
+<AccountPage v-if="route==='account'" :key="user?.userId||'guest'" :user="user" @profile="user=$event" @logout="logout" @login="loginOpen=true"/><TradePages v-else-if="isTrade" :key="route+':'+routeOrderId+':'+(user?.userId||'guest')" :route="route" :order-id="routeOrderId" :user="user" @login="loginOpen=true" @notice="notify" @cart-read="syncCartRows" @cart-changed="refreshCart"/><ConsultationPage v-else-if="route==='consult'" :key="'consult:'+(user?.userId||'guest')" :user="user" @login="loginOpen=true"/><NotificationsPage v-else-if="route==='notifications'" :key="'notifications:'+(user?.userId||'guest')" :user="user" @login="loginOpen=true" @read="refreshNoticeCount"/><PrescriptionPages v-else-if="isPrescription" :key="route+':'+routeQuery+':'+(user?.userId||'guest')" :route="route" :query="routeQuery" :user="user" @login="loginOpen=true" @notice="notify"/><main v-else-if="route==='home'" class="shop-page shop-home">
  <HomeHero/>
  <Recommendations featured/>
  <section id="home-guide" class="home-guide" tabindex="-1" aria-labelledby="home-guide-title">
@@ -264,6 +280,10 @@ onUnmounted(()=>{disposed=true;stop();clearTimeout(toastTimer);window.removeEven
 
 <style scoped>
 .local-auth-entry{background:transparent}
+#header .consult-nav svg{width:17px;height:17px;color:var(--green)}
+.notice-tool{position:relative}
+.notice-tool[aria-current="page"]{color:var(--green);background:#edf5ef}
+.notice-badge{position:absolute;top:1px;right:0;min-width:16px;padding:1px 3px;border-radius:12px;background:var(--green);color:#fff;font-size:10px;line-height:14px;text-align:center}
 :global(body:is([data-page=home],[data-page=recommend])){background:#fafbf8}
 #header.home-header{position:sticky;top:0;z-index:20;height:90px;padding-inline:max(48px,calc((100% - 1280px)/2));background:#fafbf8;border-bottom-color:#e4eae4}
 .shop-page.shop-home{width:min(1280px,calc(100% - 96px));max-width:none;padding:28px 0 0}
@@ -282,6 +302,7 @@ onUnmounted(()=>{disposed=true;stop();clearTimeout(toastTimer);window.removeEven
  #header{gap:16px;padding-inline:20px}
  #header .nav{gap:12px}
  #header .nav a{font-size:13px;gap:5px}
+ #header .consult-nav svg{display:none}
  #header .header-tools{gap:8px}
  #header :is(.nav-ai-label,.cart-tool .label,.auth-entry>span){display:none}
 }
@@ -293,6 +314,10 @@ onUnmounted(()=>{disposed=true;stop();clearTimeout(toastTimer);window.removeEven
  .home-guide button{margin-left:56px;padding:0}
 }
 @media(max-width:700px){#header.home-header{height:64px;padding-inline:14px}}
-@media(max-width:360px){#header .nav a{font-size:12px;gap:4px}}
+@media(max-width:360px){
+ #header{column-gap:6px}
+ #header .header-tools{gap:6px}
+ #header .nav a{font-size:12px;gap:4px}
+}
 </style>
 <style scoped src="./ai-workspace.css"></style>

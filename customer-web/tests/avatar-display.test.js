@@ -20,7 +20,7 @@ test('personal center renders a stored legacy avatar through the current local f
  const html=await renderToString(Vue.createSSRApp({components:{MemberAvatar:await memberAvatar(),Icon:empty,EmailFirstPassword:empty,PasswordGate:empty},setup:()=>state,render:renderer(descriptor.template.content)}));assert(html.includes('src="'+current+'"'));assert(!html.includes('src="'+old+'"'));assert.match(html,/width:76px;height:76px/);assert.match(html,/alt="会员头像"/);
 });
 test('the signed-in header renders the same corrected avatar',async()=>{
- const text=source('App.vue'),start=text.indexOf('<div class="header-tools">'),end=text.indexOf('</div></header>',start),state={user:{avatar:old},authName:'member',localTestLogin:false,authBusy:false,openLocalLogin(){},notConnected(){},go(){},loginOpen:false};
+ const text=source('App.vue'),start=text.indexOf('<div class="header-tools">'),end=text.indexOf('</div></header>',start),state={user:{avatar:old},authName:'member',localTestLogin:false,authBusy:false,noticeUnread:0,route:'home',openLocalLogin(){},go(){},loginOpen:false};
  const html=await renderToString(Vue.createSSRApp({components:{MemberAvatar:await memberAvatar(),Icon:empty},setup:()=>state,render:renderer(text.slice(start,end+6))}));assert(html.includes('src="'+current+'"'));assert(!html.includes('src="'+old+'"'));assert.match(html,/width:28px;height:28px/);assert.match(html,/\salt(?:=""|(?=>|\s))/);
 });
 test('load errors show a default avatar and A to B to A retries instead of retaining the failure',async()=>{

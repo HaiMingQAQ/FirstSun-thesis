@@ -192,7 +192,7 @@ test('consult and prescription stay on separate routes and do not mark each othe
  assert(app.includes('openConsult'));
  assert(!app.includes("notConnected('药师 / 客服咨询')"));
  assert(!app.includes("notConnected('处方申请')"));
- assert(app.includes("notConnected('消息中心')"));
+ assert(app.includes('href="#consult" class="consult-nav"'));
  assert(source('ConsultationPage.vue').includes('href="#rx-submit"'));
  assert(source('PrescriptionPages.vue').includes('href="#consult"'));
 });
@@ -211,7 +211,7 @@ test('consultation text is escaped and empty, error and unattended states are ex
  const failed=await renderConsult({user:{userId:1},error:'会话列表加载失败',failed:null,conversation:null,loading:false,busy:false,conversations:[],total:0,currentStore:{id:407,name:'演示门店'},storeAttribution,emit(){}});
  assert.match(failed,/会话列表加载失败/);
  const thread=await renderConsult({user:{userId:1},error:'',failed:{content:'未确认的原文',clientRequestId:'web_123_abcd'},conversation:{id:4,kind:'SERVICE',storeId:88,attended:false},loading:false,busy:false,polling:false,messages:[{id:1,senderType:'STAFF',senderName:'客服',content:'<img src=x onerror=alert(1)>'}],hasOlder:true,input:'',currentStore:{id:407,name:'演示门店'},storeAttribution,kindLabel,formatDate:()=>'2026-10-30 09:00'});
- assert.match(thread,/暂无人员接待/);
+ assert.match(thread,/等待接待/);
  assert.match(thread,/其他门店/);
  assert.match(thread,/未确认的原文/);
  assert.match(thread,/&lt;img src=x onerror=alert\(1\)&gt;/);

@@ -73,5 +73,5 @@ test('personal center accepts an email-only member and saves contact separately 
 test('production email forms and email first-password contain no local or SMS instructions',()=>{
  for(const file of ['EmailLogin.vue','EmailRegister.vue','EmailFirstPassword.vue']){const source=fs.readFileSync(new URL('../src/'+file,import.meta.url),'utf8');for(const text of ['localTestLogin','本机验收','运行说明','X-Sms-Code','手机号收'])assert(!source.includes(text),file+': '+text);}
  const app=fs.readFileSync(new URL('../src/App.vue',import.meta.url),'utf8');assert(app.includes("authChannel=ref('email')"));assert(app.includes("import EmailLogin from './EmailLogin.vue'"));assert(app.includes("import EmailRegister from './EmailRegister.vue'"));
- const page=fs.readFileSync(new URL('../src/AccountPage.vue',import.meta.url),'utf8');assert(page.includes('profile.loginEmail}}（已验证）'));assert(!page.includes('v-model="loginEmail"'));assert(page.includes('!profile.passwordSet&&profile.loginEmail'));
+ const page=fs.readFileSync(new URL('../src/AccountPage.vue',import.meta.url),'utf8');assert.match(page,/<span v-if="profile\.loginEmail"[^>]*>已验证<\/span>/);assert(!page.includes('v-model="loginEmail"'));assert(page.includes('!profile.passwordSet&&profile.loginEmail'));
 });
