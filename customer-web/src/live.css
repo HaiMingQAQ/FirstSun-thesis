@@ -143,3 +143,17 @@
 #header .nav.open a.active{background:#f1f6f2;font-weight:600}
 #header .nav.open a.active:after{display:none}
 }
+
+/* 对话历史：单条删除 / 清空全部（顾客端 AI 侧栏） */
+.history-row{position:relative}
+.history-row .history-item{width:100%;padding-right:34px}
+.history-row .topic-del{position:absolute;right:4px;top:8px;width:26px;height:26px;padding:5px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--muted);opacity:0;transition:opacity .16s,color .16s,background .16s}
+.history-row .topic-del svg{width:15px;height:15px}
+.history-row:hover .topic-del,.history-row:focus-within .topic-del,.history-row.active .topic-del{opacity:1}
+.history-row .topic-del:hover:not(:disabled){color:var(--warm);background:var(--warm-bg)}
+.history-confirm{background:var(--warm-bg);border:1px solid #e7d2c1;border-radius:6px;padding:11px 12px;margin-bottom:5px;font-size:12px;line-height:1.7;color:var(--warm)}
+.history-confirm .confirm-actions{display:flex;align-items:center;gap:10px;margin-top:4px}
+.history-confirm .btn.link{min-height:26px;padding:2px 0;font-size:12px}
+.history-confirm .btn.link.danger{color:var(--warm);font-weight:600}
+@media(hover:none){.history-row .topic-del{opacity:1}}
+@media(max-width:700px){.history-row .topic-del{top:10px}.history-row .history-item{padding-right:36px}}
