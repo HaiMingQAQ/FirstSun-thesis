@@ -8,7 +8,7 @@ import {
   filterClosedAiMenus
 } from './ai-scope.ts'
 
-test('绘画、音乐、写作、思维导图、知识库和工作流被收口，模型和药店 AI 保留', () => {
+test('官方 AI 模块入口被收口，仅 API 密钥/模型配置/药店 AI 保留', () => {
   const closed = CLOSED_AI_ENTRIES.map((entry) => entry.component)
   assert.ok(closed.includes('ai/image/index/index.vue'))
   assert.ok(closed.includes('ai/music/index/index.vue'))
@@ -16,19 +16,27 @@ test('绘画、音乐、写作、思维导图、知识库和工作流被收口�
   assert.ok(closed.includes('ai/mindmap/index/index.vue'))
   assert.ok(closed.includes('ai/knowledge/knowledge/index'))
   assert.ok(closed.includes('ai/workflow/index.vue'))
+  assert.ok(closed.includes('ai/chat/index/index.vue'))
+  assert.ok(closed.includes('ai/model/chatRole/index.vue'))
+  assert.ok(closed.includes('ai/chat/manager/index.vue'))
+  assert.ok(closed.includes('ai/model/tool/index.vue'))
   assert.equal(isClosedAiComponent('ai/model/model/index.vue'), false)
+  assert.equal(isClosedAiComponent('ai/model/apiKey/index.vue'), false)
   assert.equal(isClosedAiComponent('pharmacy/ai/index'), false)
-  assert.ok(KEPT_AI_ENTRIES.some((entry) => entry.name === '模型配置'))
-  assert.ok(KEPT_AI_ENTRIES.some((entry) => entry.name === '药店 AI'))
-  assert.equal(KEPT_AI_ENTRIES.some((entry) => entry.name === 'AI 知识库'), false)
-  assert.equal(KEPT_AI_ENTRIES.some((entry) => entry.name === 'AI 工作流'), false)
+  assert.deepEqual(
+    KEPT_AI_ENTRIES.map((entry) => entry.name).sort(),
+    ['API 密钥', '模型配置', '药店 AI']
+  )
 })
 
 test('停用菜单通过 component 或 id 都能识别', () => {
   assert.equal(isClosedAiMenu({ component: 'ai/image/index/index.vue' }), true)
   assert.equal(isClosedAiMenu({ id: 816 }), true)
+  assert.equal(isClosedAiMenu({ id: 792 }), true)
+  assert.equal(isClosedAiMenu({ id: 806 }), true)
+  assert.equal(isClosedAiMenu({ id: 811 }), true)
+  assert.equal(isClosedAiMenu({ id: 855 }), true)
   assert.equal(isClosedAiMenu({ component: 'ai/model/model/index.vue' }), false)
-  assert.equal(isClosedAiMenu({ id: 792 }), false)
   assert.equal(isClosedAiMenu(undefined as any), false)
 })
 

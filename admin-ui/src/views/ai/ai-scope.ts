@@ -20,16 +20,18 @@ export const CLOSED_AI_ENTRIES: AiEntry[] = [
   { id: 831, name: 'AI 思维导图', path: '/ai/mind-map', component: 'ai/mindmap/index/index.vue' },
   { id: 832, name: '导图管理', path: '/ai/mind-map', component: 'ai/mindmap/manager/index.vue' },
   { id: 850, name: 'AI 知识库', path: '/ai/knowledge', component: 'ai/knowledge/knowledge/index' },
-  { id: 911, name: 'AI 工作流', path: '/ai/workflow', component: 'ai/workflow/index.vue' }
-]
-
-export const KEPT_AI_ENTRIES: AiEntry[] = [
+  { id: 911, name: 'AI 工作流', path: '/ai/workflow', component: 'ai/workflow/index.vue' },
   { id: 792, name: 'AI 对话', path: '/ai/chat', component: 'ai/chat/index/index.vue' },
-  { id: 794, name: 'API 密钥', path: '/ai/api-key', component: 'ai/model/apiKey/index.vue' },
-  { id: 800, name: '模型配置', path: '/ai/model', component: 'ai/model/model/index.vue' },
   { id: 806, name: '聊天角色', path: '/ai/chat-role', component: 'ai/model/chatRole/index.vue' },
   { id: 811, name: '聊天管理', path: '/ai/chat-conversation', component: 'ai/chat/manager/index.vue' },
-  { id: 855, name: '工具管理', path: '/ai/tool', component: 'ai/model/tool/index.vue' },
+  { id: 855, name: '工具管理', path: '/ai/tool', component: 'ai/model/tool/index.vue' }
+]
+
+// 仍保留：仅「API 密钥」「模型配置」（ai_api_key/ai_model 表，做 RAG 时已 seed，模型客户端在读）
+// 与「药店 AI」（pharmacy/ai/index，本项目自建）有真实用途。
+export const KEPT_AI_ENTRIES: AiEntry[] = [
+  { id: 794, name: 'API 密钥', path: '/ai/api-key', component: 'ai/model/apiKey/index.vue' },
+  { id: 800, name: '模型配置', path: '/ai/model', component: 'ai/model/model/index.vue' },
   { name: '药店 AI', path: '/pharmacy/ai', component: 'pharmacy/ai/index' }
 ]
 
