@@ -82,6 +82,23 @@ FirstSun 在药店课程项目基础上，整合**电脑顾客端**（`customer-
 | **员工管理（姓名等列已模糊）** | **药店 AI 助手** |
 | <img src="docs/images/readme/admin-05-staff.png" width="420" alt="员工管理"> | <img src="docs/images/readme/admin-06-ai-assistant.png" width="420" alt="药店 AI 助手"> |
 
+### uni-app 顾客端（H5）
+
+以下截图同样来自**本地演示环境**：`mall-uniapp` 的 H5 开发服务器（`npm run dev:h5`）连接本机后端、租户 901，用 headless Playwright 以手机视口（390×844，2 倍像素）采集。H5 普通模式只提供微信小程序登录入口，所以截图都是**未登录状态**。这些截图不代表微信原生运行或真机已经验证，两者**均未验收**。
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/readme/mobile-01-home.png" width="220" alt="H5 首页"><br>首页</td>
+    <td align="center"><img src="docs/images/readme/mobile-02-category.png" width="220" alt="H5 药品分类"><br>药品分类</td>
+    <td align="center"><img src="docs/images/readme/mobile-03-drug-detail.png" width="220" alt="H5 药品详情"><br>药品详情</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/readme/mobile-04-cart.png" width="220" alt="H5 购物车（未登录）"><br>购物车（未登录）</td>
+    <td align="center"><img src="docs/images/readme/mobile-06-my.png" width="220" alt="H5 会员中心（未登录）"><br>会员中心（未登录）</td>
+    <td align="center"><img src="docs/images/readme/mobile-07-login.png" width="220" alt="H5 登录页"><br>登录页（仅微信小程序登录）</td>
+  </tr>
+</table>
+
 此前的截图仍保留在 `docs/images/`：2026-10-02 的 uni-app H5 截图和更早的管理端采购页，作为历史记录。
 
 ## 顾客与管理端流程
