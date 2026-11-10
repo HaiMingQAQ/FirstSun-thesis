@@ -4,6 +4,7 @@ import { cloneDeep } from 'lodash-es'
 import remainingRouter from '@/router/modules/remaining'
 import { flatMultiLevelRoutes, generateRoute } from '@/utils/routerHelper'
 import { CACHE_KEY, useCache } from '@/hooks/web/useCache'
+import { filterClosedAiMenus } from '@/views/ai/ai-scope'
 
 const { wsCache } = useCache()
 
@@ -44,6 +45,8 @@ export const usePermissionStore = defineStore('permission', {
         if (roleRouters) {
           res = roleRouters as AppCustomRouteRecordRaw[]
         }
+        // 隐藏已停用的 AI 菜单（绘画/音乐/写作/思维导图等页面已停用，前端统一不再展示菜单项）
+        res = filterClosedAiMenus(res)
         const routerMap: AppRouteRecordRaw[] = generateRoute(res)
         // 动态路由，404一定要放到最后面
         // preschooler：vue-router@4以后已支持静态404路由，此处可不再追加

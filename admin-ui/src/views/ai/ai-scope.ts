@@ -30,6 +30,40 @@ export const KEPT_AI_ENTRIES: AiEntry[] = [
   { name: '药店 AI', path: '/pharmacy/ai', component: 'pharmacy/ai/index' }
 ]
 
+// 归一化组件路径：兼容数据库里 component 有无 .vue 后缀（如 ai/mindmap/manager/index 与
+// ai/mindmap/manager/index.vue 应视为同一入口）。
+function normalizeComponent(component?: string): string {
+  return (component || '').replace(/\.vue$/, '')
+}
+
 export function isClosedAiComponent(component: string) {
-  return CLOSED_AI_ENTRIES.some((entry) => entry.component === component)
+  const target = normalizeComponent(component)
+  return CLOSED_AI_ENTRIES.some((entry) => normalizeComponent(entry.component) === target)
+}
+
+// 判断某个后端菜单节点是否属于「已停用」的 AI 入口。
+// 后端菜单树节点字段是 component（如 ai/image/index/index.vue）、id（菜单 id）。
+export function isClosedAiMenu(node: { component?: string; id?: number | string }): boolean {
+  if (!node) {
+    return false
+  }
+  if (node.component && isClosedAiComponent(node.component)) {
+    return true
+  }
+  if (node.id != null && CLOSED_AI_ENTRIES.some((entry) => entry.id != null && entry.id === Number(node.id))) {
+    return true
+  }
+  return false
+}
+
+// 递归过滤掉已停用的 AI 菜单节点（菜单栏 / 路由 / 面包屑统一不再出现）。
+export function filterClosedAiMenus<T extends { component?: string; id?: number | string; children?: T[] }>(
+  nodes: T[]
+): T[] {
+  return nodes
+    .filter((node) => !isClosedAiMenu(node))
+    .map((node) => ({
+      ...node,
+      children: node.children?.length ? filterClosedAiMenus(node.children) : node.children
+    }))
 }
