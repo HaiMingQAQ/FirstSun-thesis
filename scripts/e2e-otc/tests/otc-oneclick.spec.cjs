@@ -171,7 +171,11 @@ test('one ordinary OTC pickup order crosses customer/admin UI and same-order ide
     flow = { result: 'FLOW_PASS_RECONCILED', orderId, orderNo, payableAmountYuan: formattedYuan(order.payableAmount), stages }
   } catch (error) {
     failed = error
-    flow = { result: error.code === 'EVIDENCE_ERROR' ? 'EVIDENCE_ERROR' : 'FAIL', orderId: orderId || null, orderNo: orderNo || null, stages, error: 'OTC assertion failed; inspect last confirmed checkpoint in restricted evidence' }
+    const safeCause = safeError(error)
+    flow = { result: error.code === 'EVIDENCE_ERROR' ? 'EVIDENCE_ERROR' : 'FAIL', orderId: orderId || null, orderNo: orderNo || null, stages,
+      lastConfirmedCheckpoint: stages.at(-1)?.name || 'no-business-checkpoint-confirmed',
+      failure: { cause: safeCause, stack: safeError(error.stack) },
+      error: 'OTC assertion failed; inspect last confirmed checkpoint in restricted evidence' }
     throw new Error('OTC flow stopped; subsequent business writes were not executed')
   } finally {
     try { writeJson(path.join(runDir, 'flow.json'), flow) } catch (error) { if (!failed) throw error }

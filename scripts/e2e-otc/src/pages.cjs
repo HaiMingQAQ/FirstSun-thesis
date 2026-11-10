@@ -95,8 +95,11 @@ class AdminPage {
     await this.page.goto(new URL('/login', `${this.config.adminUrl}/`).href, { waitUntil: 'domcontentloaded' })
     const form = this.page.locator('form.login-form')
     await expect(form).toBeVisible()
-    const remember = form.getByRole('checkbox', { name: /记住|Remember/ })
-    if (await remember.count() && await remember.isChecked()) await remember.uncheck()
+    const remember = this.page.locator('form.login-form .el-checkbox')
+    if (await remember.count() && await remember.getByRole('checkbox').isChecked()) {
+      await remember.click()
+      await expect(remember.getByRole('checkbox')).not.toBeChecked()
+    }
     await form.locator('input').nth(0).fill(this.config.adminUsername)
     await form.locator('input[type="password"]').fill(this.config.adminPassword)
     const tenantLookup = this.page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/admin-api/system/tenant/get-id-by-name'), { timeout: 10_000 }).catch(() => null)

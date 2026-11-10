@@ -1,18 +1,25 @@
 function captureSession(page, apiPrefix, origin) {
   const session = { headers: null }
-  page.on('request', request => {
-    if (new URL(request.url()).origin !== origin || !new URL(request.url()).pathname.startsWith(apiPrefix)) return
-    const source = request.headers()
-    const headers = {}
-    for (const key of ['authorization', 'cookie', 'tenant-id', 'tenantid', 'accept-language']) {
-      if (source[key]) headers[key] = source[key]
+  page.on('request', async request => {
+    try {
+      if (new URL(request.url()).origin !== origin || !new URL(request.url()).pathname.startsWith(apiPrefix)) return
+      // Browser folded/extra headers (notably Authorization) need allHeaders().
+      const source = await request.allHeaders()
+      const headers = {}
+      for (const key of ['authorization', 'cookie', 'tenant-id', 'tenantid', 'accept-language']) {
+        if (source[key]) headers[key] = source[key]
+      }
+      if (headers.authorization || headers.cookie) session.headers = headers
+    } catch {
+      if (page.isClosed()) return
+      session.captureError = 'Browser request authentication headers could not be observed'
     }
-    if (headers.authorization || headers.cookie) session.headers = headers
   })
   return session
 }
 
 async function apiCall(config, session, method, endpoint, body) {
+  if (session?.captureError) throw new Error(session.captureError)
   if (!session?.headers || (!session.headers.authorization && !session.headers.cookie)) throw new Error('Authenticated UI session was not observed')
   const url = new URL(endpoint, `${config.apiUrl}/`)
   if (url.origin !== config.apiUrl || !['GET', 'POST', 'PUT'].includes(method)) throw new Error('API target is outside the approved isolated endpoint')
