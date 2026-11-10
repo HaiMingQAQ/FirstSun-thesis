@@ -127,9 +127,17 @@
 
 .ai-workspace .composer-wrap { flex: none; padding: 12px 24px 14px; border-top: 1px solid var(--ai-border); background: #fff; }
 .ai-workspace .composer { padding: 10px 12px; border-color: #bfd3c5; border-radius: 10px; box-shadow: none; }
-.ai-workspace .composer:focus-within { border-color: var(--ai-green); box-shadow: 0 0 0 2px #176b5b18; }
-.ai-workspace .composer label { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600; }
-.ai-workspace .composer textarea { height: 44px; min-height: 36px; color: var(--ai-ink); }
+.ai-workspace .composer label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+.ai-workspace .composer textarea {
+  height: 56px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ai-surface);
+  color: var(--ai-ink);
+  line-height: 1.5;
+}
+.ai-workspace .composer textarea:focus { outline: 2px solid var(--ai-green); outline-offset: 0; }
+.ai-workspace .composer-tools { margin-top: 8px; }
 .ai-workspace .composer-tools > span, .ai-workspace .composer-note { color: var(--ai-muted); font-size: 11px; }
 .ai-workspace .composer-tools .send { min-height: 40px; min-width: 84px; white-space: nowrap; }
 
