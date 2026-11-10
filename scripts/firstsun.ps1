@@ -3,6 +3,9 @@
     [string]$EnvironmentRoot = ''
 )
 $ErrorActionPreference = 'Stop'
+# docker 的 JSON 输出含 UTF-8 多字节字符（容器 Command 字段被截断成“…”）；
+# Windows PowerShell 5.1 默认按 ANSI 解码，会把多字节字符里的引号切坏，导致 JSON 解析失败
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 . (Join-Path $PSScriptRoot 'firstsun-checks.ps1')
 $repo = Split-Path $PSScriptRoot -Parent
 $root = if ($EnvironmentRoot) { [IO.Path]::GetFullPath($EnvironmentRoot) } else { $repo }
@@ -10,8 +13,8 @@ $envFile = Join-Path $root '.env'
 $composeFile = Join-Path $repo 'deploy/docker-compose.local.yml'
 $localDir = Join-Path $root '.local'
 $recordFile = Join-Path $localDir 'firstsun-build.json'
-$services = @('mysql','redis','backend','admin-ui','customer-web')
-$imageTags = [ordered]@{ mysql='mysql:8.0'; redis='redis:7-alpine'; backend='firstsun-backend:local'; 'admin-ui'='firstsun-admin-ui:local'; 'customer-web'='firstsun-customer-web:local' }
+$services = @('mysql','redis','qdrant','embedding','backend','admin-ui','customer-web')
+$imageTags = [ordered]@{ mysql='mysql:8.0'; redis='redis:7-alpine'; qdrant='qdrant/qdrant:v1.12.1'; embedding='firstsun-embedding:local'; backend='firstsun-backend:local'; 'admin-ui'='firstsun-admin-ui:local'; 'customer-web'='firstsun-customer-web:local' }
 $volumeDefaults = [ordered]@{ FIRSTSUN_MYSQL_VOLUME='firstsun-thesis-local_mysql-data'; FIRSTSUN_REDIS_VOLUME='firstsun-thesis-local_redis-data'; FIRSTSUN_LOGS_VOLUME='firstsun-thesis-local_backend-logs' }
 
 function Invoke-DockerData([string[]]$arguments) {
@@ -40,12 +43,31 @@ function Get-ComposeRows {
     $text = ($raw -join "`n").Trim()
     if (-not $text) { return @() }
     $rows = @()
-    try { $rows = @($text | ConvertFrom-Json) }
-    catch {
-        foreach ($line in $raw) {
-            if (-not [string]::IsNullOrWhiteSpace([string]$line)) {
-                try { $rows += @($line | ConvertFrom-Json) }
+    # 镜像 label 里可能带换行（例如基础镜像的 description），按行解析会被截断，
+    # 这里按花括号配对逐个切出完整的 JSON 对象，字符串内部的括号不算层级。
+    $depth = 0
+    $start = -1
+    $inString = $false
+    $escape = $false
+    for ($i = 0; $i -lt $text.Length; $i++) {
+        $c = $text[$i]
+        if ($inString) {
+            if ($escape) { $escape = $false }
+            elseif ($c -eq '\') { $escape = $true }
+            elseif ($c -eq '"') { $inString = $false }
+            continue
+        }
+        if ($c -eq '"') { $inString = $true; continue }
+        if ($c -eq '{') {
+            if ($depth -eq 0) { $start = $i }
+            $depth++
+        } elseif ($c -eq '}') {
+            $depth--
+            if ($depth -eq 0 -and $start -ge 0) {
+                $chunk = $text.Substring($start, $i - $start + 1)
+                try { $rows += @($chunk | ConvertFrom-Json) }
                 catch { throw 'COMPOSE_STATUS_FAILED' }
+                $start = -1
             }
         }
     }
@@ -158,8 +180,8 @@ function Invoke-Main {
         }
         $stage = "执行 $Action"
         $actionText = switch ($Action) {
-            'start' { '启动五项服务并等待健康（最多 300 秒）' }
-            'rebuild' { '构建并启动五项服务，等待健康（最多 300 秒）' }
+            'start' { '启动七项服务并等待健康（最多 300 秒）' }
+            'rebuild' { '构建并启动七项服务，等待健康（最多 300 秒）' }
             'create' { '创建现有项目容器' }
             'stop' { '停止现有项目服务并保留数据' }
             'status' { '读取现有项目状态' }
@@ -176,10 +198,12 @@ function Invoke-Main {
                     & node './node_modules/vite/bin/vite.js' build *> $null
                     if ($LASTEXITCODE -ne 0) { throw 'CUSTOMER_BUILD_FAILED' }
                 } finally { Pop-Location }
-                Invoke-ComposeQuiet @('build','backend','admin-ui','customer-web')
+                # 向量库镜像是官方镜像，本地缺就先拉取；向量化服务是本仓库构建的
+                if (-not (Get-ImageIds).ContainsKey('qdrant')) { Invoke-ComposeQuiet @('pull','qdrant') }
+                Invoke-ComposeQuiet @('build','embedding','backend','admin-ui','customer-web')
                 Invoke-ComposeQuiet @('up','-d','--no-build','--pull','never','--wait','--wait-timeout','300')
                 $rebuiltIds = Get-ImageIds
-                foreach ($service in @('backend','admin-ui','customer-web')) {
+                foreach ($service in @('embedding','backend','admin-ui','customer-web')) {
                     if (-not $rebuiltIds.ContainsKey($service)) { throw 'BUILT_IMAGE_MISSING' }
                 }
                 $record = @{ commit=$source.commit; dirty=$source.dirty; images=@{ backend=$rebuiltIds.backend; 'admin-ui'=$rebuiltIds['admin-ui']; 'customer-web'=$rebuiltIds['customer-web'] }; recordedAt=(Get-Date).ToUniversalTime().ToString('o') }
