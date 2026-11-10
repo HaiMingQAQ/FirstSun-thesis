@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.pharmacy.dal.mysql.base;
 
+import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
@@ -33,6 +34,29 @@ public interface DrugMapper extends BaseMapperX<DrugDO> {
                 .likeIfPresent(DrugDO::getApprovalNo, reqVO.getApprovalNo())
                 .likeIfPresent(DrugDO::getManufacturer, reqVO.getManufacturer())
                 .orderByDesc(DrugDO::getId));
+    }
+
+    /**
+     * APP 端「线上可售药品」分页：关键字同时模糊匹配药品编码/通用名/商品名/拼音码（OR 关系），
+     * 并强制只返回「启用 + 审核通过 + 线上可售」的药品。
+     */
+    default PageResult<DrugDO> selectAppPage(String keyword, Long categoryId, Integer pageNo, Integer pageSize) {
+        String kw = keyword == null ? null : keyword.trim();
+        PageParam pageParam = new PageParam();
+        pageParam.setPageNo(pageNo);
+        pageParam.setPageSize(pageSize);
+        return selectPage(pageParam,
+                new LambdaQueryWrapperX<DrugDO>()
+                        .eqIfPresent(DrugDO::getCategoryId, categoryId)
+                        .eq(DrugDO::getStatus, 1)
+                        .eq(DrugDO::getApproveStatus, 1)
+                        .eq(DrugDO::getSaleableOnline, 1)
+                        .and(kw != null && !kw.isEmpty(), w -> w
+                                .like(DrugDO::getDrugCode, kw)
+                                .or().like(DrugDO::getGenericName, kw)
+                                .or().like(DrugDO::getTradeName, kw)
+                                .or().like(DrugDO::getSpellCode, kw))
+                        .orderByDesc(DrugDO::getId));
     }
 
     default DrugDO selectByDrugCode(String drugCode) {

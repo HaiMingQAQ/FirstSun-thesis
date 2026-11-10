@@ -40,6 +40,11 @@ public interface DrugService {
     PageResult<DrugDO> getDrugPage(DrugPageReqVO reqVO);
 
     /**
+     * APP 端线上可售药品分页：关键字模糊匹配编码/通用名/商品名/拼音码，仅返回可售药品。
+     */
+    PageResult<DrugDO> getDrugAppPage(String keyword, Long categoryId, Integer pageNo, Integer pageSize);
+
+    /**
      * 校验药品存在，供其他业务校验引用
      */
     DrugDO validateDrugExists(Long id);

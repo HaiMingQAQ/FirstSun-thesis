@@ -110,6 +110,11 @@ public class DrugServiceImpl implements DrugService {
     }
 
     @Override
+    public PageResult<DrugDO> getDrugAppPage(String keyword, Long categoryId, Integer pageNo, Integer pageSize) {
+        return drugMapper.selectAppPage(keyword, categoryId, pageNo, pageSize);
+    }
+
+    @Override
     public DrugDO validateDrugExists(Long id) {
         if (id == null) {
             throw exception(PHARMACY_DRUG_NOT_EXISTS);

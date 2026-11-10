@@ -3,7 +3,6 @@ package cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
-import cn.iocoder.yudao.module.pharmacy.controller.admin.base.vo.drug.DrugPageReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppCategoryRespVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppDrugPageReqVO;
 import cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppDrugRespVO;
@@ -69,16 +68,9 @@ public class AppDrugController {
     @Operation(summary = "获得可线上销售药品分页")
     @PermitAll
     public CommonResult<PageResult<AppDrugRespVO>> getDrugPage(@Valid AppDrugPageReqVO reqVO) {
-        // 复用 A 的药品分页查询；服务端强制只返回「已审核通过 + 启用 + 线上可售」的药品
-        DrugPageReqVO pageReqVO = new DrugPageReqVO();
-        pageReqVO.setPageNo(reqVO.getPageNo());
-        pageReqVO.setPageSize(reqVO.getPageSize());
-        pageReqVO.setCategoryId(reqVO.getCategoryId());
-        pageReqVO.setGenericName(reqVO.getKeyword());
-        pageReqVO.setStatus(STATUS_ENABLE);
-        pageReqVO.setApproveStatus(APPROVE_PASS);
-        pageReqVO.setSaleableOnline(SALEABLE_ONLINE);
-        PageResult<DrugDO> pageResult = drugService.getDrugPage(pageReqVO);
+        // APP 端关键字同时匹配编码/通用名/商品名/拼音码，服务端强制只返回「已审核通过 + 启用 + 线上可售」的药品
+        PageResult<DrugDO> pageResult = drugService.getDrugAppPage(
+                reqVO.getKeyword(), reqVO.getCategoryId(), reqVO.getPageNo(), reqVO.getPageSize());
         PageResult<AppDrugRespVO> respPage = BeanUtils.toBean(pageResult, AppDrugRespVO.class);
         // 补充分类名称
         fillCategoryName(respPage.getList());
