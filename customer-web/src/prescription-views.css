@@ -1,0 +1,241 @@
+:global(body[data-page]:is([data-page="prescriptions"], [data-page="rx-detail"])) {
+  background: #fafbf8;
+}
+
+.rx-records {
+  --rx-ink: #243c34;
+  --rx-muted: #53685e;
+  --rx-line: #dce6df;
+  --rx-green: #0e5e3f;
+  padding-top: 36px;
+}
+
+.rx-records .customer-title h1 {
+  color: var(--rx-ink);
+  font-size: clamp(28px, 3vw, 40px);
+}
+
+.rx-records .btn {
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+.rx-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.rx-list-head h2 {
+  margin: 0;
+  color: var(--rx-ink);
+  font-size: 19px;
+}
+
+.rx-list-head p, .rx-record-ref p, .rx-record-result p, .rx-review-summary p {
+  margin: 4px 0 0;
+  color: var(--rx-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.rx-list-head .rx-current-store {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--rx-line);
+  border-radius: 8px;
+  background: #f5f8f4;
+}
+
+.rx-current-store svg, .rx-review-feedback svg, .rx-record-stack h2 svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.rx-current-store svg, .rx-record-stack h2 svg { color: var(--rx-green); }
+
+.rx-record-card, .rx-record-stack .paper {
+  border-color: var(--rx-line);
+  border-radius: 14px;
+}
+
+.rx-record-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) auto;
+  align-items: center;
+  gap: 14px 22px;
+  margin-bottom: 14px;
+  padding: 18px 22px;
+}
+
+.rx-record-ref {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.rx-record-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #d7e7dc;
+  border-radius: 9px;
+  background: #edf5ef;
+  color: var(--rx-green);
+}
+.rx-record-icon svg { width: 20px; height: 20px; }
+
+.rx-record-ref h3 {
+  margin: 0;
+  color: var(--rx-ink);
+  font-size: 15px;
+}
+
+.rx-record-states {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--rx-muted);
+  font-size: 12px;
+}
+
+.rx-review-tag, .rx-review-panel {
+  --review-ink: #0e5e3f;
+  --review-bg: #edf5ef;
+  --review-line: #d7e7dc;
+}
+.rx-records [data-review="待药师审核"] {
+  --review-ink: #804913;
+  --review-bg: #faf2e5;
+  --review-line: #eddfc9;
+}
+.rx-records [data-review="审核未通过"] {
+  --review-ink: #8a3f2f;
+  --review-bg: #faf0ec;
+  --review-line: #eedbd3;
+}
+.rx-records :is([data-review="已作废"], [data-review="状态待确认"]) {
+  --review-ink: #525e56;
+  --review-bg: #f0f2ee;
+  --review-line: #dfe5de;
+}
+.rx-review-tag {
+  display: inline-block;
+  padding: 5px 9px;
+  border: 1px solid var(--review-line);
+  border-radius: 6px;
+  background: var(--review-bg);
+  color: var(--review-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rx-record-link { justify-self: end; white-space: nowrap; }
+.rx-record-empty {
+  border: 1px solid var(--rx-line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.rx-review-panel {
+  padding: 22px;
+  border: 1px solid var(--review-line);
+  border-radius: 14px;
+  background: var(--review-bg);
+}
+
+.rx-review-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+.rx-review-summary .rx-record-icon {
+  width: 48px;
+  height: 48px;
+  border-color: var(--review-line);
+  background: #fff;
+  color: var(--review-ink);
+}
+.rx-review-summary .rx-record-icon svg { width: 24px; height: 24px; }
+.rx-review-caption, .rx-review-meta { color: var(--rx-muted); font-size: 12px; }
+.rx-review-summary h2 {
+  margin: 3px 0 6px;
+  color: var(--review-ink);
+  font-size: 24px;
+}
+.rx-review-meta {
+  display: grid;
+  gap: 5px;
+  text-align: right;
+}
+
+.rx-review-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--review-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--review-ink);
+}
+.rx-review-feedback svg { margin-top: 3px; }
+.rx-review-feedback h3, .rx-review-feedback p { margin: 0; overflow-wrap: anywhere; }
+.rx-review-feedback h3 { margin-bottom: 3px; font-size: 13px; }
+.rx-review-feedback p { color: var(--rx-ink); font-size: 13px; line-height: 1.65; }
+
+.rx-records .rx-review-actions { gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.rx-return { margin-right: auto; }
+.rx-record-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+.rx-record-stack {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+.rx-record-stack h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--rx-ink);
+}
+.rx-record-stack .details-list {
+  grid-template-columns: 44px minmax(0, 1fr);
+  margin-bottom: 0;
+}
+.rx-record-stack :is(dd, .rx-item, .error-panel) { overflow-wrap: anywhere; }
+.rx-record-stack .rx-actions { margin-top: 12px; }
+
+@media (max-width: 700px) {
+  .rx-records { padding-top: 24px; }
+  .rx-records .rx-title-actions { justify-content: flex-start; gap: 8px; }
+  .rx-list-head { flex-wrap: wrap; }
+  .rx-record-card { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+  .rx-record-result { padding-top: 12px; border-top: 1px solid var(--rx-line); }
+  .rx-review-panel { padding: 14px; }
+  .rx-review-summary { grid-template-columns: auto minmax(0, 1fr); }
+  .rx-review-meta { grid-column: 2; text-align: left; }
+  .rx-records .rx-review-actions .btn { flex: 1 1 auto; white-space: nowrap; }
+  .rx-records .rx-review-actions .btn.primary { flex-basis: 100%; }
+  .rx-return { margin-right: 0; }
+  .rx-record-columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 350px) {
+  :global(body:is([data-page="prescriptions"], [data-page="rx-detail"]) #header .header-tools) { gap: 5px; }
+}

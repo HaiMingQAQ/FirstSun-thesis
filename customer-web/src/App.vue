@@ -43,9 +43,24 @@ const user=ref(null),authReady=ref(false),authBusy=ref(false),loginOpen=ref(fals
 const navDoc=typeof document==='undefined'?null:document;
 function toggleNav(){navOpen.value=!navOpen.value;}
 function navOutside(event){const hit=event.target instanceof Element&&event.target.closest('#header');if(navOpen.value&&!hit)navOpen.value=false;}
-function navEscape(event){if(event.key==='Escape'&&navOpen.value)navOpen.value=false;}
+function navEscape(event){
+ if(event.key!=='Escape')return;
+ navOpen.value=false;
+ if(route.value==='ai')historyOpen.value=false;
+}
 function navResized(event){if(event.matches)navOpen.value=false;}
 const topics=ref([]),moreTopics=ref(false),historyLoading=ref(false),historyError=ref(''),historyOpen=ref(false),topicId=ref(null),topicStore=ref(null),moreTurns=ref(false),messages=ref([]),input=ref(''),busy=ref(false),chatScroll=ref(null),stockWarning=ref(false),pendingDeleteId=ref(null),clearPending=ref(false),deleting=ref(false);
+const historyTrigger=ref(null),historyClose=ref(null);
+watch(historyOpen,async(open)=>{
+  await nextTick();
+  if(route.value==='ai') (open?historyClose:historyTrigger).value?.focus();
+});
+function answerDisplay(message){
+  const answer=message.answer.replace(/\*\*([^*]+)\*\*/g,'$1');
+  // The server appends one final citation line to both streamed and saved answers.
+  const citation=!message.loading&&/\r?\n依据说明书[：:]\s*([^\r\n]+)\s*$/.exec(answer);
+  return citation?{body:answer.slice(0,citation.index).trimEnd(),evidence:citation[1].trim()}:{body:answer,evidence:''};
+}
 let disposed=false,generation=0,controller,active,typingTimer,toastTimer,publicGeneration=0,cartReadGeneration=0,cartWriteGeneration=0,consultFrom='',wideQuery;
 const isTrade=computed(()=>['cart','checkout','orders','order-detail'].includes(route.value));
 const isPrescription=computed(()=>['prescriptions','rx-submit','rx-detail'].includes(route.value));
@@ -84,7 +99,13 @@ async function queryAI(message){if(busy.value||historyLoading.value||!user.value
 function send(text=input.value){if(busy.value||historyLoading.value||!text.trim())return;if(!user.value){loginOpen.value=true;return;}const context=messages.value.filter(m=>m.status==='SUCCESS').flatMap(m=>[{role:'user',content:m.content},{role:'assistant',content:m.answer.slice(0,1000)}]).slice(-6);messages.value.push({id:newId(),content:text.trim().slice(0,500),context,answer:'',products:[],loading:true});input.value='';queryAI(messages.value.at(-1));}
 function retry(m){if(m.status==='FAILED')m.id=newId();queryAI(m);}
 function askProduct(){const p=detail.value;go('ai');nextTick(()=>input.value=`查询${p.genericName||p.name}的价格和库存`);}
-function parseRoute(){closeSuggestions();navOpen.value=false;if(pendingConsult.value&&location.hash!==consultFrom)pendingConsult.value=false;const [key,qs]=location.hash.slice(1).split('?'),params=new URLSearchParams(qs);const next=['home','ai','catalog','recommend','detail','cart','checkout','orders','order-detail','account','consult','prescriptions','rx-submit','rx-detail'].includes(key)?key:'home';if(route.value==='ai'&&next!=='ai')stop();route.value=next;routeOrderId.value=params.get('id')||'';routeQuery.value=qs||'';document.body.dataset.page=next;window.scrollTo(0,0);if(next==='catalog')loadCatalog();else if(next==='detail')loadDetail(params.get('id'));else if(next==='ai'&&user.value){if(params.get('topic')&&String(topicId.value)!==params.get('topic'))openTopic(params.get('topic'));else loadTopics();}}
+async function openLinkedTopic(id){
+ const owner=currentOwner();
+ const opening=openTopic(id),g=generation;
+ await opening;
+ if(route.value==='ai'&&g===generation&&owner===currentOwner()&&String(topicId.value)===id)loadTopics();
+}
+function parseRoute(){closeSuggestions();navOpen.value=false;if(pendingConsult.value&&location.hash!==consultFrom)pendingConsult.value=false;const [key,qs]=location.hash.slice(1).split('?'),params=new URLSearchParams(qs);const next=['home','ai','catalog','recommend','detail','cart','checkout','orders','order-detail','account','consult','prescriptions','rx-submit','rx-detail'].includes(key)?key:'home';if(route.value==='ai'&&next!=='ai')stop();route.value=next;routeOrderId.value=params.get('id')||'';routeQuery.value=qs||'';document.body.dataset.page=next;window.scrollTo(0,0);if(next==='catalog')loadCatalog();else if(next==='detail')loadDetail(params.get('id'));else if(next==='ai'&&user.value){if(params.get('topic')&&String(topicId.value)!==params.get('topic'))openLinkedTopic(params.get('topic'));else loadTopics();}}
 async function addToCart(p){if(!user.value){loginOpen.value=true;return;}if(adding.value||disposed)return;const owner=identity(),storeId=api.store.id,write=++cartWriteGeneration;const current=()=>!disposed&&write===cartWriteGeneration&&!!user.value&&sameIdentity(owner,identity())&&storeId===api.store.id;adding.value=true;cartReadGeneration++;try{if(!storeId)throw Error('请先读取门店商品');await trade.add(storeId,p,1);if(current()){notify('已加入当前门店购物车');await refreshCart();}}catch(e){if(current())dialog.value=e.message;}finally{if(!disposed&&write===cartWriteGeneration)adding.value=false;}}
 let backdropStarted=false,backdropEnded=false,backdropPointer;
 function closeDialog(){backdropStarted=false;backdropEnded=false;loginOpen.value=false;pendingConsult.value=false;consultFrom='';dialog.value='';authScreen.value='login';authChannel.value='email';passwordNotice.value='';}
@@ -93,7 +114,7 @@ function backdropUp(event){backdropEnded=event.target===event.currentTarget&&(ev
 function backdropCancel(){backdropStarted=false;backdropEnded=false;}
 function backdropClick(event){const close=backdropStarted&&backdropEnded&&event.target===event.currentTarget&&(event.pointerId==null||backdropPointer==null||event.pointerId===backdropPointer);backdropStarted=false;if(close)closeDialog();}
 function stockFailed(){stockWarning.value=true;}
-watch(()=>messages.value.map(m=>m.answer+m.error).join(''),async()=>{const el=chatScroll.value;if(!el)return;const near=el.scrollHeight-el.scrollTop-el.clientHeight<160;await nextTick();if(near)el.scrollTop=el.scrollHeight;});
+watch(()=>messages.value.map(m=>m.answer+m.error).join(''),async()=>{const el=chatScroll.value;if(!el||(messages.value.length===1&&messages.value[0].recordId&&el.scrollTop===0))return;const near=el.scrollHeight-el.scrollTop-el.clientHeight<160;await nextTick();if(near)el.scrollTop=el.scrollHeight;});
 onMounted(async()=>{
  window.addEventListener('hashchange',parseRoute);window.addEventListener('firstsun-auth-clear',authCleared);window.addEventListener('firstsun-password-changed',passwordChanged);window.addEventListener('firstsun-stock-error',stockFailed);navDoc?.addEventListener('pointerdown',navOutside);navDoc?.addEventListener('keydown',navEscape);wideQuery=typeof window!=='undefined'&&window.matchMedia?window.matchMedia('(min-width:701px)'):null;wideQuery?.addEventListener?.('change',navResized);parseRoute();
  const owner=identity(),current=()=>!disposed&&sameIdentity(owner,identity());
@@ -119,7 +140,125 @@ onUnmounted(()=>{disposed=true;stop();clearTimeout(toastTimer);window.removeEven
 <Recommendations v-else-if="route==='recommend'"/>
 <main v-else-if="route==='catalog'" class="shop-page"><section class="shop-search"><div><span class="shop-kicker">FIRSTSUN · 网上药房</span><h1>你需要的药，在这里找。</h1><span class="live-store">{{storeName}}</span></div><div class="search-area"><SearchSuggestions ref="suggestionBox" v-model="query" :category="category" :store-id="api.store.id" :loading="catalogLoading" @search="search" @select="selectSearchProduct"/><div class="search-shortcuts"><span>热门搜索：</span><button type="button" @click="hotSearch('布洛芬')">布洛芬</button><button type="button" @click="hotSearch('维生素C')">维生素C</button><button type="button" @click="hotSearch('口罩')">口罩</button><button type="button" @click="hotSearch('板蓝根')">板蓝根</button><button type="button" @click="hotSearch('感冒灵')">感冒灵</button></div></div><div class="shop-trust"><div><span class="trust-ic"><Icon name="shield-check"/></span><span>正品保障<small>价格与库存由当前门店返回</small></span></div><div><span class="trust-ic"><Icon name="file-check-2"/></span><span>药师审核<small>处方药先审后发</small></span></div><div><span class="trust-ic"><Icon name="truck"/></span><span>自提与配送<small>到店自提 · 门店配送</small></span></div></div></section><section class="shop-services"><a class="ai-entry" href="#ai"><div class="service-symbol"><Icon name="sparkles"/></div><div class="grow"><div class="entry-eyebrow">FIRSTSUN AI</div><h2>找药有疑问？问问 AI</h2><p>查商品 · 看规格 · 了解购药流程</p></div><span class="entry-arrow"><Icon name="arrow-up-right"/></span></a><a class="shop-service" href="#rx-submit"><span class="service-symbol"><Icon name="file-check-2"/></span><span class="grow"><strong>处方购药</strong><span>上传材料 · 查看审核状态</span></span></a><button class="shop-service" @click="openConsult"><span class="service-symbol"><Icon name="headset"/></span><span class="grow"><strong>咨询药师 / 客服</strong><span>联系当前门店人工服务</span></span></button></section><nav class="shop-categories" aria-label="商品分类"><button v-for="c in categories" :key="c.id" class="category-btn" :class="{active:category===c.id}" :aria-pressed="category===c.id" @click="pickCategory(c.id)"><span class="cat-ic" :class="categoryTone(c)"><Icon :name="categoryIcon(c)"/></span>{{c.name}}</button></nav><section class="shop-products"><div class="shop-section-heading"><div><h2>{{query?'搜索结果':'全部商品'}}</h2><span>核对商品信息，自主选择</span></div><a href="#ai"><Icon name="sparkles"/>让 AI 帮我找<Icon name="arrow-up-right"/></a></div><div v-if="stockWarning" class="error-panel" role="alert">库存接口暂不可用，当前库存不能作为缺货或购买依据。</div><div v-if="catalogError&&!items.length" class="empty-state" role="alert"><Icon name="wifi-off"/><h3>商品暂时加载失败</h3><p>{{catalogError}}</p><button class="btn primary" @click="loadCatalog">重新加载</button></div><div v-else-if="catalogLoading&&!items.length" class="products" aria-busy="true"><div v-for="n in 6" :key="n" class="skeleton"></div></div><template v-else><div v-if="catalogError" class="error-panel" role="alert">{{catalogError}}</div><div class="result-toolbar"><span>共 {{count}} 件 · 本页展示 {{items.length}} 件</span><span>当前门店库存</span></div><div v-if="items.length" class="products"><ProductCard v-for="p in items" :key="p.id" :product="p" :stock-unknown="stockWarning" :cart-qty="cartQtyFor(p)" @unavailable="notConnected" :adding="adding" @add="addToCart" @decrease="decreaseCart"/></div><div v-else class="empty-state"><Icon name="search-x"/><h3>没有找到匹配商品</h3><p>试试其他药品名称或分类。</p><button class="btn" @click="query='';category='all';search()">清除搜索</button></div><div v-if="count>items.length" class="load-more-wrap"><button class="load-more" :disabled="catalogLoading" @click="loadMore">{{catalogLoading?'正在加载…':'加载更多'}}</button><p class="load-more-note">已展示 {{items.length}} / 共 {{count}} 件</p></div><p v-else-if="items.length&&count>0" class="load-more-note loaded-all">已展示全部 {{count}} 件</p></template></section><footer class="shop-footer"><span class="wordmark">FirstSun.</span><p>请核对实际药品资料，或在药师指导下使用。</p><div class="footer-creds"><span><b>执业药师在线</b> · 咨询药师 / 客服</span><span><b>配送时效</b> · 到店自提 · 门店配送</span><span><b>退换说明</b> · 以门店实际规则为准</span><span><b>互联网药品信息服务资格证书（待确认）</b></span></div></footer></main>
 <main v-else-if="route==='detail'" class="page-container"><div class="breadcrumb"><a href="#catalog">找药购药</a><Icon name="chevron-right"/><span>商品详情</span></div><div v-if="detailLoading" class="skeleton" aria-busy="true"></div><div v-else-if="detailError" class="empty-state" role="alert"><h2>商品暂不可查看</h2><p>{{detailError}}</p><a href="#catalog" class="btn primary">返回列表</a></div><template v-else-if="detail"><div class="detail-top"><section><div class="hero-photo"><ProductCard :product="detail" image-only/></div><p class="gallery-caption">{{detail.rx?'处方包装和资料按授权范围展示':'包装图仅供识别，请以实物为准'}}</p></section><section class="detail-info"><div class="tags"><span class="tag" :class="{rx:detail.rx}">{{detail.rx?'Rx 处方药':'OTC / 商品档案'}}</span><span class="tag neutral">{{storeName}}</span></div><h1>{{detail.name}}</h1><p class="detail-spec">{{detail.specification||'规格暂未提供'}}</p><div class="detail-price"><div><span class="small">当前售价</span><span class="price"><small>¥</small>{{money(detail.price)}}</span></div><span class="stock">{{stockWarning?'库存暂不可用':`可售库存 ${detail.stock} 件`}}</span></div><dl class="details-list"><dt>生产厂家</dt><dd>{{detail.manufacturer||'商品档案暂未提供'}}</dd><dt>商品规格</dt><dd><span class="spec-option">{{detail.specification||'商品档案暂未提供'}}</span></dd></dl><div v-if="detail.rx" class="rx-notice">处方药需提交医生处方。可以在此提交申请并查看审核结果；核准后的结算与付款尚未在电脑端开放。</div><div class="buy-actions"><a v-if="detail.rx" class="btn primary" :href="'#rx-submit?drugId='+detail.id">提交处方申请</a><button v-else class="btn primary" :disabled="adding||stockWarning||detail.stock<=0" @click="addToCart(detail)">{{adding?'正在加购…':'加入购物车'}}</button><button class="btn" @click="askProduct"><Icon name="sparkles"/>询问 AI</button></div><p class="detail-alert">请仔细阅读药品说明书，或在药师指导下使用。</p></section></div><div class="detail-below"><section><div class="detail-tabs"><button :class="{active:infoTab==='info'}" @click="infoTab='info'">商品信息</button><button :class="{active:infoTab==='leaflet'}" @click="infoTab='leaflet'">说明书</button></div><table v-if="infoTab==='info'" class="data-table"><tbody><tr><th>通用名称</th><td>{{detail.genericName||'商品档案暂未提供'}}</td></tr><tr><th>规格</th><td>{{detail.specification||'商品档案暂未提供'}}</td></tr><tr><th>厂家</th><td>{{detail.manufacturer||'商品档案暂未提供'}}</td></tr><tr><th>批准文号</th><td>{{detail.rx?'处方资料受限':detail.approval}}</td></tr></tbody></table><div v-else class="notice-panel">{{detail.rx?'处方说明书受限，当前不公开展示。':'本批尚未接入经核验的说明书展示，请咨询药师。'}}</div></section><aside class="detail-consult"><Icon name="messages-square"/><h3>有疑问，先问一问</h3><p>AI 查询商品信息，人工服务身份独立。</p><button class="btn soft full" @click="askProduct">询问 AI 助手</button><button class="btn full" @click="openConsult">咨询药师 / 客服</button></aside></div></template></main>
-<main v-else class="ai-layout"><aside class="history" :class="{'mobile-open':historyOpen}"><button class="btn new-chat" @click="newTopic" :disabled="busy||historyLoading"><Icon name="plus"/>新建对话</button><div class="between"><p class="section-label">对话历史</p><button v-if="topics.length" type="button" class="icon-btn" aria-label="清空全部对话" :disabled="historyLoading||deleting" @click="askClearTopics"><Icon name="trash-2"/></button><button class="icon-btn" aria-label="刷新历史" @click="loadTopics()" :disabled="historyLoading"><Icon name="refresh-cw"/></button><button class="icon-btn mobile-close" aria-label="关闭历史" @click="historyOpen=false"><Icon name="x"/></button></div><div v-if="historyLoading" class="small muted">正在读取话题…</div><div v-if="historyError" class="error-panel" role="alert">{{historyError}}<button class="btn link" @click="loadTopics()">重试</button></div><div class="history-list"><div v-if="clearPending" class="history-confirm" role="alert"><span>清空全部对话？清空后无法恢复。</span><div class="confirm-actions"><button type="button" class="btn link danger" :disabled="deleting" @click="clearTopics">确认清空</button><button type="button" class="btn link" :disabled="deleting" @click="clearPending=false">取消</button></div></div><div v-for="t in topics" :key="t.id" class="history-row" :class="{active:topicId===t.id}"><div v-if="pendingDeleteId===t.id" class="history-confirm" role="alert"><span>删除「{{t.title||'新话题'}}」？删除后无法恢复。</span><div class="confirm-actions"><button type="button" class="btn link danger" :disabled="deleting" @click="deleteTopic(t)">确认删除</button><button type="button" class="btn link" :disabled="deleting" @click="pendingDeleteId=null">取消</button></div></div><template v-else><button type="button" class="history-item" :class="{active:topicId===t.id}" :disabled="historyLoading" @click="openTopic(t.id)"><Icon name="message-square"/><span>{{t.title||'新话题'}}</span></button><button type="button" class="topic-del" :aria-label="`删除对话：${t.title||'新话题'}`" :disabled="historyLoading||deleting" @click.stop="askDeleteTopic(t.id)"><Icon name="trash-2"/></button></template></div><p v-if="!topics.length&&!historyLoading" class="small muted">{{user?'暂无历史对话':'登录后查看你的对话'}}</p><button v-if="moreTopics" class="btn link" @click="loadTopics(true)">更早话题</button></div><div class="history-bottom"><button class="btn full" @click="openConsult"><Icon name="headset"/>联系药师 / 客服</button></div></aside><section class="chat"><div class="chat-head"><div class="row"><button class="icon-btn mobile-history" aria-label="对话历史" @click="historyOpen=true"><Icon name="panel-left"/></button><span class="avatar-ai"><Icon name="sparkles"/></span><div><h1>AI 购药助手</h1><div class="status">顾客 AI · {{user?'已登录':'登录后使用'}}</div></div></div><button v-if="topicId" class="btn" :disabled="busy||historyLoading" @click="openTopic(topicId)"><Icon name="refresh-cw"/>重载话题</button><button v-else class="btn" @click="openConsult">转人工</button></div><div ref="chatScroll" class="chat-scroll"><div class="chat-inner"><div class="chat-intro"><div class="eyebrow">FIRSTSUN ASSISTANT</div><h2>找药这件事，简单一点。</h2><p>告诉我药品名称，帮你查找规格、价格与库存。</p></div><div v-if="!user" class="empty-state"><h3>登录后开始咨询</h3><p>对话历史由现有会员服务保存。</p><button class="btn primary" @click="loginOpen=true">登录会员账号</button></div><template v-else><button v-if="moreTurns" class="btn link" :disabled="historyLoading" @click="openTopic(topicId,true)">加载更早消息</button><article v-for="m in messages" :key="m.id" class="message ai-turn"><div class="user-message"><div class="user-bubble">{{m.content}}</div><span class="user-avatar">我</span></div><div class="answer-heading"><span class="avatar-ai"><Icon name="sparkles"/></span>FirstSun AI<span class="tag neutral">AI 助手</span></div><div v-if="m.loading&&!m.answer" class="thinking" role="status">正在查询门店信息<span>•••</span></div><p class="answer-text" :class="{streaming:m.loading&&m.answer}">{{m.answer.replace(/\*\*([^*]+)\*\*/g,'$1')}}</p><div v-if="m.error" class="error-panel" role="alert">{{m.error}}<button v-if="m.status!=='STOPPED'&&m.status!=='PENDING'" class="btn link" :disabled="busy||historyLoading" @click="retry(m)">重试本次请求</button></div><div v-if="m.products.length" class="result-caption"><span>匹配商品 · {{m.products.length}} 款</span><span>本次查询价格 / 库存</span></div><div class="ai-products"><ProductCard v-for="p in m.products" :key="p.id" :product="p" :adding="adding" @add="addToCart" @unavailable="notConnected"/></div><div v-if="m.source||m.queriedAt" class="answer-foot">{{m.source}} · {{m.queriedAt}}</div></article><div v-if="!messages.length" class="suggestions"><button @click="send('查询板蓝根颗粒的价格和库存')" :disabled="busy||historyLoading">查询板蓝根颗粒</button><button @click="send('处方药如何购买？')" :disabled="busy||historyLoading">处方药如何购买？</button></div></template></div></div><div class="composer-wrap"><form class="composer" @submit.prevent="send()"><textarea v-model="input" aria-label="输入药品名称或问题" placeholder="输入药品名称，或说说你想了解的问题…" maxlength="500" :disabled="busy||historyLoading||!user" @keydown.enter.exact.prevent="send()"></textarea><div class="composer-tools"><span class="muted">Enter 发送 · Shift + Enter 换行</span><button v-if="busy" class="btn primary send" type="button" @click="stop"><Icon name="square"/>停止接收</button><button v-else class="btn primary send" :disabled="!input.trim()||historyLoading||!user"><Icon name="arrow-up"/>发送</button></div></form><p class="composer-note">AI 不能代替医生或药师；不提供诊断、开方或真实支付。</p></div></section><aside class="rail"><h3>购药服务</h3><p class="rail-sub">AI 查询与人工服务身份独立</p><a href="#catalog" class="service-link"><Icon name="pill"/><span class="grow">返回找药购药<span>浏览当前门店商品</span></span><Icon name="chevron-right"/></a><a class="service-link" href="#rx-submit"><Icon name="file-check-2"/><span class="grow">处方购药<span>上传材料，查看审核状态</span></span><Icon name="chevron-right"/></a><button class="service-link" @click="openConsult"><Icon name="headset"/><span class="grow">药师 / 客服<span>当前门店人工文字</span></span><Icon name="chevron-right"/></button><div class="rail-notice"><Icon name="shield-check"/><p>商品卡价格和库存来自当前查询；实际购买仍以服务端校验为准。</p></div></aside></main>
+<main v-else class="ai-layout ai-workspace">
+  <button v-if="historyOpen" type="button" class="ai-history-shade" aria-label="关闭对话历史" tabindex="-1" @click="historyOpen=false"></button>
+  <aside id="ai-history" class="history" :class="{'mobile-open':historyOpen}" aria-labelledby="ai-history-title">
+    <div class="ai-history-head">
+      <h2 id="ai-history-title">对话历史</h2>
+      <button ref="historyClose" type="button" class="icon-btn mobile-close" aria-label="关闭历史" @click="historyOpen=false"><Icon name="x"/></button>
+    </div>
+    <button type="button" class="btn new-chat" @click="newTopic" :disabled="busy||historyLoading"><Icon name="plus"/>新建对话</button>
+    <div class="ai-history-toolbar">
+      <span>我的对话</span>
+      <button class="icon-btn" type="button" aria-label="刷新历史" @click="loadTopics()" :disabled="historyLoading"><Icon name="refresh-cw"/></button>
+      <button v-if="topics.length" type="button" class="icon-btn" aria-label="清空全部对话" :disabled="historyLoading||deleting" @click="askClearTopics"><Icon name="trash-2"/></button>
+    </div>
+    <div v-if="historyLoading" class="ai-history-state" role="status">正在读取话题…</div>
+    <div v-if="historyError" class="error-panel" role="alert">{{historyError}}<button type="button" class="btn link" @click="loadTopics()">重试</button></div>
+    <div class="history-list">
+      <div v-if="clearPending" class="history-confirm" role="alert">
+        <span>清空全部对话？清空后无法恢复。</span>
+        <div class="confirm-actions">
+          <button type="button" class="btn link danger" :disabled="deleting" @click="clearTopics">确认清空</button>
+          <button type="button" class="btn link" :disabled="deleting" @click="clearPending=false">取消</button>
+        </div>
+      </div>
+      <div v-for="t in topics" :key="t.id" class="history-row" :class="{active:topicId===t.id}">
+        <div v-if="pendingDeleteId===t.id" class="history-confirm" role="alert">
+          <span>删除「{{t.title||'新话题'}}」？删除后无法恢复。</span>
+          <div class="confirm-actions">
+            <button type="button" class="btn link danger" :disabled="deleting" @click="deleteTopic(t)">确认删除</button>
+            <button type="button" class="btn link" :disabled="deleting" @click="pendingDeleteId=null">取消</button>
+          </div>
+        </div>
+        <template v-else>
+          <button type="button" class="history-item" :class="{active:topicId===t.id}" :aria-current="topicId===t.id?'true':null" :disabled="historyLoading" @click="openTopic(t.id)"><Icon name="message-square"/><span>{{t.title||'新话题'}}</span></button>
+          <button type="button" class="topic-del" :aria-label="'删除对话：'+(t.title||'新话题')" :disabled="historyLoading||deleting" @click.stop="askDeleteTopic(t.id)"><Icon name="trash-2"/></button>
+        </template>
+      </div>
+      <p v-if="!topics.length&&!historyLoading" class="ai-history-state">{{user?'暂无历史对话':'登录后查看你的对话'}}</p>
+      <button v-if="moreTopics" type="button" class="btn link" @click="loadTopics(true)">更早话题</button>
+    </div>
+    <div class="history-bottom">
+      <button type="button" class="btn full" @click="openConsult"><Icon name="headset"/>联系药师 / 客服</button>
+    </div>
+  </aside>
+
+  <section class="chat" aria-labelledby="ai-title">
+    <div class="chat-head">
+      <div class="row">
+        <button ref="historyTrigger" type="button" class="icon-btn mobile-history" aria-label="对话历史" :aria-expanded="historyOpen" aria-controls="ai-history" @click="historyOpen=true"><Icon name="panel-left"/>历史</button>
+        <span class="avatar-ai"><Icon name="sparkles"/></span>
+        <div><h1 id="ai-title">AI 购药助手</h1><div class="status">{{user?'会员咨询':'登录后使用'}}</div></div>
+      </div>
+      <button v-if="topicId" type="button" class="btn" :disabled="busy||historyLoading" @click="openTopic(topicId)"><Icon name="refresh-cw"/>重载话题</button>
+      <button v-else type="button" class="btn" @click="openConsult"><Icon name="headset"/>转人工</button>
+    </div>
+
+    <div ref="chatScroll" class="chat-scroll">
+      <div class="chat-inner">
+        <section v-if="!messages.length" class="chat-intro">
+          <div class="ai-intro-icon"><Icon name="sparkles"/></div>
+          <h2>想了解哪款药品？</h2>
+          <p>输入药品名称，查询规格、门店价格和库存，也可以询问说明书里的信息。</p>
+          <template v-if="user">
+            <div class="suggestions" aria-label="示例问题">
+              <button type="button" @click="send('查询板蓝根颗粒的价格和库存')" :disabled="busy||historyLoading"><Icon name="search"/>查询板蓝根颗粒</button>
+              <button type="button" @click="send('处方药如何购买？')" :disabled="busy||historyLoading"><Icon name="file-text"/>处方药如何购买？</button>
+            </div>
+          </template>
+          <button v-else type="button" class="btn primary ai-sign-in" @click="loginOpen=true">登录后开始咨询</button>
+        </section>
+        <template v-if="user">
+          <button v-if="moreTurns" type="button" class="btn link" :disabled="historyLoading" @click="openTopic(topicId,true)">加载更早消息</button>
+          <article v-for="m in messages" :key="m.id" class="ai-turn">
+            <div class="user-message"><div class="user-bubble">{{m.content}}</div><span class="user-avatar" aria-label="你的提问">我</span></div>
+            <div class="ai-answer">
+              <div class="answer-heading"><span class="avatar-ai"><Icon name="sparkles"/></span>FirstSun AI</div>
+              <div v-if="m.loading&&!m.answer" class="thinking" role="status">正在查询门店信息<span aria-hidden="true">•••</span></div>
+              <p v-if="m.answer" class="answer-text" :class="{streaming:m.loading}">{{answerDisplay(m).body}}</p>
+              <div v-if="m.error" class="error-panel" role="alert">
+                {{m.error}}<button v-if="m.status!=='STOPPED'&&m.status!=='PENDING'" type="button" class="btn link" :disabled="busy||historyLoading" @click="retry(m)">重试本次请求</button>
+              </div>
+              <section v-if="answerDisplay(m).evidence" class="ai-evidence" aria-label="说明书依据">
+                <Icon name="book-open"/>
+                <div><h3>说明书依据</h3><p>{{answerDisplay(m).evidence}}</p></div>
+              </section>
+              <section v-if="m.products.length" class="ai-results" aria-label="匹配商品">
+                <div class="result-caption"><h3>匹配商品 <span>{{m.products.length}} 款</span></h3><span>本次查询的价格和库存</span></div>
+                <div class="ai-products">
+                  <ProductCard v-for="p in m.products" :key="p.id" :product="p" :adding="adding" @add="addToCart" @unavailable="notConnected"/>
+                </div>
+              </section>
+              <p v-if="m.source||m.queriedAt" class="answer-foot"><span v-if="m.source">{{m.source}}</span><span v-if="m.queriedAt">{{m.queriedAt}}</span></p>
+            </div>
+          </article>
+        </template>
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <form class="composer" @submit.prevent="send()">
+        <label for="ai-question">向助手提问</label>
+        <textarea id="ai-question" v-model="input" placeholder="输入药品名称或你想了解的问题…" maxlength="500" :disabled="busy||historyLoading||!user" @keydown.enter.exact.prevent="send()"></textarea>
+        <div class="composer-tools">
+          <span>Enter 发送 · Shift + Enter 换行</span>
+          <button v-if="busy" class="btn primary send" type="button" @click="stop"><Icon name="square"/>停止接收</button>
+          <button v-else class="btn primary send" type="submit" :disabled="!input.trim()||historyLoading||!user"><Icon name="arrow-up"/>发送</button>
+        </div>
+      </form>
+      <p class="composer-note">AI 提供药品信息查询，不能代替医生或药师。</p>
+    </div>
+  </section>
+
+  <aside class="rail" aria-label="购药服务">
+    <h2>购药服务</h2>
+    <a href="#catalog" class="service-link"><Icon name="pill"/><span class="grow">找药购药<span>浏览当前门店商品</span></span><Icon name="chevron-right"/></a>
+    <a class="service-link" href="#rx-submit"><Icon name="file-check-2"/><span class="grow">处方购药<span>提交材料并查看审核状态</span></span><Icon name="chevron-right"/></a>
+    <button type="button" class="service-link" @click="openConsult"><Icon name="headset"/><span class="grow">药师 / 客服<span>联系当前门店人工服务</span></span><Icon name="chevron-right"/></button>
+    <div class="rail-notice"><Icon name="shield-check"/><p>商品卡展示查询时的价格和库存，购买时以结算结果为准。</p></div>
+  </aside>
+</main>
 <div v-if="loginOpen||dialog" class="modal-shade" @pointerdown="backdropDown" @pointerup="backdropUp" @pointercancel="backdropCancel" @click="backdropClick" @keydown.esc="closeDialog"><section class="live-dialog" role="dialog" aria-modal="true" aria-labelledby="live-dialog-title"><div class="dialog-head"><h2 id="live-dialog-title">{{dialog?'服务尚未接入':authScreen==='register'?'会员注册':authScreen==='forgot'?'找回密码':'会员登录'}}</h2><button class="icon-btn" aria-label="关闭" @click="closeDialog"><Icon name="x"/></button></div><template v-if="dialog"><p>{{dialog}}</p><button class="btn primary full" @click="closeDialog">知道了</button></template><template v-else-if="!authBusy"><template v-if="authChannel==='email'"><p v-if="passwordNotice" class="small" role="status">{{passwordNotice}}</p><EmailRegister v-if="authScreen==='register'" @logged-in="onLoggedIn"/><EmailForgotPassword v-else-if="authScreen==='forgot'" @login="authScreen='login'"/><EmailLogin v-else @logged-in="onLoggedIn" @register="authScreen='register'" @forgot="authScreen='forgot'"/></template><template v-else><RegisterGate v-if="authScreen==='register'" @logged-in="onLoggedIn"/><LoginGate v-else @logged-in="onLoggedIn"/></template><button v-if="authScreen==='register'||authChannel==='mobile'" type="button" class="btn link full" @click="authScreen=authScreen==='register'?'login':'register'">{{authScreen==='register'?'已有账号？返回登录':'没有账号？立即注册'}}</button><button v-if="authChannel==='mobile'" type="button" class="btn link full" @click="changeAuthChannel('email')">返回邮箱登录</button></template></section></div><div v-if="toastText" class="live-toast" role="status">{{toastText}}</div>
 </template>
 
@@ -156,3 +295,4 @@ onUnmounted(()=>{disposed=true;stop();clearTimeout(toastTimer);window.removeEven
 @media(max-width:700px){#header.home-header{height:64px;padding-inline:14px}}
 @media(max-width:360px){#header .nav a{font-size:12px;gap:4px}}
 </style>
+<style scoped src="./ai-workspace.css"></style>

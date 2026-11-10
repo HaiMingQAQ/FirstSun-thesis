@@ -1,0 +1,250 @@
+:global(body[data-page]:is([data-page="orders"], [data-page="order-detail"])) {
+  background: #fafbf8;
+}
+
+.order-views {
+  --order-border: #dce6df;
+  --order-muted: #53685e;
+  --order-ink: #243c34;
+  --order-green: #0e5e3f;
+  padding-top: 36px;
+}
+
+.order-views .customer-title h1 {
+  color: var(--order-ink);
+  font-size: clamp(28px, 3vw, 40px);
+}
+
+.order-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 20px;
+}
+
+.order-views .customer-tabs {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+}
+
+.order-views .customer-tabs button {
+  min-height: 40px;
+  padding: 8px 15px;
+  border: 1px solid var(--order-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--order-ink);
+}
+
+.order-views .customer-tabs button:hover { border-color: #8da99a; }
+.order-views .customer-tabs button.active {
+  border-color: var(--order-green);
+  background: var(--order-green);
+  color: white;
+}
+.order-views .customer-tabs button.active::after { display: none; }
+
+.order-count, .order-meta, .order-method span, .order-money span, .order-stage-label {
+  color: var(--order-muted);
+  font-size: 12px;
+}
+.order-count { white-space: nowrap; }
+
+.order-card, .order-items, .order-info .paper {
+  border-color: var(--order-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.order-card { margin-bottom: 18px; }
+.order-card-head, .order-items > .paper-head {
+  gap: 10px;
+  padding: 16px 22px;
+  background: #f6f9f6;
+  border-color: var(--order-border);
+}
+
+.order-card-head > div { min-width: 0; }
+.order-card-head .order-number {
+  margin: 0 0 3px;
+  color: var(--order-ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.order-state-tag, .order-stage {
+  --state-ink: #0e5e3f;
+  --state-fill: #edf5ef;
+  --state-line: #d7e7dc;
+}
+.order-views [data-state="0"] {
+  --state-ink: #824817;
+  --state-fill: #faf2e5;
+  --state-line: #eedfc9;
+}
+.order-views [data-state="-1"] {
+  --state-ink: #57635c;
+  --state-fill: #f0f2ee;
+  --state-line: #e0e5df;
+}
+
+.order-state-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid var(--state-line);
+  border-radius: 6px;
+  background: var(--state-fill);
+  color: var(--state-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.order-state-tag svg, .order-method svg, .order-info h3 svg, .order-views .payment-mode svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.order-views :deep(.purchase-item) { padding: 14px 22px; }
+.order-views :deep(.purchase-photo) {
+  width: 66px;
+  height: 66px;
+  border: 1px solid #e6ece7;
+  border-radius: 8px;
+}
+
+.order-views .order-bottom {
+  gap: 18px;
+  padding: 15px 22px;
+  border-color: var(--order-border);
+}
+
+.order-method {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: auto;
+  color: var(--order-ink);
+}
+.order-method strong, .order-method span { display: block; }
+.order-method strong { margin-bottom: 2px; font-size: 13px; }
+.order-method svg, .order-info h3 svg { color: var(--order-green); }
+
+.order-money {
+  display: grid;
+  gap: 3px;
+  text-align: right;
+}
+.order-money strong {
+  color: var(--order-ink);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.order-views .order-details-link, .order-stage-actions .btn {
+  min-height: 40px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.order-views .order-stage {
+  display: block;
+  padding: 22px;
+  border: 1px solid var(--state-line);
+  border-radius: 14px;
+  background: var(--state-fill);
+}
+.order-stage-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+}
+.order-stage .large-status-icon {
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--state-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--state-ink);
+}
+.order-stage .large-status-icon svg { width: 24px; height: 24px; }
+.order-stage-copy h2 { margin: 4px 0 7px; color: var(--state-ink); }
+.order-stage-copy p { margin: 0; color: var(--order-ink); }
+.order-stage-copy .order-stage-number {
+  margin-top: 8px;
+  color: var(--order-muted);
+  overflow-wrap: anywhere;
+}
+.order-stage-money strong { font-size: 30px; }
+.order-ready-code {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px 12px;
+  margin-top: 15px;
+  padding: 8px 12px;
+  border: 1px solid var(--state-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--state-ink);
+}
+.order-ready-code strong { letter-spacing: .1em; overflow-wrap: anywhere; }
+
+.order-views .payment-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 16px 0 0;
+  color: var(--state-ink);
+}
+.order-stage-actions {
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid var(--state-line);
+}
+.order-stage-actions .order-return { margin-right: auto; }
+
+.order-items { margin-top: 18px; }
+.order-info { margin-top: 18px; }
+.order-info h3 { display: flex; align-items: center; gap: 8px; }
+.order-info dd { overflow-wrap: anywhere; }
+
+.order-cashier { border-radius: 14px; }
+.cashier-total {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #edf5ef;
+  color: #0e5e3f;
+  font-size: 13px;
+}
+.cashier-total strong { font-variant-numeric: tabular-nums; }
+.cashier-total .cashier-amount { margin: 0; }
+
+@media (max-width: 700px) {
+  .order-views { padding-top: 24px; }
+  .order-filters { flex-wrap: wrap; }
+  .order-views .customer-tabs button { padding-inline: 10px; }
+  .order-card-head, .order-items > .paper-head, .order-views .order-bottom,
+  .order-views :deep(.purchase-item) { padding-inline: 14px; }
+  .order-views .order-bottom { gap: 10px; }
+  .order-views .order-stage { padding: 15px; }
+  .order-stage-main { grid-template-columns: auto minmax(0, 1fr); }
+  .order-stage-money { grid-column: 2; text-align: left; }
+  .order-stage-money strong { font-size: 24px; }
+  .order-stage-actions { flex-wrap: wrap; }
+  .order-stage-actions .order-return { margin-right: 0; }
+}
+
+@media (max-width: 350px) {
+  :global(body:is([data-page="orders"], [data-page="order-detail"]) #header .header-tools) { gap: 5px; }
+}

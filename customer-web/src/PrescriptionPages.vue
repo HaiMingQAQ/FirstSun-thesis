@@ -98,25 +98,93 @@ onMounted(()=>{const pending=prescription.submission?.();uncertain.value=!!pendi
 onUnmounted(()=>{disposed=true;generation++;searchGeneration++;previewGeneration++;revokeAll();window.removeEventListener('firstsun-auth-clear',onAuthClear);});
 </script>
 <template>
-<main class="customer-page">
- <div class="breadcrumb"><a href="#catalog">找药购药</a><Icon name="chevron-right"/><span>{{route==='rx-detail'?'申请详情':route==='rx-submit'?'提交处方申请':'我的处方'}}</span></div>
- <div class="customer-title"><div><div class="eyebrow">FIRSTSUN / PRESCRIPTION</div><h1>{{route==='rx-detail'?'申请详情':route==='rx-submit'?'提交处方申请':'我的处方'}}</h1><p>私有材料仅限本人及有权限的本门店药师读取。提交不代表审核通过，核准明细以服务端返回为准。本页不办理结算或付款。</p></div><div class="rx-title-actions"><a class="btn" href="#consult">联系药师 / 客服</a><a v-if="route==='rx-submit'" class="btn" href="#prescriptions">查看我的申请</a><a v-else class="btn primary" href="#rx-submit">提交新申请</a></div></div>
+<main class="customer-page" :class="{'rx-records':route!=='rx-submit'}">
+ <div class="breadcrumb"><a href="#catalog">找药购药</a><Icon name="chevron-right"/><template v-if="route==='rx-detail'"><a href="#prescriptions">我的处方</a><Icon name="chevron-right"/></template><span>{{route==='rx-detail'?'申请详情':route==='rx-submit'?'提交处方申请':'我的处方'}}</span></div>
+ <div class="customer-title"><div><div class="eyebrow">FIRSTSUN / PRESCRIPTION</div><h1>{{route==='rx-detail'?'申请详情':route==='rx-submit'?'提交处方申请':'我的处方'}}</h1><p v-if="route==='rx-submit'">私有材料仅限本人及有权限的本门店药师读取。提交不代表审核通过，核准明细以服务端返回为准。本页不办理结算或付款。</p><p v-else-if="route==='rx-detail'">查看审核结果、药师反馈和处方材料。</p><p v-else>查看处方申请进度，跟进药师审核结果。</p></div><div class="rx-title-actions"><a class="btn" href="#consult"><Icon v-if="route!=='rx-submit'" name="messages-square"/>联系药师 / 客服</a><a v-if="route==='rx-submit'" class="btn" href="#prescriptions">查看我的申请</a><a v-else class="btn" :class="{primary:route==='prescriptions'}" href="#rx-submit"><Icon name="plus"/>提交新申请</a></div></div>
  <div v-if="!user" class="empty-state"><Icon name="circle-user-round"/><h2>登录后办理处方申请</h2><p>处方材料和审核记录只对本人展示。</p><button class="btn primary" @click="emit('login')">登录会员账号</button></div>
  <template v-else>
   <div v-if="loadError" class="error-panel trade-error" role="alert">{{loadError}}<button class="btn link" :disabled="loading||busy" @click="load">重新读取</button></div>
   <div v-if="loading" class="skeleton" aria-busy="true" aria-label="正在读取处方"></div>
   <template v-else-if="route==='prescriptions'">
-   <p v-if="store" class="small muted">新申请将提交到当前门店 {{store.name}}（#{{store.id}}）。列表包含本人在各门店的申请。</p>
-   <section v-for="row in records" :key="row.id" class="paper order-card"><div class="paper-head"><span class="small muted presc-no">{{row.prescNo||'处方号未返回'}} · {{formatDate(row.createTime)||'时间未返回'}}</span><span class="state-tag" :class="{warm:Number(row.reviewStatus)===2||Number(row.status)===2}">{{reviewLabel(row)}}</span></div><div class="pad"><p>{{row.patientName||'患者未返回'}} · {{row.storeId?`门店 #${row.storeId}`:'门店未返回'}}<span v-if="otherStore(row)"> · 非当前门店</span></p><p class="small muted">{{recordState(row)}}</p><a class="btn" :href="'#rx-detail?id='+row.id">查看申请与审核结果</a></div></section>
-   <div v-if="!records.length&&!loadError" class="empty-state"><Icon name="file-check-2"/><h2>暂无处方申请</h2><p>可以上传真实处方材料，交由药师审核。</p><a class="btn primary" href="#rx-submit">提交新申请</a></div>
+   <div v-if="!loadError||records.length" class="rx-list-head">
+    <div><h2>申请记录</h2><p>包含你在各门店提交的申请。</p></div>
+    <p v-if="store" class="rx-current-store"><Icon name="store"/><span>当前门店 <strong>{{store.name}}</strong> · #{{store.id}}</span></p>
+   </div>
+   <section v-for="row in records" :key="row.id" class="paper rx-record-card">
+    <div class="rx-record-ref">
+     <span class="rx-record-icon"><Icon name="file-text"/></span>
+     <div>
+      <h3 class="presc-no">{{row.prescNo||'处方号未返回'}}</h3>
+      <p>{{formatDate(row.createTime)||'时间未返回'}}</p>
+      <p>{{row.patientName||'患者未返回'}} · {{row.storeId?`门店 #${row.storeId}`:'门店未返回'}}<span v-if="otherStore(row)"> · 非当前门店</span></p>
+     </div>
+    </div>
+    <div class="rx-record-result">
+     <div class="rx-record-states"><span class="state-tag rx-review-tag" :data-review="reviewLabel(row)">{{reviewLabel(row)}}</span><span>记录状态 · {{recordState(row)}}</span></div>
+     <p v-if="Number(row.status)!==2&&Number(row.reviewStatus)===2"><strong>驳回原因</strong> {{rejectionReason(row)}}</p>
+     <p v-else-if="Number(row.status)!==2&&Number(row.reviewStatus)===1&&reviewNote(row)"><strong>药师反馈</strong> {{reviewNote(row)}}</p>
+    </div>
+    <a class="btn rx-record-link" :class="{primary:Number(row.status)!==2&&Number(row.reviewStatus)===2}" :href="'#rx-detail?id='+row.id">查看申请与审核结果 <Icon name="arrow-right"/></a>
+   </section>
+   <div v-if="!records.length&&!loadError" class="empty-state rx-record-empty"><Icon name="file-check-2"/><h2>暂无处方申请</h2><p>可以上传真实处方材料，交由药师审核。</p><a class="btn primary" href="#rx-submit">提交新申请</a></div>
   </template>
   <template v-else-if="route==='rx-detail'&&record">
-   <section class="paper"><div class="paper-head"><div><h2 class="presc-no">{{record.prescNo||'处方号未返回'}}</h2><p class="small muted">{{formatDate(record.createTime)||'时间未返回'}} · {{record.storeId?`门店 #${record.storeId}`:'门店未返回'}}<span v-if="otherStore(record)"> · 非当前门店</span></p></div><span class="state-tag" :class="{warm:Number(record.reviewStatus)===2||Number(record.status)===2}">{{reviewLabel(record)}}</span></div><div class="pad"><p>记录状态：{{recordState(record)}}</p><p v-if="Number(record.status)===2||Number(record.reviewStatus)===0">{{reviewNote(record)}}</p><p v-else-if="Number(record.reviewStatus)===1&&reviewNote(record)">药师意见：{{reviewNote(record)}}</p><section v-else-if="Number(record.reviewStatus)===2"><h3>驳回原因</h3><p>{{rejectionReason(record)}}</p><a class="btn" :href="'#rx-submit?from='+record.id">修改后重新提交新申请</a></section><p v-else-if="Number(record.reviewStatus)!==1">审核状态暂无法确认，请稍后刷新。不要把申请内容当作审核结果。</p><dl class="details-list"><dt>患者</dt><dd>{{record.patientName||'未返回'}}</dd><dt>医院</dt><dd>{{record.hospital||'未填写'}}</dd><dt>医师</dt><dd>{{record.doctorName||'未填写'}}</dd></dl></div></section>
-   <section class="paper pad"><h2>申请明细</h2><p class="small muted">以下是提交时的药品和数量，不是药师核准结果。</p><div v-if="record.requestedItems.length"><div v-for="item in record.requestedItems" :key="'request-'+item.drugId" class="rx-item"><div><strong>{{item.drugName}}</strong><p class="small muted">{{item.specification||'规格未返回'}} · 药品 #{{item.drugId||'未返回'}}</p></div><span>× {{item.qty??'未返回'}}</span></div></div><p v-else>服务端未返回申请明细。</p></section>
-   <section v-if="record.approvedItems.length||(Number(record.reviewStatus)===1&&Number(record.status)!==2)" class="paper pad"><h2>核准明细</h2><p v-if="Number(record.status)===2">记录已作废，下列内容不能作为购买依据。</p><p v-if="record.approvedItems.length" class="small muted">数量、用法、用量和有效期均来自服务端，本页不补写。</p><p v-else>审核状态为通过，但服务端未返回核准明细。本页不会根据申请内容补写。</p><div v-for="item in record.approvedItems" :key="'approved-'+item.drugId" class="rx-item"><div><strong>{{item.drugName}} × {{item.qty??'未返回'}}</strong><p class="small muted">{{item.specification||'规格未返回'}} · 用法 {{item.usage||'未返回'}} · 用量 {{item.dosage||'未返回'}}</p></div></div><p class="small muted">核准有效期：{{formatDate(record.approvedUntil)||'服务端未返回'}}</p><p>购买与付款不在本页办理。</p></section>
-   <section class="paper pad"><h2>私有材料</h2><p v-if="!record.materialIds.length">服务端未返回可查看的私有材料。</p><div v-else class="rx-actions"><button v-for="id in record.materialIds" :key="id" class="btn" :disabled="previewLoading" @click="preview(id)">查看材料 {{id}}</button></div><p v-if="previewLoading" role="status">正在读取私有材料…</p><p v-if="previewError" class="error-panel" role="alert">{{previewError}}</p><img v-if="previewUrl" class="rx-preview" :src="previewUrl" alt="处方材料预览，仅本人可见"></section>
-   <section v-if="record.uses.length" class="paper pad"><h2>使用记录</h2><div v-for="use in record.uses" :key="(use.wxOrderId||'order')+'-'+(use.createTime||'')" class="rx-item"><div><strong>{{useLabel(use.status)}}</strong><p class="small muted">{{formatDate(use.createTime)||'时间未返回'}}<span v-if="use.releaseReason"> · {{use.releaseReason}}</span></p></div><a v-if="Number.isSafeInteger(use.wxOrderId)&&use.wxOrderId>0" class="btn" :href="'#order-detail?id='+use.wxOrderId">查看订单 {{use.wxOrderId}}</a></div><p class="small muted">这里只展示服务端已有记录，不能在本页付款或再次结算。</p></section>
-   <div class="page-actions"><button class="btn" :disabled="loading||busy" @click="load"><Icon name="refresh-cw"/>刷新审核状态</button><a class="btn" href="#prescriptions">返回申请列表</a></div>
+   <section class="rx-review-panel" :data-review="reviewLabel(record)">
+    <div class="rx-review-summary">
+     <span class="rx-record-icon"><Icon name="clipboard-list"/></span>
+     <div><span class="rx-review-caption">审核状态</span><h2>{{reviewLabel(record)}}</h2><p class="presc-no">{{record.prescNo||'处方号未返回'}} · {{formatDate(record.createTime)||'时间未返回'}}</p></div>
+     <div class="rx-review-meta"><span>记录状态 · {{recordState(record)}}</span><span>{{record.storeId?`门店 #${record.storeId}`:'门店未返回'}}<template v-if="otherStore(record)"> · 非当前门店</template></span></div>
+    </div>
+    <div class="rx-review-feedback">
+     <Icon :name="Number(record.status)!==2&&[1,2].includes(Number(record.reviewStatus))?'message-square-text':'info'"/>
+     <div>
+      <template v-if="Number(record.status)===2||Number(record.reviewStatus)===0"><p>{{reviewNote(record)}}</p></template>
+      <template v-else-if="Number(record.reviewStatus)===2"><h3>驳回原因</h3><p>{{rejectionReason(record)}}</p></template>
+      <template v-else-if="Number(record.reviewStatus)===1"><h3>药师反馈</h3><p>{{reviewNote(record)||'药师未填写意见。请查看下方核准明细。'}}</p></template>
+      <p v-else>{{reviewNote(record)}}</p>
+     </div>
+    </div>
+    <div class="page-actions rx-review-actions">
+     <a class="btn rx-return" href="#prescriptions"><Icon name="arrow-left"/>返回申请列表</a>
+     <button class="btn" :disabled="loading||busy" @click="load"><Icon name="refresh-cw"/>刷新审核状态</button>
+     <a v-if="Number(record.status)!==2&&Number(record.reviewStatus)===2" class="btn primary" :href="'#rx-submit?from='+record.id">修改后重新提交新申请 <Icon name="arrow-right"/></a>
+    </div>
+   </section>
+   <div class="rx-record-columns">
+    <div class="rx-record-stack">
+     <section v-if="record.approvedItems.length||(Number(record.reviewStatus)===1&&Number(record.status)!==2)" class="paper pad">
+      <h2>核准明细</h2>
+      <p v-if="Number(record.status)===2">记录已作废，下列内容不能作为购买依据。</p>
+      <p v-if="record.approvedItems.length" class="small muted">数量、用法、用量和有效期均来自服务端，本页不补写。</p>
+      <p v-else>审核状态为通过，但服务端未返回核准明细。本页不会根据申请内容补写。</p>
+      <div v-for="item in record.approvedItems" :key="'approved-'+item.drugId" class="rx-item"><div><strong>{{item.drugName}} × {{item.qty??'未返回'}}</strong><p class="small muted">{{item.specification||'规格未返回'}} · 用法 {{item.usage||'未返回'}} · 用量 {{item.dosage||'未返回'}}</p></div></div>
+      <p class="small muted">核准有效期：{{formatDate(record.approvedUntil)||'服务端未返回'}}</p><p class="small muted">购买与付款不在本页办理。</p>
+     </section>
+     <section class="paper pad">
+      <h2>申请明细</h2><p class="small muted">以下是提交时的药品和数量，不是药师核准结果。</p>
+      <div v-if="record.requestedItems.length"><div v-for="item in record.requestedItems" :key="'request-'+item.drugId" class="rx-item"><div><strong>{{item.drugName}}</strong><p class="small muted">{{item.specification||'规格未返回'}} · 药品 #{{item.drugId||'未返回'}}</p></div><span>× {{item.qty??'未返回'}}</span></div></div>
+      <p v-else>服务端未返回申请明细。</p>
+     </section>
+     <section v-if="record.uses.length" class="paper pad">
+      <h2>使用记录</h2>
+      <div v-for="use in record.uses" :key="(use.wxOrderId||'order')+'-'+(use.createTime||'')" class="rx-item"><div><strong>{{useLabel(use.status)}}</strong><p class="small muted">{{formatDate(use.createTime)||'时间未返回'}}<span v-if="use.releaseReason"> · {{use.releaseReason}}</span></p></div><a v-if="Number.isSafeInteger(use.wxOrderId)&&use.wxOrderId>0" class="btn" :href="'#order-detail?id='+use.wxOrderId">查看订单 {{use.wxOrderId}}</a></div>
+      <p class="small muted">这里只展示服务端已有记录，不能在本页付款或再次结算。</p>
+     </section>
+    </div>
+    <div class="rx-record-stack">
+     <section class="paper pad">
+      <h2><Icon name="user-round"/>处方信息</h2>
+      <dl class="details-list"><dt>患者</dt><dd>{{record.patientName||'未返回'}}</dd><dt>医院</dt><dd>{{record.hospital||'未填写'}}</dd><dt>医师</dt><dd>{{record.doctorName||'未填写'}}</dd></dl>
+     </section>
+     <section class="paper pad">
+      <h2><Icon name="lock-keyhole"/>私有材料</h2>
+      <p class="small muted">仅限本人及有权限的本门店药师查看。</p>
+      <p v-if="!record.materialIds.length">服务端未返回可查看的私有材料。</p>
+      <div v-else class="rx-actions"><button v-for="id in record.materialIds" :key="id" class="btn" :disabled="previewLoading" @click="preview(id)"><Icon name="file-image"/>查看材料 {{id}}</button></div>
+      <p v-if="previewLoading" role="status">正在读取私有材料…</p><p v-if="previewError" class="error-panel" role="alert">{{previewError}}</p><img v-if="previewUrl" class="rx-preview" :src="previewUrl" alt="处方材料预览，仅本人可见">
+     </section>
+    </div>
+   </div>
   </template>
   <div v-else-if="route==='rx-detail'&&!loadError" class="empty-state"><h2>没有读到这份申请</h2><a class="btn" href="#prescriptions">返回申请列表</a></div>
   <template v-else-if="route==='rx-submit'&&store">
@@ -154,3 +222,5 @@ onUnmounted(()=>{disposed=true;generation++;searchGeneration++;previewGeneration
 .pad h3{font-size:16px;margin:8px 0}
 @media(max-width:700px){.rx-layout{display:block}.rx-layout .summary-box{margin-top:20px}.rx-item{align-items:flex-start;flex-wrap:wrap}}
 </style>
+
+<style scoped src="./prescription-views.css"></style>
