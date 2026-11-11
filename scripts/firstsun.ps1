@@ -18,6 +18,8 @@ $imageTags = [ordered]@{ mysql='mysql:8.0'; redis='redis:7-alpine'; qdrant='qdra
 $volumeDefaults = [ordered]@{ FIRSTSUN_MYSQL_VOLUME='firstsun-thesis-local_mysql-data'; FIRSTSUN_REDIS_VOLUME='firstsun-thesis-local_redis-data'; FIRSTSUN_LOGS_VOLUME='firstsun-thesis-local_backend-logs' }
 
 function Invoke-DockerData([string[]]$arguments) {
+    # Windows PowerShell can report Docker's progress on stderr as a terminating error.
+    $ErrorActionPreference = 'Continue'
     $output = & docker --context desktop-linux @arguments 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'DOCKER_COMMAND_FAILED' }
     return $output
@@ -195,7 +197,11 @@ function Invoke-Main {
             'rebuild' {
                 Push-Location (Join-Path $repo 'customer-web')
                 try {
-                    & node './node_modules/vite/bin/vite.js' build *> $null
+                    $viteArgs = @('build')
+                    if ($values['FIRSTSUN_LOCAL_TEST_LOGIN'] -ceq 'true') {
+                        $viteArgs += @('--mode', 'local-acceptance')
+                    }
+                    & node './node_modules/vite/bin/vite.js' @viteArgs *> $null
                     if ($LASTEXITCODE -ne 0) { throw 'CUSTOMER_BUILD_FAILED' }
                 } finally { Pop-Location }
                 # 向量库镜像是官方镜像，本地缺就先拉取；向量化服务是本仓库构建的

@@ -26,8 +26,9 @@ function docker {
         }
         return ''
     }
-    if ($joined -match ' up ' -and $env:MOCK_FAIL_UP -eq '1') {
-        $global:LASTEXITCODE = 1; return
+    if ($joined -match ' up ') {
+        if ($env:MOCK_FAIL_UP -eq '1') { $global:LASTEXITCODE = 1; return }
+        Write-Error 'Compose progress on stderr'
     }
     return ''
 }

@@ -111,7 +111,7 @@ Assert ($legacyCalls.Count -eq 0) 'Daily entry can write business data or replay
 foreach ($volume in @('mysql-data','redis-data','backend-logs')) {
     Assert ($compose.volumes.$volume.external -eq $true) "Missing existing volume must not create an empty $volume"
 }
-Assert ($compose.services.backend.environment.ARGS -match '--firstsun.miniapp.mock-payment-enabled=false') 'Mock payment not forced off'
+Assert ($compose.services.backend.environment.ARGS.Contains('--firstsun.miniapp.mock-payment-enabled=${FIRSTSUN_MOCK_PAYMENT_ENABLED:-false}')) 'Mock payment is not off by default'
 Assert (-not ($compose.services.mysql.volumes -match 'initdb')) 'MySQL init hooks bypass ledger'
 foreach ($service in @('mysql','redis','backend','admin-ui','customer-web')) {
     Assert ($compose.services.$service.ports[0] -like '127.0.0.1:*') "Non-local bind for $service"
