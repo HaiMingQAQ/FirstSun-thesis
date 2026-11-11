@@ -6,7 +6,9 @@ import cn.iocoder.yudao.module.pharmacy.api.payment.PaymentFacade;
 import cn.iocoder.yudao.module.pharmacy.controller.admin.member.vo.order.WxOrderSaveReqVO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderLineAllocDO;
+import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderLineDO;
 import cn.iocoder.yudao.module.pharmacy.dal.mysql.member.WxOrderLineAllocMapper;
+import cn.iocoder.yudao.module.pharmacy.dal.mysql.member.WxOrderLineMapper;
 import cn.iocoder.yudao.module.pharmacy.dal.mysql.member.WxOrderMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,7 @@ class WxOrderPickupCodeTest {
     private static final Long ORDER_ID = 10L;
     private final WxOrderMapper orders = mock(WxOrderMapper.class);
     private final WxOrderLineAllocMapper allocations = mock(WxOrderLineAllocMapper.class);
+    private final WxOrderLineMapper lines = mock(WxOrderLineMapper.class);
     private final InventoryFacade inventory = mock(InventoryFacade.class);
     private final WxOrderServiceImpl service = new WxOrderServiceImpl();
 
@@ -37,6 +40,7 @@ class WxOrderPickupCodeTest {
     void setUp() {
         ReflectionTestUtils.setField(service, "wxOrderMapper", orders);
         ReflectionTestUtils.setField(service, "wxOrderLineAllocMapper", allocations);
+        ReflectionTestUtils.setField(service, "wxOrderLineMapper", lines);
         ReflectionTestUtils.setField(service, "inventoryFacade", inventory);
         ReflectionTestUtils.setField(service, "salePosting", mock(WxOrderSalePostingService.class));
         PaymentFacade payments = mock(PaymentFacade.class);
@@ -191,6 +195,41 @@ class WxOrderPickupCodeTest {
         verify(orders).update(captor.capture(), any());
         assertEquals(3, captor.getValue().getStatus());
         assertPickupCode(captor.getValue().getPickupCode());
+    }
+
+    @Test
+    void finishPickingSyncsMultiBatchWithoutOverwritingUnallocatedLines() {
+        WxOrderDO order = pickingOrder(0, "ABC123");
+        when(orders.selectById(ORDER_ID)).thenReturn(order);
+        when(orders.update(any(), any())).thenAnswer(invocation -> {
+            order.setStatus(3);
+            return 1;
+        });
+        WxOrderLineDO first = new WxOrderLineDO();
+        first.setId(81L);
+        first.setPickedQty(0);
+        WxOrderLineDO second = new WxOrderLineDO();
+        second.setId(82L);
+        second.setPickedQty(1);
+        WxOrderLineDO historical = new WxOrderLineDO();
+        historical.setId(83L);
+        historical.setPickedQty(4);
+        when(lines.selectListByWxOrderId(ORDER_ID)).thenReturn(List.of(first, second, historical));
+        when(allocations.selectListByWxOrderId(ORDER_ID)).thenReturn(List.of(
+                allocation(81L, 1, WxOrderLineAllocDO.STATUS_OUT),
+                allocation(81L, 1, WxOrderLineAllocDO.STATUS_OUT),
+                allocation(82L, 1, WxOrderLineAllocDO.STATUS_OUT),
+                allocation(82L, 1, WxOrderLineAllocDO.STATUS_FROZEN)));
+        when(lines.updateById(any(WxOrderLineDO.class))).thenReturn(1);
+
+        service.finishPicking(ORDER_ID);
+        assertThrows(ServiceException.class, () -> service.finishPicking(ORDER_ID));
+
+        var updated = org.mockito.ArgumentCaptor.forClass(WxOrderLineDO.class);
+        verify(lines).updateById(updated.capture());
+        assertEquals(81L, updated.getValue().getId());
+        assertEquals(2, updated.getValue().getPickedQty());
+        verify(orders, times(1)).update(any(), any());
     }
 
     @Test
@@ -350,6 +389,14 @@ class WxOrderPickupCodeTest {
         order.setStatus(2);
         order.setPickupCode(code);
         return order;
+    }
+
+    private WxOrderLineAllocDO allocation(Long lineId, int qty, Integer status) {
+        WxOrderLineAllocDO allocation = new WxOrderLineAllocDO();
+        allocation.setWxOrderLineId(lineId);
+        allocation.setQty(qty);
+        allocation.setStatus(status);
+        return allocation;
     }
 
     private void assertPickupCode(String code) {
