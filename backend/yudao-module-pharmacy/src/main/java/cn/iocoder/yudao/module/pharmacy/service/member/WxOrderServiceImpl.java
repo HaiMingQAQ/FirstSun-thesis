@@ -628,6 +628,7 @@ public class WxOrderServiceImpl implements WxOrderService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void finishPicking(Long id) {
         WxOrderDO wxOrder = validateWxOrderExists(id);
         // 仅拣货中状态允许拣货完成
@@ -658,10 +659,38 @@ public class WxOrderServiceImpl implements WxOrderService {
                 if (wxOrderMapper.update(updateObj, condition) != 1) {
                     throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
                 }
-                return;
+                break;
             } catch (DuplicateKeyException ex) {
                 if (!needsCode || !isPickupCodeCollision(ex) || attempt == PICKUP_CODE_RETRIES - 1) {
                     throw ex;
+                }
+            }
+        }
+        syncPickedQty(id);
+    }
+
+    private void syncPickedQty(Long orderId) {
+        Map<Long, Integer> pickedByLine = new HashMap<>();
+        List<WxOrderLineAllocDO> allocations = wxOrderLineAllocMapper.selectListByWxOrderId(orderId);
+        if (allocations != null) {
+            for (WxOrderLineAllocDO allocation : allocations) {
+                if (Objects.equals(allocation.getStatus(), WxOrderLineAllocDO.STATUS_OUT)) {
+                    pickedByLine.merge(allocation.getWxOrderLineId(), allocation.getQty(), Integer::sum);
+                }
+            }
+        }
+        List<WxOrderLineDO> lines = wxOrderLineMapper.selectListByWxOrderId(orderId);
+        if (lines != null) {
+            for (WxOrderLineDO line : lines) {
+                Integer picked = pickedByLine.get(line.getId());
+                if (picked == null || Objects.equals(line.getPickedQty(), picked)) {
+                    continue;
+                }
+                WxOrderLineDO update = new WxOrderLineDO();
+                update.setId(line.getId());
+                update.setPickedQty(picked);
+                if (wxOrderLineMapper.updateById(update) != 1) {
+                    throw exception(PHARMACY_WX_ORDER_STATUS_FLOW_ERROR);
                 }
             }
         }
