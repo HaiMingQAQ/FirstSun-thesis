@@ -151,6 +151,8 @@ docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.
 - 不要用 `down -v`、全局 prune 或空库替换来处理环境问题。
 - 账号和密码由环境负责人提供，不写进 README。
 
+第一次下载项目且没有数据库时，请按[从零搭建本机演示环境](docs/local-demo-install.md)初始化。仓库提供合成演示种子，可在空库中重建演示门店、会员、店员、药师及模拟支付。
+
 ### uni-app 顾客端预览
 
 ```powershell
