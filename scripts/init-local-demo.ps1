@@ -2,7 +2,8 @@ param(
     [string]$EnvironmentRoot = '',
     [string]$Database = '',
     [securestring]$DemoManagerPassword,
-    [securestring]$DemoPharmacistPassword
+    [securestring]$DemoPharmacistPassword,
+    [string]$DockerContext = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,31 +25,70 @@ if (-not $config['BACKEND_PORT']) { $config['BACKEND_PORT'] = '28080' }
 if ($config['BACKEND_PORT'] -notmatch '^\d{1,5}$' -or [int]$config['BACKEND_PORT'] -lt 1 -or [int]$config['BACKEND_PORT'] -gt 65535) {
     throw 'BACKEND_PORT must be a valid TCP port.'
 }
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker CLI was not found on PATH.' }
+if (-not $DockerContext) { $DockerContext = $env:DOCKER_CONTEXT }
+if (-not $DockerContext) {
+    $DockerContext = 'default'
+    if ($IsWindows) {
+        $desktopContext = & {
+            $ErrorActionPreference = 'Continue'
+            $PSNativeCommandUseErrorActionPreference = $false
+            $contextName = docker context inspect desktop-linux --format '{{.Name}}' 2>$null
+            if ($LASTEXITCODE -eq 0) { $contextName }
+        }
+        if ($desktopContext -eq 'desktop-linux') { $DockerContext = 'desktop-linux' }
+    }
+}
+
+function Format-DemoDockerError($output, [string]$secret = '') {
+    $errors = @($output | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
+    $lines = if ($errors.Count) { $errors } else { $output }
+    $diagnostic = ($lines -join "`n").Trim()
+    if (-not $diagnostic) { return 'Docker did not provide a diagnostic.' }
+    $keys = @($config.Keys -match 'PASSWORD|SECRET|API_KEY|TOKEN|SMS_CODE') +
+            @('FIRSTSUN_DEMO_MANAGER_PASSWORD', 'FIRSTSUN_DEMO_PHARMACIST_PASSWORD')
+    foreach ($key in $keys) {
+        foreach ($raw in @($config[$key], [Environment]::GetEnvironmentVariable($key))) {
+            if (-not $raw) { continue }
+            $value = $raw.Trim().Trim('"').Trim("'")
+            if ($value) { $diagnostic = $diagnostic.Replace($value, '[REDACTED]') }
+        }
+    }
+    if ($secret) { $diagnostic = $diagnostic.Replace($secret, '[REDACTED]') }
+    return ($diagnostic -creplace '\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}', '[REDACTED BCRYPT]')
+}
 
 function Invoke-DemoMySql([string]$statement, [string]$schema = '') {
     $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
     $argsForMySql = @()
     if ($schema) { $argsForMySql = @($schema) }
-    $output = $statement | docker --context desktop-linux compose --project-name firstsun --env-file $envFile --file $composeFile `
+    $output = $statement | docker --context $DockerContext compose --project-name firstsun --env-file $envFile --file $composeFile `
         exec -T mysql sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --binary-mode --default-character-set=utf8mb4 --batch --skip-column-names -uroot "$@"' sh @argsForMySql 2>&1
     if ($LASTEXITCODE -ne 0) {
-        $errorCode = [regex]::Match(($output -join "`n"), '\bERROR [0-9]+ \([0-9A-Z]+\)(?: at line [0-9]+)?').Value
-        throw "MySQL command failed ($errorCode). Check the current migration or seed step."
+        throw "MySQL command failed via Docker context '$DockerContext'.`n$(Format-DemoDockerError $output)"
     }
     return (($output | Where-Object { $_ -is [string] }) -join "`n").Trim()
 }
 
 function Sql([string]$statement) { return Invoke-DemoMySql $statement $Database }
 
-function Get-DemoPasswordHash([securestring]$secret, [string]$username) {
+function Get-DemoPasswordHash([securestring]$secret, [string]$username, [string]$variableName) {
     $ErrorActionPreference = 'Continue'
-    if (-not $secret) { $secret = Read-Host "New local password for $username" -AsSecureString }
+    $PSNativeCommandUseErrorActionPreference = $false
+    if (-not $secret) {
+        $envPassword = [Environment]::GetEnvironmentVariable($variableName)
+        $secret = if ($envPassword) { ConvertTo-SecureString $envPassword -AsPlainText -Force }
+                  else { Read-Host "New local password for $username" -AsSecureString }
+    }
     $plain = ([pscredential]::new($username, $secret)).GetNetworkCredential().Password
     if ($plain -cnotmatch '^[A-Za-z0-9]{8,16}$') { throw 'Use 8-16 letters or digits for the local demo password.' }
     try {
-        $output = $plain | docker --context desktop-linux run --rm --network none -i --entrypoint htpasswd `
+        $output = $plain | docker --context $DockerContext run --rm --network none -i --entrypoint htpasswd `
             httpd:2.4-alpine -nBi -C 12 $username 2>&1
-        if ($LASTEXITCODE -ne 0) { throw 'Could not generate the local bcrypt hash. Check the httpd:2.4-alpine image.' }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not generate the local bcrypt hash via Docker context '$DockerContext'.`n$(Format-DemoDockerError $output $plain)"
+        }
         $hash = [regex]::Match(($output -join "`n"), '\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}').Value
         if (-not $hash) { throw 'Password helper returned no bcrypt hash.' }
         return $hash
@@ -65,8 +105,8 @@ Migrate
 $tenant = Sql "SELECT CONCAT(id, ':', creator) FROM system_tenant WHERE id=901 OR name='FirstSun-Followup';"
 if ($tenant -and $tenant -ne '901:firstsun-demo-seed') { throw 'The demo tenant ID or name is already in use.' }
 if (-not $tenant) {
-    $manager = Get-DemoPasswordHash $DemoManagerPassword 'demomanager'
-    $pharmacist = Get-DemoPasswordHash $DemoPharmacistPassword 'demopharmacist'
+    $manager = Get-DemoPasswordHash $DemoManagerPassword 'demomanager' 'FIRSTSUN_DEMO_MANAGER_PASSWORD'
+    $pharmacist = Get-DemoPasswordHash $DemoPharmacistPassword 'demopharmacist' 'FIRSTSUN_DEMO_PHARMACIST_PASSWORD'
     $seed = [IO.File]::ReadAllText((Join-Path $repo 'deploy/sql/seed-local-demo.sql'))
     Configure-LocalFiles
     [void](Sql "SET @demo_manager_hash='$manager', @demo_pharmacist_hash='$pharmacist';`n$seed")
