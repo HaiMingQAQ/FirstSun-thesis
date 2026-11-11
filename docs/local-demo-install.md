@@ -2,7 +2,7 @@
 
 这份流程面向首次下载项目的 Windows 和 Linux 用户。演示数据由仓库 SQL 生成，包含 `FirstSun-Followup` 租户（901）、演示门店（9101）、一个合成会员、店员、药师、两种带图的合成商品和批次库存。订单、会话、处方和通知在演示过程中通过页面产生。
 
-准备 Docker（Windows 使用 Docker Desktop 的 Linux 引擎，Linux 使用 Docker Engine 和 Compose 插件）、PowerShell 7、Node.js 及 npm，打开仓库根目录下的 PowerShell。以下首次安装步骤用于一台没有日常 FirstSun 数据的机器。已有 FirstSun 环境时，先另行准备独立的演示配置与空库，保留现有配置和数据卷。
+准备 Docker（Windows 使用 Docker Desktop 的 Linux 引擎，Linux 使用 Docker Engine 和 Compose 插件）、PowerShell 7、Node.js 及 npm。Node.js 推荐使用 **22.13.0 或更新的 22.x**，与管理端容器的 Node 22 一致。管理端 `package.json` 声明的最低版本为 `20.19.0`。在仓库根目录打开 PowerShell。已有日常 FirstSun 环境时，按文末的[同一台电脑并行运行演示](#同一台电脑并行运行演示)操作。
 
 ## 1. 填写私有配置
 
@@ -69,11 +69,17 @@ docker compose --project-name firstsun --env-file .env --file deploy/docker-comp
 docker compose --project-name firstsun --env-file .env --file deploy/docker-compose.local.yml up -d --no-build --pull never --wait --wait-timeout 300
 ```
 
-| 页面 | 地址 | 演示入口 |
-| --- | --- | --- |
-| 顾客网页 | `http://127.0.0.1:4193` | 点「独立本机验收」，用合成手机号 `19900009011` 和私有配置里的本机验证码 |
-| 管理端 | `http://127.0.0.1:28081` | 走药店登录。`demomanager` 拣货、核销和接待客服，`demopharmacist` 接待药师咨询和审方 |
-| 后端健康检查 | `http://127.0.0.1:28080/actuator/health` | 返回健康状态 |
+| 服务 | 默认宿主机端口 | 同机演示端口 | 配置或入口 |
+| --- | --- | --- | --- |
+| 顾客网页 | `4193` | `5193` | `CUSTOMER_PORT`。点「独立本机验收」，使用合成手机号 `19900009011` 和本机验证码 |
+| 管理端 | `28081` | `38081` | `ADMIN_PORT`。走药店登录，`demomanager` 负责拣货、核销和客服，`demopharmacist` 负责药师咨询和审方 |
+| 后端 | `28080` | `38080` | `BACKEND_PORT`。健康检查为 `/actuator/health` |
+| MySQL | `23327` | `33327` | `MYSQL_PORT` |
+| Redis | `26397` | `36397` | `REDIS_PORT` |
+| Qdrant | HTTP `26333`，gRPC `26334` | HTTP `36333`，gRPC `36334` | `QDRANT_HTTP_PORT`、`QDRANT_GRPC_PORT` |
+| embedding | 无宿主机端口 | 无宿主机端口 | 后端通过 Compose 网络访问 `http://embedding:8000`，可用 `FIRSTSUN_EMBEDDING_URL` 指定地址 |
+
+宿主机端口均绑定到 `127.0.0.1`。后端在自己的 Compose 网络内访问 Qdrant 的 gRPC 端口 `6334`，修改宿主机映射无需修改容器间地址。
 
 演示可按三个流程核对。先用「演示 OTC」下单、模拟付款并在管理端拣货核销，再发起一条测试咨询，最后用「演示处方品」和仓库自带的[合成处方上传附件](../deploy/demo-assets/prescription-upload.png)提交申请，并检查审核后的站内通知。
 
@@ -94,3 +100,29 @@ npm run dev:h5 -- --mode local-acceptance --host 127.0.0.1 --port 4189
 `local-acceptance` 模式从仓库的 [`mall-uniapp/.env.local-acceptance`](../mall-uniapp/.env.local-acceptance) 读取 API 前缀、静态资源地址、WebSocket 路径、H5 地址和上传方式。若后端端口是 `38080` 等自定义值，修改上面的 `SHOPRO_BASE_URL`，其余三个后端地址会一起采用该端口。若修改 H5 的 `--port`，同步设置 `$env:SHOPRO_H5_URL`。
 
 浏览器打开 `http://127.0.0.1:4189`，使用同一合成会员和本机验证码。本机 RAG 演示另需模型配置和索引，基础购物、咨询和处方演示可离线运行。
+
+## 同一台电脑并行运行演示
+
+使用独立配置目录 `.local/demo`。示例项目名为 `firstsun-demo`，拥有自己的镜像标签、网络、MySQL、Redis、Qdrant 和日志卷，端口见上表。现有日常入口继续使用原来的 `.env`。
+
+```powershell
+$demoRoot = Join-Path (Get-Location) '.local/demo'
+New-Item -ItemType Directory -Force $demoRoot | Out-Null
+Copy-Item deploy/.env.demo.example (Join-Path $demoRoot '.env')
+```
+
+第一次复制后填写演示配置里的数据库密码、Redis 密码和本机验证码。之后复用这份配置。创建独立卷、启动 MySQL 并初始化：
+
+```powershell
+$demoEnv = Join-Path $demoRoot '.env'
+docker volume create firstsun-demo_mysql-data
+docker volume create firstsun-demo_redis-data
+docker volume create firstsun-demo_backend-logs
+docker compose --project-name firstsun-demo --env-file $demoEnv --file deploy/docker-compose.local.yml pull mysql redis
+docker compose --project-name firstsun-demo --env-file $demoEnv --file deploy/docker-compose.local.yml up -d --wait mysql
+pwsh -NoProfile -File scripts/init-local-demo.ps1 -EnvironmentRoot $demoRoot
+```
+
+Windows 按第 3 步安装顾客端依赖，然后从仓库根目录执行 `pwsh -NoProfile -File scripts/firstsun.ps1 -Action rebuild -EnvironmentRoot $demoRoot`。Linux 按第 3 步构建，将 `--env-file .env` 改为 `--env-file $demoEnv`，将 `--project-name firstsun` 改为 `--project-name firstsun-demo`，并将顾客端构建的 `FIRSTSUN_BACKEND_URL` 改为 `http://127.0.0.1:38080`。三个外部卷名称都须以项目名加下划线开头。
+
+演示 H5 使用 `SHOPRO_BASE_URL=http://127.0.0.1:38080`。若同时运行日常 H5，将演示 H5 的 `--port` 和 `SHOPRO_H5_URL` 改到另一个空闲端口，例如 `5189`。

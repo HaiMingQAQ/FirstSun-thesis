@@ -99,10 +99,10 @@ for ($i=0; $i -lt 3; $i++) {
     Assert ($manifest[44+$i].id -eq (45+$i) -and $manifest[44+$i].path -eq ('sql/migrations/' + $readiness[$i])) "Wrong appended readiness SQL at $i"
 }
 $compose = Get-Content (Join-Path $root 'deploy/docker-compose.local.yml') -Raw | ConvertFrom-Json
-Assert ($compose.name -eq 'firstsun') 'Wrong Compose project'
+Assert ($compose.name -ceq '${FIRSTSUN_PROJECT_NAME:-firstsun}') 'Missing default or configurable Compose project'
 Assert ($compose.services.mysql.environment.TZ -eq 'Asia/Shanghai') 'MySQL/backend time zone mismatch'
 $rootCompose = Get-Content (Join-Path $root 'docker-compose.yml') -Raw | ConvertFrom-Json
-Assert ($rootCompose.name -eq 'firstsun' -and $rootCompose.include[0].path -eq './deploy/docker-compose.local.yml') 'Root Compose uses a different environment'
+Assert ($rootCompose.name -ceq $compose.name -and $rootCompose.include[0].path -eq './deploy/docker-compose.local.yml') 'Root Compose uses a different environment'
 $runnerErrors = $null; $runnerTokens = $null
 $runnerAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'scripts/firstsun.ps1'), [ref]$runnerTokens, [ref]$runnerErrors)
 Assert (-not $runnerErrors.Count) 'Unified entry failed to parse'

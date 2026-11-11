@@ -2,16 +2,18 @@
 
 日常只维护一个 Docker Compose 项目：`firstsun`。定义在仓库内的 `deploy/docker-compose.local.yml`，根目录 `docker-compose.yml` 引用同一份配置；移动或重新拉取代码后不依赖原来的日期目录。
 
+需要在同一台电脑并行运行演示时，使用[独立演示配置](docs/local-demo-install.md#同一台电脑并行运行演示)。
+
 ## 入口
 
 Windows 安装并打开 Docker Desktop（Linux containers），在仓库根目录使用：
 
 | 文件 | 操作 |
 | --- | --- |
-| `start-local.bat` | 复用现有镜像与数据卷，不自动构建/拉取镜像；启动五个服务并等待健康检查 |
+| `start-local.bat` | 复用现有镜像与数据卷，不自动构建/拉取镜像；启动七个服务并等待健康检查 |
 | `stop-local.bat` | 正常停止，保留容器和全部持久数据 |
 | `status.bat` | 查看状态 |
-| `rebuild-local.bat` | 显式构建顾客端产物和三个应用镜像，再启动并等待五个服务健康 |
+| `rebuild-local.bat` | 显式构建顾客端产物和四个应用镜像，再启动并等待七个服务健康 |
 
 脚本固定连接本机 `desktop-linux` context。共享父目录已有统一入口时，仓库入口转到父目录；独立clone时，直接调用本仓库 `scripts/firstsun.ps1`。私有配置位于所选环境根目录 `.env`，可参考 `deploy/.env.thesis.local.example`；示例不含可用凭据。必须填写已有数据库的正确凭据，不会生成新密码或重设原账号。
 
@@ -19,7 +21,7 @@ Windows 安装并打开 Docker Desktop（Linux containers），在仓库根目�
 
 ## 预检与失败定位
 
-启动/重建前核对本机Docker Desktop Linux引擎、`.env`必填项、Compose配置、所需已有镜像、external持久卷和目标端口。普通启动要求五个服务镜像已存在；重建要求MySQL/Redis基础镜像已存在，再显式构建三个应用镜像。缺镜像不会在普通启动时自动拉取或构建，按提示恢复镜像或使用重建入口。
+启动/重建前核对本机 Docker Desktop Linux 引擎、`.env` 必填项、Compose 配置、所需已有镜像、external 持久卷和目标端口。普通启动要求七个服务镜像已存在。重建要求 MySQL 和 Redis 基础镜像已存在，再构建后端、管理端、顾客端和 embedding，缺少 Qdrant 镜像时会拉取。普通启动缺镜像时，按提示恢复镜像或使用重建入口。
 
 输出中文编号四阶段：`[1/4]` 检查工作区、私有配置和Docker引擎；`[2/4]` 检查镜像、持久卷和端口；`[3/4]` 执行所选操作；`[4/4]` 查看服务状态与本机入口。具体检查随操作而定。
 

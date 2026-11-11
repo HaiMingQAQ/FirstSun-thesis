@@ -1,6 +1,6 @@
 ﻿function Get-FirstSunPorts($values) {
-    $defaults = [ordered]@{ mysql=23327; redis=26397; backend=28080; 'admin-ui'=28081; 'customer-web'=4193 }
-    $keys = @{ mysql='MYSQL_PORT'; redis='REDIS_PORT'; backend='BACKEND_PORT'; 'admin-ui'='ADMIN_PORT'; 'customer-web'='CUSTOMER_PORT' }
+    $defaults = [ordered]@{ mysql=23327; redis=26397; backend=28080; 'admin-ui'=28081; 'customer-web'=4193; 'qdrant-http'=26333; 'qdrant-grpc'=26334 }
+    $keys = @{ mysql='MYSQL_PORT'; redis='REDIS_PORT'; backend='BACKEND_PORT'; 'admin-ui'='ADMIN_PORT'; 'customer-web'='CUSTOMER_PORT'; 'qdrant-http'='QDRANT_HTTP_PORT'; 'qdrant-grpc'='QDRANT_GRPC_PORT' }
     $result = [ordered]@{}
     foreach ($service in $defaults.Keys) {
         $text = if ($values.ContainsKey($keys[$service]) -and $values[$keys[$service]]) { [string]$values[$keys[$service]] } else { [string]$defaults[$service] }
@@ -12,6 +12,21 @@
     return $result
 }
 
+function Get-FirstSunProjectName($values) {
+    $name = [string]$values['FIRSTSUN_PROJECT_NAME']
+    if (-not $name) { return 'firstsun' }
+    if ($name -cnotmatch '^[a-z0-9][a-z0-9_-]*$') { throw 'INVALID_PROJECT_NAME' }
+    if ($name -ne 'firstsun') {
+        foreach ($key in 'FIRSTSUN_MYSQL_VOLUME','FIRSTSUN_REDIS_VOLUME','FIRSTSUN_LOGS_VOLUME') {
+            $volume = [string]$values[$key]
+            if ($volume -cnotlike "${name}_*" -or $volume -clike 'firstsun-thesis-local_*') {
+                throw "UNSAFE_PROJECT_VOLUME:$key"
+            }
+        }
+    }
+    return $name
+}
+
 function Assert-FirstSunConfig($values) {
     foreach ($key in @('MYSQL_ROOT_PASSWORD','MYSQL_DATABASE','MYSQL_USER','MYSQL_PASSWORD','REDIS_PASSWORD')) {
         if (-not $values.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$values[$key])) { throw "MISSING_CONFIG:$key" }
@@ -21,7 +36,8 @@ function Assert-FirstSunConfig($values) {
 function Get-FirstSunConflict($ports, $owned, $listeners) {
     foreach ($service in $ports.Keys) {
         $port = [int]$ports[$service]
-        if ($listeners -contains $port -and -not ($owned.ContainsKey($service) -and $owned[$service] -contains $port)) {
+        $owner = if ($service -like 'qdrant-*') { 'qdrant' } else { $service }
+        if ($listeners -contains $port -and -not ($owned.ContainsKey($owner) -and $owned[$owner] -contains $port)) {
             return "$service ($port)"
         }
     }

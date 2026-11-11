@@ -14,6 +14,9 @@ catch { Assert ($_.Exception.Message -eq 'DUPLICATE_PORT') 'Duplicate port not r
 $values.BACKEND_PORT = '28080'
 Assert (-not (Get-FirstSunConflict $ports @{ backend=@(28080) } @(28080))) 'Own running service mistaken for conflict'
 Assert ((Get-FirstSunConflict $ports @{} @(28080)) -eq 'backend (28080)') 'Foreign listener not rejected'
+Assert ((Get-FirstSunProjectName $values) -ceq 'firstsun') 'Legacy project default changed'
+Assert (-not (Get-FirstSunConflict $ports @{ qdrant=@(26333,26334) } @(26333,26334))) 'Owned Qdrant ports mistaken for conflicts'
+Assert ((Get-FirstSunConflict $ports @{} @(26334)) -eq 'qdrant-grpc (26334)') 'Foreign Qdrant port was not detected'
 Assert ((Get-FirstSunVersion $null 'abc' @{} $false) -like '版本未知*') 'Legacy image version should be unknown'
 $ids = @{ backend='id1'; 'admin-ui'='id2'; 'customer-web'='id3' }
 $record = [pscustomobject]@{ commit='abc'; dirty=$false; images=[pscustomobject]$ids }
@@ -82,6 +85,15 @@ $result = Run-Mock 'rebuild'
 Assert ($result.code -eq 0) 'Successful rebuild simulation failed'
 $saved = Get-Content (Join-Path $work '.local/firstsun-build.json') -Raw | ConvertFrom-Json
 Assert ($saved.commit -eq (& git -C $repo rev-parse HEAD)) 'Successful rebuild record commit mismatch'
+$baseEnv = [IO.File]::ReadAllText($envFile)
+[IO.File]::AppendAllText($envFile, "FIRSTSUN_PROJECT_NAME=firstsun-demo`n")
+$result = Run-Mock 'status'
+Assert ($result.code -ne 0 -and $result.output -match 'UNSAFE_PROJECT_VOLUME:FIRSTSUN_MYSQL_VOLUME') 'Isolated project accepted implicit shared volumes'
+[IO.File]::WriteAllText($envFile, $baseEnv + "FIRSTSUN_PROJECT_NAME=firstsun-demo`nFIRSTSUN_MYSQL_VOLUME=firstsun-demo_mysql-data`nFIRSTSUN_REDIS_VOLUME=firstsun-demo_redis-data`nFIRSTSUN_LOGS_VOLUME=firstsun-demo_backend-logs`n")
+$env:MOCK_EXPECT_PROJECT = 'firstsun-demo'
+$result = Run-Mock 'status'
+Assert ($result.code -eq 0 -and $result.output -match '--project-name firstsun-demo') 'Launcher did not select the isolated Compose project'
+Remove-Item Env:MOCK_EXPECT_PROJECT -ErrorAction SilentlyContinue
 foreach ($name in @('MOCK_OWNED','MOCK_LISTEN_PORT','MOCK_MISSING_IMAGE','MOCK_MISSING_VOLUME','MOCK_FAIL_BUILD','MOCK_FAIL_UP','MOCK_HEALTH','MOCK_PS_ARRAY','MOCK_STATE')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
 foreach ($file in @('scripts/firstsun.ps1','scripts/firstsun-checks.ps1')) {
     $bytes = [IO.File]::ReadAllBytes((Join-Path $repo $file))

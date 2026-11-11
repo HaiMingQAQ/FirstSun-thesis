@@ -1,5 +1,5 @@
 {
-  "name": "firstsun",
+  "name": "${FIRSTSUN_PROJECT_NAME:-firstsun}",
   "include": [
     {
       "path": "./deploy/docker-compose.local.yml"

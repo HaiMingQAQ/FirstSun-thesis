@@ -21,6 +21,8 @@ if (-not $Database) { $Database = $config['MYSQL_DATABASE'] }
 if ($Database -cnotmatch '^firstsun_demo_[a-z0-9_]{1,40}$') {
     throw 'Choose a dedicated firstsun_demo_* database. Existing daily databases are outside the demo installer scope.'
 }
+. (Join-Path $PSScriptRoot 'firstsun-checks.ps1')
+$projectName = Get-FirstSunProjectName $config
 if (-not $config['BACKEND_PORT']) { $config['BACKEND_PORT'] = '28080' }
 if ($config['BACKEND_PORT'] -notmatch '^\d{1,5}$' -or [int]$config['BACKEND_PORT'] -lt 1 -or [int]$config['BACKEND_PORT'] -gt 65535) {
     throw 'BACKEND_PORT must be a valid TCP port.'
@@ -63,7 +65,7 @@ function Invoke-DemoMySql([string]$statement, [string]$schema = '') {
     $PSNativeCommandUseErrorActionPreference = $false
     $argsForMySql = @()
     if ($schema) { $argsForMySql = @($schema) }
-    $output = $statement | docker --context $DockerContext compose --project-name firstsun --env-file $envFile --file $composeFile `
+    $output = $statement | docker --context $DockerContext compose --project-name $projectName --env-file $envFile --file $composeFile `
         exec -T mysql sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --binary-mode --default-character-set=utf8mb4 --batch --skip-column-names -uroot "$@"' sh @argsForMySql 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "MySQL command failed via Docker context '$DockerContext'.`n$(Format-DemoDockerError $output)"

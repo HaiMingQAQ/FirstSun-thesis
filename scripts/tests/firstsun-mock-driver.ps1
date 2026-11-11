@@ -2,6 +2,11 @@ param([string]$Runner, [string]$EnvironmentRoot, [string]$Action)
 function docker {
     $joined = $args -join ' '
     $global:LASTEXITCODE = 0
+    if ($env:MOCK_EXPECT_PROJECT -and $joined -match ' compose ' -and
+        -not $joined.Contains("--project-name $env:MOCK_EXPECT_PROJECT ")) {
+        $global:LASTEXITCODE = 1
+        return
+    }
     if ($joined -match 'context inspect') { return 'npipe:////./pipe/dockerDesktopLinuxEngine' }
     if ($joined -match ' info ') { return 'linux' }
     if ($joined -match 'image inspect') {

@@ -11,11 +11,11 @@
     </div>
 
     <!-- 基础数据概览：来自真实分页接口的 total，不编造数字 -->
-    <div class="pharmacy-section">
+    <div v-if="visibleKpis.length" class="pharmacy-section">
       <div class="pharmacy-section-title">基础数据概览</div>
       <el-row :gutter="16" class="mt-12px">
         <el-col
-          v-for="kpi in baseKpis"
+          v-for="kpi in visibleKpis"
           :key="kpi.key"
           :xl="6"
           :lg="6"
@@ -154,27 +154,40 @@ interface KpiItem {
   error: boolean
   hint?: string
   route?: string
+  permission: string
+  api: (params: PageParam) => Promise<{ total?: number }>
 }
 
 /** 基础数据 KPI：来自真实分页接口 total（药品条码移入快捷入口，保持四列不悬空） */
 const baseKpis = reactive<KpiItem[]>([
-  { key: 'drug', label: '药品总数', value: null, error: false, route: `${PHARMACY_BASE_PATH}/drug` },
+  {
+    key: 'drug', label: '药品总数', value: null, error: false, route: `${PHARMACY_BASE_PATH}/drug`,
+    permission: 'pharmacy:base:drug:query', api: DrugApi.getDrugPage
+  },
   {
     key: 'category',
     label: '药品分类',
     value: null,
     error: false,
-    route: `${PHARMACY_BASE_PATH}/category`
+    route: `${PHARMACY_BASE_PATH}/category`,
+    permission: 'pharmacy:base:category:query',
+    api: CategoryApi.getCategoryPage
   },
-  { key: 'store', label: '门店数', value: null, error: false, route: `${PHARMACY_BASE_PATH}/store` },
+  {
+    key: 'store', label: '门店数', value: null, error: false, route: `${PHARMACY_BASE_PATH}/store`,
+    permission: 'pharmacy:base:store:query', api: StoreApi.getStorePage
+  },
   {
     key: 'employee',
     label: '员工数',
     value: null,
     error: false,
-    route: `${PHARMACY_BASE_PATH}/employee`
+    route: `${PHARMACY_BASE_PATH}/employee`,
+    permission: 'pharmacy:base:employee:query',
+    api: EmployeeApi.getEmployeePage
   }
 ])
+const visibleKpis = computed(() => baseKpis.filter((kpi) => checkPermi([kpi.permission])))
 
 /** 待审核药品数（真实接口，approveStatus=0） */
 const pendingDrugCount = ref<number | null>(null)
@@ -224,39 +237,31 @@ const goRoute = (path: string) => {
 
 /** 取分页 total：pageSize=1 仅取计数，不编造数字 */
 const fetchTotal = async (
-  apiFn: (params: PageParam) => Promise<any>,
+  apiFn: KpiItem['api'],
   extra?: Record<string, any>
 ): Promise<number> => {
   const data = await apiFn({ pageNo: 1, pageSize: 1, ...extra })
   return data?.total ?? 0
 }
 
-/** 加载所有真实数据：Promise.allSettled 独立隔离，任一失败不影响其他展示 */
+/** 按权限请求可见统计，单项失败不影响其他卡片 */
 const loadAll = async () => {
   loading.value = true
   try {
-    const [drugR, categoryR, storeR, employeeR, pendingR] = await Promise.allSettled([
-      fetchTotal(DrugApi.getDrugPage),
-      fetchTotal(CategoryApi.getCategoryPage),
-      fetchTotal(StoreApi.getStorePage),
-      fetchTotal(EmployeeApi.getEmployeePage),
-      fetchTotal(DrugApi.getDrugPage, { approveStatus: 0 })
-    ])
-    const results: Record<string, PromiseSettledResult<number>> = {
-      drug: drugR,
-      category: categoryR,
-      store: storeR,
-      employee: employeeR
-    }
-    baseKpis.forEach((kpi) => {
-      const r = results[kpi.key]
-      if (r.status === 'fulfilled') {
-        kpi.value = r.value
-      } else {
+    const requests = visibleKpis.value.map(async (kpi) => {
+      try {
+        kpi.value = await fetchTotal(kpi.api)
+      } catch {
         kpi.error = true
       }
     })
-    pendingDrugCount.value = pendingR.status === 'fulfilled' ? pendingR.value : null
+    if (hasApprovePermi.value) {
+      requests.push(fetchTotal(DrugApi.getDrugPage, { approveStatus: 0 }).then(
+        (count) => { pendingDrugCount.value = count },
+        () => { pendingDrugCount.value = null }
+      ))
+    }
+    await Promise.all(requests)
   } finally {
     loading.value = false
   }

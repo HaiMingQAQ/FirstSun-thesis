@@ -1,5 +1,5 @@
 {
-  "name": "firstsun",
+  "name": "${FIRSTSUN_PROJECT_NAME:-firstsun}",
   "services": {
     "mysql": {
       "image": "mysql:8.0",
@@ -108,7 +108,7 @@
       }
     },
     "embedding": {
-      "image": "firstsun-embedding:local",
+      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-embedding:local",
       "build": {
         "context": "./embedding",
         "dockerfile": "Dockerfile"
@@ -139,7 +139,7 @@
       }
     },
     "backend": {
-      "image": "firstsun-backend:local",
+      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-backend:local",
       "build": {
         "context": "../backend",
         "dockerfile": "Dockerfile"
@@ -201,7 +201,7 @@
       }
     },
     "admin-ui": {
-      "image": "firstsun-admin-ui:local",
+      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-admin-ui:local",
       "build": {
         "context": "../admin-ui",
         "dockerfile": "Dockerfile",
@@ -237,7 +237,7 @@
       }
     },
     "customer-web": {
-      "image": "firstsun-customer-web:local",
+      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-customer-web:local",
       "build": {
         "context": "../customer-web",
         "dockerfile": "Dockerfile"
@@ -283,12 +283,12 @@
       "name": "${FIRSTSUN_LOGS_VOLUME:-firstsun-thesis-local_backend-logs}"
     },
     "qdrant-data": {
-      "name": "firstsun_qdrant_data"
+      "name": "${COMPOSE_PROJECT_NAME:-firstsun}_qdrant_data"
     }
   },
   "networks": {
     "default": {
-      "name": "firstsun-network"
+      "name": "${COMPOSE_PROJECT_NAME:-firstsun}-network"
     }
   }
 }

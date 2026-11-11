@@ -140,7 +140,8 @@ docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.
 | 电脑顾客端 | <http://127.0.0.1:4193> |
 | 后端健康检查 | <http://127.0.0.1:28080/actuator/health> |
 | MySQL / Redis | `127.0.0.1:23327` / `127.0.0.1:26397` |
-| Qdrant | `127.0.0.1:26333`（embedding 只在容器网络内） |
+| Qdrant | HTTP `127.0.0.1:26333`，gRPC `127.0.0.1:26334` |
+| embedding | `embedding:8000`（Compose 网络内） |
 
 注意事项：
 

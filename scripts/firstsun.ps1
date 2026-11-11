@@ -25,7 +25,7 @@ function Invoke-DockerData([string[]]$arguments) {
     return $output
 }
 function Invoke-ComposeData([string[]]$arguments) {
-    return Invoke-DockerData (@('compose','--project-name','firstsun','--env-file',$envFile,'--file',$composeFile) + $arguments)
+    return Invoke-DockerData (@('compose','--project-name',$projectName,'--env-file',$envFile,'--file',$composeFile) + $arguments)
 }
 function Invoke-ComposeQuiet([string[]]$arguments) {
     $null = Invoke-ComposeData $arguments
@@ -119,7 +119,7 @@ function Show-Services($rows, $ports, [string]$logVolume) {
     Write-Host "管理端：http://127.0.0.1:$($ports['admin-ui'])"
     Write-Host "顾客端：http://127.0.0.1:$($ports['customer-web'])"
     Write-Host "后端：http://127.0.0.1:$($ports.backend)"
-    Write-Host "日志：docker --context desktop-linux compose --project-name firstsun --env-file `"$envFile`" --file `"$composeFile`" logs --tail=100 <服务名>"
+    Write-Host "日志：docker --context desktop-linux compose --project-name $projectName --env-file `"$envFile`" --file `"$composeFile`" logs --tail=100 <服务名>"
     Write-Host "后端日志卷：$logVolume"
 }
 function Invoke-Main {
@@ -141,8 +141,16 @@ function Invoke-Main {
             if ($line -match '^([A-Z][A-Z0-9_]*)=(.*)$') { $values[$Matches[1]] = $Matches[2] }
         }
         Assert-FirstSunConfig $values
+        $projectName = Get-FirstSunProjectName $values
         $ports = Get-FirstSunPorts $values
-        $managedKeys = @($values.Keys) + @('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','BUILDX_BUILDER')
+        foreach ($service in 'embedding','backend','admin-ui','customer-web') {
+            $imageTags[$service] = "${projectName}-${service}:local"
+        }
+        $managedKeys = (@($values.Keys) + @($volumeDefaults.Keys) + @(
+            'DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','BUILDX_BUILDER',
+            'FIRSTSUN_PROJECT_NAME','COMPOSE_PROJECT_NAME','MYSQL_PORT','REDIS_PORT','BACKEND_PORT',
+            'ADMIN_PORT','CUSTOMER_PORT','QDRANT_HTTP_PORT','QDRANT_GRPC_PORT'
+        )) | Select-Object -Unique
         foreach ($key in $managedKeys) {
             $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
             [Environment]::SetEnvironmentVariable($key, $null, 'Process')
@@ -151,7 +159,7 @@ function Invoke-Main {
         $env:DOCKER_CONTEXT = 'desktop-linux'
         $env:BUILDX_BUILDER = 'default'
         $source = Show-Source
-        Write-Host "操作：$Action（项目 firstsun）"
+        Write-Host "操作：$Action（项目 $projectName）"
         $stage = 'Docker Desktop Linux 引擎'
         $endpoint = @(Invoke-DockerData @('context','inspect','desktop-linux','--format','{{.Endpoints.docker.Host}}'))[0]
         if ($endpoint -notmatch '^npipe:/+/\./pipe/[^/]+$') { throw 'WRONG_DOCKER_CONTEXT' }
@@ -228,13 +236,15 @@ function Invoke-Main {
         return 0
     } catch {
         $reason = [string]$_.Exception.Message
-        if ($reason -notmatch '^(LOCK_BUSY|DOCKER_CLI_MISSING|ENV_MISSING|MISSING_CONFIG:[A-Z_]+|INVALID_PORT:[a-z-]+|DUPLICATE_PORT|WRONG_DOCKER_CONTEXT|WRONG_DOCKER_ENGINE|DOCKER_COMMAND_FAILED|COMPOSE_STATUS_FAILED|MISSING_IMAGE:[a-z-]+|MISSING_VOLUME:[A-Z_]+|PORT_CHECK_FAILED|PORT_IN_USE:[a-z-]+ \([0-9]+\)|CUSTOMER_BUILD_FAILED|BUILT_IMAGE_MISSING)$') { $reason = 'CHECK_FAILED' }
+        if ($reason -notmatch '^(LOCK_BUSY|DOCKER_CLI_MISSING|ENV_MISSING|MISSING_CONFIG:[A-Z_]+|INVALID_PROJECT_NAME|UNSAFE_PROJECT_VOLUME:[A-Z_]+|INVALID_PORT:[a-z-]+|DUPLICATE_PORT|WRONG_DOCKER_CONTEXT|WRONG_DOCKER_ENGINE|DOCKER_COMMAND_FAILED|COMPOSE_STATUS_FAILED|MISSING_IMAGE:[a-z-]+|MISSING_VOLUME:[A-Z_]+|PORT_CHECK_FAILED|PORT_IN_USE:[a-z-]+ \([0-9]+\)|CUSTOMER_BUILD_FAILED|BUILT_IMAGE_MISSING)$') { $reason = 'CHECK_FAILED' }
         $advice = switch -Wildcard ($reason) {
             'LOCK_BUSY' { '已有启动/停止操作在运行；等待结束后再试。' }
             'DOCKER_CLI_MISSING' { '安装 Docker Desktop 并确认 docker 在 PATH 中。' }
             'WRONG_DOCKER_*' { '启动 Docker Desktop Linux 引擎并确认 desktop-linux 本机 context。' }
             'ENV_MISSING' { '恢复现有私有 .env，不要新建空数据库。' }
             'MISSING_CONFIG:*' { '补齐现有私有 .env 的必填项。' }
+            'INVALID_PROJECT_NAME' { 'FIRSTSUN_PROJECT_NAME 使用小写字母、数字、短横线或下划线，并以字母或数字开头。' }
+            'UNSAFE_PROJECT_VOLUME:*' { '独立项目的 MySQL、Redis 和日志卷均须以项目名加下划线开头。' }
             'MISSING_IMAGE:*' { '缺少已有镜像；先运行 rebuild-local.bat 或恢复已有镜像。' }
             'MISSING_VOLUME:*' { '恢复原持久卷；不要创建空卷代替。' }
             'PORT_IN_USE:*' { '释放外部占用端口，或在私有 .env 中调整本机端口。' }
