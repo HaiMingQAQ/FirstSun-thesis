@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { isDeployableHttpsUrl } = require('./production-url.cjs');
@@ -31,4 +33,28 @@ test('微信发布构建入口拒绝 127/8 地址并提示具体参数', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /SHOPRO_BASE_URL/);
   assert.doesNotMatch(result.stderr, /SHOPRO_TRIAL_BASE_URL/);
+});
+
+test('H5 local-acceptance 从干净仓库读取完整请求配置', () => {
+  const root = path.resolve(__dirname, '..');
+  const envDir = fs.mkdtempSync(path.join(os.tmpdir(), 'firstsun-h5-mode-'));
+  const modeFile = path.join(envDir, '.env.local-acceptance');
+  try {
+    fs.copyFileSync(path.join(root, '.env.local-acceptance'), modeFile);
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('SHOPRO_')));
+    env.SHOPRO_DEV_BASE_URL = 'http://127.0.0.1:38080';
+    const result = spawnSync(process.execPath, ['-e',
+      'console.log(JSON.stringify(require("vite").loadEnv("local-acceptance", process.argv[1], "SHOPRO_")))',
+      envDir], { cwd: root, env, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const config = JSON.parse(result.stdout);
+    assert.equal(config.SHOPRO_DEV_BASE_URL + config.SHOPRO_API_PATH, 'http://127.0.0.1:38080/app-api');
+    assert.equal(config.SHOPRO_STATIC_URL, 'http://127.0.0.1:28080');
+    assert.equal(config.SHOPRO_WEBSOCKET_PATH, '/infra/ws');
+    assert.equal(config.SHOPRO_H5_URL, 'http://127.0.0.1:4189');
+    assert.equal(config.SHOPRO_UPLOAD_TYPE, 'server');
+  } finally {
+    fs.rmSync(modeFile, { force: true });
+    fs.rmdirSync(envDir);
+  }
 });
