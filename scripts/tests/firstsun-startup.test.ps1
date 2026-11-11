@@ -15,6 +15,12 @@ $values.BACKEND_PORT = '28080'
 Assert (-not (Get-FirstSunConflict $ports @{ backend=@(28080) } @(28080))) 'Own running service mistaken for conflict'
 Assert ((Get-FirstSunConflict $ports @{} @(28080)) -eq 'backend (28080)') 'Foreign listener not rejected'
 Assert ((Get-FirstSunProjectName $values) -ceq 'firstsun') 'Legacy project default changed'
+Assert ((Get-FirstSunVolumes @{ FIRSTSUN_PROJECT_NAME='firstsun' } 'firstsun').FIRSTSUN_MYSQL_VOLUME -ceq 'firstsun-thesis-local_mysql-data') 'Explicit daily name lost the legacy volume default'
+Assert ((Get-FirstSunVolumes @{ FIRSTSUN_REDIS_VOLUME='demo-lab_redis-custom' } 'demo-lab').FIRSTSUN_REDIS_VOLUME -ceq 'demo-lab_redis-custom') 'Valid project-owned volume override rejected'
+try {
+    $null = Get-FirstSunVolumes @{ FIRSTSUN_REDIS_VOLUME='demo-lab_mysql-data' } 'demo-lab'
+    throw 'Expected duplicate volume failure'
+} catch { Assert ($_.Exception.Message -eq 'DUPLICATE_VOLUME') 'Duplicate external volume not rejected' }
 Assert (-not (Get-FirstSunConflict $ports @{ qdrant=@(26333,26334) } @(26333,26334))) 'Owned Qdrant ports mistaken for conflicts'
 Assert ((Get-FirstSunConflict $ports @{} @(26334)) -eq 'qdrant-grpc (26334)') 'Foreign Qdrant port was not detected'
 Assert ((Get-FirstSunVersion $null 'abc' @{} $false) -like '版本未知*') 'Legacy image version should be unknown'
@@ -35,8 +41,12 @@ $envFile = Join-Path $work '.env'
 $runner = Join-Path $repo 'scripts/firstsun.ps1'
 $driver = Join-Path $repo 'scripts/tests/firstsun-mock-driver.ps1'
 function Run-Mock([string]$action) {
-    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Runner $runner -EnvironmentRoot $work -Action $action 2>&1 | Out-String
-    return @{ code=$LASTEXITCODE; output=$output }
+    $previousEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::UTF8
+        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Runner $runner -EnvironmentRoot $work -Action $action 2>&1 | Out-String
+        return @{ code=$LASTEXITCODE; output=$output }
+    } finally { [Console]::OutputEncoding = $previousEncoding }
 }
 $env:MOCK_OWNED = '1'; $env:MOCK_LISTEN_PORT = '28080'
 $result = Run-Mock 'start'
@@ -86,13 +96,20 @@ Assert ($result.code -eq 0) 'Successful rebuild simulation failed'
 $saved = Get-Content (Join-Path $work '.local/firstsun-build.json') -Raw | ConvertFrom-Json
 Assert ($saved.commit -eq (& git -C $repo rev-parse HEAD)) 'Successful rebuild record commit mismatch'
 $baseEnv = [IO.File]::ReadAllText($envFile)
-[IO.File]::AppendAllText($envFile, "FIRSTSUN_PROJECT_NAME=firstsun-demo`n")
+[IO.File]::AppendAllText($envFile, "FIRSTSUN_PROJECT_NAME=firstsun-demo`nFIRSTSUN_MYSQL_VOLUME=firstsun-thesis-local_mysql-data`n")
 $result = Run-Mock 'status'
-Assert ($result.code -ne 0 -and $result.output -match 'UNSAFE_PROJECT_VOLUME:FIRSTSUN_MYSQL_VOLUME') 'Isolated project accepted implicit shared volumes'
-[IO.File]::WriteAllText($envFile, $baseEnv + "FIRSTSUN_PROJECT_NAME=firstsun-demo`nFIRSTSUN_MYSQL_VOLUME=firstsun-demo_mysql-data`nFIRSTSUN_REDIS_VOLUME=firstsun-demo_redis-data`nFIRSTSUN_LOGS_VOLUME=firstsun-demo_backend-logs`n")
+Assert ($result.code -ne 0 -and $result.output -match 'UNSAFE_PROJECT_VOLUME:FIRSTSUN_MYSQL_VOLUME') 'Isolated project accepted an explicit daily volume'
+[IO.File]::WriteAllText($envFile, $baseEnv + "FIRSTSUN_PROJECT_NAME=firstsun-demo`n")
+$isolatedVolumes = Get-FirstSunVolumes @{ FIRSTSUN_PROJECT_NAME = 'firstsun-demo' } 'firstsun-demo'
+Assert ($isolatedVolumes.FIRSTSUN_MYSQL_VOLUME -ceq 'firstsun-demo_mysql-data' -and
+    $isolatedVolumes.FIRSTSUN_REDIS_VOLUME -ceq 'firstsun-demo_redis-data' -and
+    $isolatedVolumes.FIRSTSUN_LOGS_VOLUME -ceq 'firstsun-demo_backend-logs') 'Isolated volumes did not inherit the project name'
 $env:MOCK_EXPECT_PROJECT = 'firstsun-demo'
 $result = Run-Mock 'status'
 Assert ($result.code -eq 0 -and $result.output -match '--project-name firstsun-demo') 'Launcher did not select the isolated Compose project'
+$env:MOCK_MISSING_VOLUME = 'firstsun-demo_redis-data'
+$result = Run-Mock 'start'
+Assert ($result.code -ne 0 -and $result.output -match 'MISSING_VOLUME:FIRSTSUN_REDIS_VOLUME') 'Launcher did not preflight the derived demo Redis volume'
 Remove-Item Env:MOCK_EXPECT_PROJECT -ErrorAction SilentlyContinue
 foreach ($name in @('MOCK_OWNED','MOCK_LISTEN_PORT','MOCK_MISSING_IMAGE','MOCK_MISSING_VOLUME','MOCK_FAIL_BUILD','MOCK_FAIL_UP','MOCK_HEALTH','MOCK_PS_ARRAY','MOCK_STATE')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
 foreach ($file in @('scripts/firstsun.ps1','scripts/firstsun-checks.ps1')) {

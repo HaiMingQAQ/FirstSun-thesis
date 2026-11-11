@@ -2,7 +2,7 @@
 
 日常只维护一个 Docker Compose 项目：`firstsun`。定义在仓库内的 `deploy/docker-compose.local.yml`，根目录 `docker-compose.yml` 引用同一份配置；移动或重新拉取代码后不依赖原来的日期目录。
 
-需要在同一台电脑并行运行演示时，使用[独立演示配置](docs/local-demo-install.md#同一台电脑并行运行演示)。
+需要在同一台电脑并行运行演示时，使用[独立演示配置](docs/local-demo-install.md)。
 
 ## 入口
 
@@ -25,18 +25,11 @@ Windows 安装并打开 Docker Desktop（Linux containers），在仓库根目�
 
 输出中文编号四阶段：`[1/4]` 检查工作区、私有配置和Docker引擎；`[2/4]` 检查镜像、持久卷和端口；`[3/4]` 执行所选操作；`[4/4]` 查看服务状态与本机入口。具体检查随操作而定。
 
-端口检查按 `firstsun` 服务已有发布端口区分自身占用与外部冲突；发现冲突会指出对应服务/端口，不自动结束其他进程。失败输出阶段、受控原因和处理建议；执行启动/重建/创建或读取状态失败时，尽可能显示当前服务状态，读取失败则明确说明。按提示使用 `status.bat` 及输出的Compose日志命令定位；该命令带绝对 `.env` 和Compose文件路径，避免在不同目录选错环境。引擎不可用时，先处理Docker Desktop，不能把无法读取状态当成服务全部停止。
+端口检查按所选 Compose 项目已有发布端口区分自身占用与外部冲突；发现冲突会指出对应服务/端口，不自动结束其他进程。失败输出阶段、受控原因和处理建议；执行启动/重建/创建或读取状态失败时，尽可能显示当前服务状态，读取失败则明确说明。按提示使用 `status.bat` 及输出的Compose日志命令定位；该命令带绝对 `.env` 和Compose文件路径，避免在不同目录选错环境。引擎不可用时，先处理Docker Desktop，不能把无法读取状态当成服务全部停止。
 
 已有本机统一环境保留原 `firstsun-thesis-local` 的 MySQL、Redis、日志卷。卷名可在 `.env` 的 `FIRSTSUN_MYSQL_VOLUME`、`FIRSTSUN_REDIS_VOLUME`、`FIRSTSUN_LOGS_VOLUME` 指向已确认的现有卷；它们均为external卷，不会在缺失时悄悄创建空库。新机器先由环境负责人明确数据来源和卷，不能把空库启动视为迁移完成。
 
-非Windows环境可以使用同一份Compose配置，例如：
-
-```sh
-docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml config --quiet
-docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml up -d --no-build --pull never --wait --wait-timeout 300
-```
-
-这些直接调用Compose的命令要求本机已有所需镜像与持久卷；不包含Windows入口的预检或构建记录，也不会自动初始化业务数据。
+非 Windows 环境可按[选择环境与 Compose 参数](docs/local-demo-install.md#选择环境与-compose-参数)直接启动已有环境。Compose 从同一份私有 `.env` 选择项目及卷。直接启动需要已有镜像与持久卷，Windows 入口的预检、构建记录和首次演示库初始化分别由相应脚本完成。
 
 ## 地址与构建
 

@@ -161,7 +161,8 @@
       "environment": {
         "TZ": "Asia/Shanghai",
         "JAVA_OPTS": "-Xms256m -Xmx768m -Djava.security.egd=file:/dev/./urandom",
-        "ARGS": "--spring.profiles.active=local --yudao.security.mock-enable=false --firstsun.miniapp.mock-payment-enabled=${FIRSTSUN_MOCK_PAYMENT_ENABLED:-false} --firstsun.miniapp.pay-app-key=${FIRSTSUN_PAY_APP_KEY:-firstsun} --firstsun.miniapp.order-expiry-enabled=${FIRSTSUN_ORDER_EXPIRY_ENABLED:-true} --spring.datasource.druid.stat-view-servlet.enabled=false --spring.boot.admin.client.enabled=false --spring.quartz.auto-startup=false --yudao.captcha.enable=false --justauth.enabled=false --wx.miniapp.appid=${WX_MINIAPP_APPID:-} --wx.miniapp.secret=${WX_MINIAPP_SECRET:-} --wx.mp.app-id= --wx.mp.secret= --yudao.tencent-lbs-key= --spring.datasource.dynamic.datasource.master.url=jdbc:mysql://mysql:3306/${FIRSTSUN_APP_DATABASE:-${MYSQL_DATABASE}}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true --spring.datasource.dynamic.datasource.master.username=${MYSQL_USER} --spring.datasource.dynamic.datasource.master.password=${MYSQL_PASSWORD} --spring.datasource.dynamic.datasource.slave.url=jdbc:mysql://mysql:3306/${FIRSTSUN_APP_DATABASE:-${MYSQL_DATABASE}}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true --spring.datasource.dynamic.datasource.slave.username=${MYSQL_USER} --spring.datasource.dynamic.datasource.slave.password=${MYSQL_PASSWORD} --spring.data.redis.host=redis --spring.data.redis.port=6379 --spring.data.redis.database=${FIRSTSUN_REDIS_DATABASE:-0} --spring.data.redis.password=${REDIS_PASSWORD} --yudao.pay.order-notify-url=http://backend:48080/admin-api/pay/notify/order --yudao.pay.refund-notify-url=http://backend:48080/admin-api/pay/notify/refund --yudao.pay.transfer-notify-url=http://backend:48080/admin-api/pay/notify/transfer --logging.file.name=/local-logs/backend.log --yudao.pharmacy.member-email.enabled=${PHARMACY_MEMBER_EMAIL_ENABLED:-false} --spring.ai.vectorstore.qdrant.host=qdrant --spring.ai.vectorstore.qdrant.port=6334 --firstsun.ai.knowledge.corpus-path=/knowledge/corpus.json",
+        "ARGS": "--spring.profiles.active=local --yudao.security.mock-enable=false --firstsun.miniapp.mock-payment-enabled=${FIRSTSUN_MOCK_PAYMENT_ENABLED:-false} --firstsun.miniapp.pay-app-key=${FIRSTSUN_PAY_APP_KEY:-firstsun} --firstsun.miniapp.order-expiry-enabled=${FIRSTSUN_ORDER_EXPIRY_ENABLED:-true} --spring.datasource.druid.stat-view-servlet.enabled=false --spring.boot.admin.client.enabled=false --spring.quartz.auto-startup=false --yudao.captcha.enable=false --justauth.enabled=false --wx.miniapp.appid=${WX_MINIAPP_APPID:-} --wx.miniapp.secret=${WX_MINIAPP_SECRET:-} --wx.mp.app-id= --wx.mp.secret= --yudao.tencent-lbs-key= --spring.datasource.dynamic.datasource.master.url=jdbc:mysql://mysql:3306/${FIRSTSUN_APP_DATABASE:-${MYSQL_DATABASE}}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true --spring.datasource.dynamic.datasource.master.username=${MYSQL_USER} --spring.datasource.dynamic.datasource.slave.url=jdbc:mysql://mysql:3306/${FIRSTSUN_APP_DATABASE:-${MYSQL_DATABASE}}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true --spring.datasource.dynamic.datasource.slave.username=${MYSQL_USER} --spring.data.redis.host=redis --spring.data.redis.port=6379 --spring.data.redis.database=${FIRSTSUN_REDIS_DATABASE:-0} --yudao.pay.order-notify-url=http://backend:48080/admin-api/pay/notify/order --yudao.pay.refund-notify-url=http://backend:48080/admin-api/pay/notify/refund --yudao.pay.transfer-notify-url=http://backend:48080/admin-api/pay/notify/transfer --logging.file.name=/local-logs/backend.log --yudao.pharmacy.member-email.enabled=${PHARMACY_MEMBER_EMAIL_ENABLED:-false} --spring.ai.vectorstore.qdrant.host=qdrant --spring.ai.vectorstore.qdrant.port=6334 --firstsun.ai.knowledge.corpus-path=/knowledge/corpus.json",
+        "SPRING_CONFIG_IMPORT": "configtree:/run/secrets/",
         "PHARMACY_MEMBER_EMAIL_ENABLED": "${PHARMACY_MEMBER_EMAIL_ENABLED:-false}",
         "PHARMACY_MEMBER_EMAIL_FROM": "${PHARMACY_MEMBER_EMAIL_FROM:-}",
         "PHARMACY_MEMBER_EMAIL_TEST_RECIPIENT": "${PHARMACY_MEMBER_EMAIL_TEST_RECIPIENT:-}",
@@ -174,6 +175,11 @@
         "PHARMACY_WECHAT_APP_ID": "${PHARMACY_WECHAT_APP_ID:-}",
         "FIRSTSUN_EMBEDDING_URL": "${FIRSTSUN_EMBEDDING_URL:-http://embedding:8000}"
       },
+      "secrets": [
+        { "source": "mysql_master_password", "target": "spring.datasource.dynamic.datasource.master.password" },
+        { "source": "mysql_slave_password", "target": "spring.datasource.dynamic.datasource.slave.password" },
+        { "source": "redis_password", "target": "spring.data.redis.password" }
+      ],
       "ports": [
         "127.0.0.1:${BACKEND_PORT:-28080}:48080"
       ],
@@ -269,18 +275,23 @@
       }
     }
   },
+  "secrets": {
+    "mysql_master_password": { "environment": "MYSQL_PASSWORD" },
+    "mysql_slave_password": { "environment": "MYSQL_PASSWORD" },
+    "redis_password": { "environment": "REDIS_PASSWORD" }
+  },
   "volumes": {
     "mysql-data": {
       "external": true,
-      "name": "${FIRSTSUN_MYSQL_VOLUME:-firstsun-thesis-local_mysql-data}"
+      "name": "${FIRSTSUN_MYSQL_VOLUME:-${FIRSTSUN_PROJECT_NAME:-firstsun-thesis-local}_mysql-data}"
     },
     "redis-data": {
       "external": true,
-      "name": "${FIRSTSUN_REDIS_VOLUME:-firstsun-thesis-local_redis-data}"
+      "name": "${FIRSTSUN_REDIS_VOLUME:-${FIRSTSUN_PROJECT_NAME:-firstsun-thesis-local}_redis-data}"
     },
     "backend-logs": {
       "external": true,
-      "name": "${FIRSTSUN_LOGS_VOLUME:-firstsun-thesis-local_backend-logs}"
+      "name": "${FIRSTSUN_LOGS_VOLUME:-${FIRSTSUN_PROJECT_NAME:-firstsun-thesis-local}_backend-logs}"
     },
     "qdrant-data": {
       "name": "${COMPOSE_PROJECT_NAME:-firstsun}_qdrant_data"

@@ -23,6 +23,10 @@ if ($Database -cnotmatch '^firstsun_demo_[a-z0-9_]{1,40}$') {
 }
 . (Join-Path $PSScriptRoot 'firstsun-checks.ps1')
 $projectName = Get-FirstSunProjectName $config
+$volumes = Get-FirstSunVolumes $config $projectName
+if ($root -ne $repo -and $projectName -eq 'firstsun') {
+    throw 'A separate EnvironmentRoot requires a non-daily FIRSTSUN_PROJECT_NAME in its .env.'
+}
 if (-not $config['BACKEND_PORT']) { $config['BACKEND_PORT'] = '28080' }
 if ($config['BACKEND_PORT'] -notmatch '^\d{1,5}$' -or [int]$config['BACKEND_PORT'] -lt 1 -or [int]$config['BACKEND_PORT'] -gt 65535) {
     throw 'BACKEND_PORT must be a valid TCP port.'
@@ -65,9 +69,19 @@ function Invoke-DemoMySql([string]$statement, [string]$schema = '') {
     $PSNativeCommandUseErrorActionPreference = $false
     $argsForMySql = @()
     if ($schema) { $argsForMySql = @($schema) }
-    $output = $statement | docker --context $DockerContext compose --project-name $projectName --env-file $envFile --file $composeFile `
-        exec -T mysql sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --binary-mode --default-character-set=utf8mb4 --batch --skip-column-names -uroot "$@"' sh @argsForMySql 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $previous = @{}
+    try {
+        Clear-FirstSunComposeEnvironment $composeFile $config $previous
+        if ($projectName -eq 'firstsun') {
+            foreach ($key in $volumes.Keys) {
+                if (-not $config[$key]) { [Environment]::SetEnvironmentVariable($key, $volumes[$key], 'Process') }
+            }
+        }
+        $output = $statement | docker --context $DockerContext compose --project-name $projectName --env-file $envFile --file $composeFile `
+            exec -T mysql sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --binary-mode --default-character-set=utf8mb4 --batch --skip-column-names -uroot "$@"' sh @argsForMySql 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally { Restore-FirstSunEnvironment $previous }
+    if ($exitCode -ne 0) {
         throw "MySQL command failed via Docker context '$DockerContext'.`n$(Format-DemoDockerError $output)"
     }
     return (($output | Where-Object { $_ -is [string] }) -join "`n").Trim()

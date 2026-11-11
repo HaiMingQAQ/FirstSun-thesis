@@ -225,7 +225,7 @@
     "async": {
       "timeout": 20000
     },
-    "title": "芋道商城",
+    "title": "FirstSun 药店",
     "optimization": {
       "treeShaking": {
         "enable": true

@@ -62,7 +62,7 @@ yudao 二开位置：
 | --- | --- |
 | Java / Maven | JDK 17、Maven 3.9.x；`java -version` 与 `mvn -version` 均核对实际 JDK |
 | Spring Boot | 3.5.15；版本以仓库 POM 为准，不引入仅支持 Java 8 / Spring Boot 2 的代码 |
-| 管理端 Node / pnpm | Node 22.x、pnpm 11.22.0；最低版本与依赖以 `admin-ui/package.json` 和现有锁文件为准 |
+| 管理端 Node / pnpm | Node.js 22.13.0 或更新版本，构建固定使用 pnpm 11.22.0，依赖以 `admin-ui/package.json` 和 `pnpm-lock.yaml` 为准 |
 | 数据与缓存 | MySQL 8.x、Redis 7.x |
 
 管理端使用 pnpm 和 `pnpm-lock.yaml`，不要混用 npm 生成管理端 `package-lock.json`；依赖变更配套更新其清单与锁文件。小程序沿用自身 npm 清单与锁文件，构建见[小程序部署说明](../mall-uniapp/README.deploy.md)。安装路径可不同，不把本机 JAVA_HOME 或个人绝对路径写入项目文件。

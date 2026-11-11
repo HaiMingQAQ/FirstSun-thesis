@@ -16,15 +16,49 @@ function Get-FirstSunProjectName($values) {
     $name = [string]$values['FIRSTSUN_PROJECT_NAME']
     if (-not $name) { return 'firstsun' }
     if ($name -cnotmatch '^[a-z0-9][a-z0-9_-]*$') { throw 'INVALID_PROJECT_NAME' }
-    if ($name -ne 'firstsun') {
-        foreach ($key in 'FIRSTSUN_MYSQL_VOLUME','FIRSTSUN_REDIS_VOLUME','FIRSTSUN_LOGS_VOLUME') {
-            $volume = [string]$values[$key]
-            if ($volume -cnotlike "${name}_*" -or $volume -clike 'firstsun-thesis-local_*') {
-                throw "UNSAFE_PROJECT_VOLUME:$key"
-            }
+    return $name
+}
+
+function Get-FirstSunVolumes($values, [string]$projectName) {
+    $prefix = if ($projectName -eq 'firstsun') { 'firstsun-thesis-local' } else { $projectName }
+    $volumes = [ordered]@{
+        FIRSTSUN_MYSQL_VOLUME = "${prefix}_mysql-data"
+        FIRSTSUN_REDIS_VOLUME = "${prefix}_redis-data"
+        FIRSTSUN_LOGS_VOLUME = "${prefix}_backend-logs"
+    }
+    foreach ($key in @($volumes.Keys)) {
+        if ($values[$key]) { $volumes[$key] = [string]$values[$key] }
+        if ($volumes[$key] -cnotmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]+$') { throw "UNSAFE_PROJECT_VOLUME:$key" }
+        if ($projectName -ne 'firstsun' -and
+            ($volumes[$key] -cnotlike "${projectName}_*" -or $volumes[$key] -clike 'firstsun-thesis-local_*')) {
+            throw "UNSAFE_PROJECT_VOLUME:$key"
         }
     }
-    return $name
+    if (@($volumes.Values | Select-Object -Unique).Count -ne $volumes.Count) { throw 'DUPLICATE_VOLUME' }
+    return $volumes
+}
+
+function Clear-FirstSunComposeEnvironment([string]$composeFile, $values, $previous) {
+    # Compose gives the calling shell precedence over --env-file. Let Compose parse the file
+    # itself (including quoted passwords); don't export the launcher's raw preflight values.
+    $keys = @($values.Keys) + @(
+        [regex]::Matches([IO.File]::ReadAllText($composeFile), '\$\{([A-Z][A-Z0-9_]*)') |
+            ForEach-Object { $_.Groups[1].Value }
+    ) + @(Get-ChildItem Env:COMPOSE_* | ForEach-Object { $_.Name })
+    foreach ($key in ($keys | Select-Object -Unique)) {
+        $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+        Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+    }
+}
+
+function Restore-FirstSunEnvironment($previous) {
+    foreach ($key in $previous.Keys) {
+        if ($null -eq $previous[$key]) {
+            Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+        } else {
+            [Environment]::SetEnvironmentVariable($key, $previous[$key], 'Process')
+        }
+    }
 }
 
 function Assert-FirstSunConfig($values) {

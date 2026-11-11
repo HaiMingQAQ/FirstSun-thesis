@@ -125,12 +125,7 @@ AI 助手可查询药品档案和当前门店批次库存，并生成药品变�
 | `rebuild-local.bat` | 先构建顾客端产物和应用镜像，再启动 |
 | `status.bat` / `stop-local.bat` | 查看状态 / 正常停止（保留容器和数据卷） |
 
-**非 Windows**可以直接用同一份 Compose（需要已有镜像和 external 数据卷）：
-
-```sh
-docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml config --quiet
-docker compose --project-name firstsun --env-file .env -f deploy/docker-compose.local.yml up -d --no-build --pull never --wait --wait-timeout 300
-```
+**非 Windows**可以按[选择环境与 Compose 参数](docs/local-demo-install.md#选择环境与-compose-参数)直接启动。项目和卷由所选私有 `.env` 决定，需要已有镜像和外部卷。
 
 默认只绑定 `127.0.0.1`，实际端口以私有 `.env` 为准：
 
