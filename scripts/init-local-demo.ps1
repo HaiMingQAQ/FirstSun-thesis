@@ -83,4 +83,11 @@ SELECT IF(
   'ready','incomplete');
 '@
 if ($ready -ne 'ready') { throw 'Demo seed validation failed; inspect the dedicated database before running it again.' }
-Write-Host "Demo data ready: $Database / tenant 901 / store 9101. Existing demo passwords were not reset."
+
+$imageRoot = Join-Path $repo 'deploy/demo-assets'
+$otcPng = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $imageRoot 'otc.png')))
+$rxPng = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $imageRoot 'rx.png')))
+$assetBase = "http://127.0.0.1:$($config['BACKEND_PORT'])/admin-api/infra/file/45000043/get/"
+$imageSeed = [IO.File]::ReadAllText((Join-Path $repo 'deploy/sql/seed-local-demo-images.sql'))
+[void](Sql "SET @demo_otc_png='$otcPng', @demo_rx_png='$rxPng', @demo_asset_base='$assetBase';`n$imageSeed")
+Write-Host "Demo data and images ready: $Database / tenant 901 / store 9101."
