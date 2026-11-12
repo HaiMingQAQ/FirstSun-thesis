@@ -15,7 +15,6 @@ $localDir = Join-Path $root '.local'
 $recordFile = Join-Path $localDir 'firstsun-build.json'
 $services = @('mysql','redis','qdrant','embedding','backend','admin-ui','customer-web')
 $imageTags = [ordered]@{ mysql='mysql:8.0'; redis='redis:7-alpine'; qdrant='qdrant/qdrant:v1.12.1'; embedding='firstsun-embedding:local'; backend='firstsun-backend:local'; 'admin-ui'='firstsun-admin-ui:local'; 'customer-web'='firstsun-customer-web:local' }
-$volumeDefaults = [ordered]@{ FIRSTSUN_MYSQL_VOLUME='firstsun-thesis-local_mysql-data'; FIRSTSUN_REDIS_VOLUME='firstsun-thesis-local_redis-data'; FIRSTSUN_LOGS_VOLUME='firstsun-thesis-local_backend-logs' }
 
 function Invoke-DockerData([string[]]$arguments) {
     # Windows PowerShell can report Docker's progress on stderr as a terminating error.
@@ -25,7 +24,7 @@ function Invoke-DockerData([string[]]$arguments) {
     return $output
 }
 function Invoke-ComposeData([string[]]$arguments) {
-    return Invoke-DockerData (@('compose','--project-name','firstsun','--env-file',$envFile,'--file',$composeFile) + $arguments)
+    return Invoke-DockerData (@('compose','--project-name',$projectName,'--env-file',$envFile,'--file',$composeFile) + $arguments)
 }
 function Invoke-ComposeQuiet([string[]]$arguments) {
     $null = Invoke-ComposeData $arguments
@@ -119,7 +118,7 @@ function Show-Services($rows, $ports, [string]$logVolume) {
     Write-Host "管理端：http://127.0.0.1:$($ports['admin-ui'])"
     Write-Host "顾客端：http://127.0.0.1:$($ports['customer-web'])"
     Write-Host "后端：http://127.0.0.1:$($ports.backend)"
-    Write-Host "日志：docker --context desktop-linux compose --project-name firstsun --env-file `"$envFile`" --file `"$composeFile`" logs --tail=100 <服务名>"
+    Write-Host "日志：docker --context desktop-linux compose --project-name $projectName --env-file `"$envFile`" --file `"$composeFile`" logs --tail=100 <服务名>"
     Write-Host "后端日志卷：$logVolume"
 }
 function Invoke-Main {
@@ -141,17 +140,28 @@ function Invoke-Main {
             if ($line -match '^([A-Z][A-Z0-9_]*)=(.*)$') { $values[$Matches[1]] = $Matches[2] }
         }
         Assert-FirstSunConfig $values
+        $projectName = Get-FirstSunProjectName $values
+        $volumes = Get-FirstSunVolumes $values $projectName
         $ports = Get-FirstSunPorts $values
-        $managedKeys = @($values.Keys) + @('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','BUILDX_BUILDER')
-        foreach ($key in $managedKeys) {
-            $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
-            [Environment]::SetEnvironmentVariable($key, $null, 'Process')
+        foreach ($service in 'embedding','backend','admin-ui','customer-web') {
+            $imageTags[$service] = "${projectName}-${service}:local"
         }
-        foreach ($key in $values.Keys) { [Environment]::SetEnvironmentVariable($key, [string]$values[$key], 'Process') }
+        Clear-FirstSunComposeEnvironment $composeFile $values $previous
+        foreach ($key in 'DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','BUILDX_BUILDER') {
+            if ($previous.ContainsKey($key)) { continue }
+            $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+            Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+        }
+        # An explicit daily project name still uses the legacy volume defaults.
+        if ($projectName -eq 'firstsun') {
+            foreach ($key in $volumes.Keys) {
+                if (-not $values[$key]) { [Environment]::SetEnvironmentVariable($key, $volumes[$key], 'Process') }
+            }
+        }
         $env:DOCKER_CONTEXT = 'desktop-linux'
         $env:BUILDX_BUILDER = 'default'
         $source = Show-Source
-        Write-Host "操作：$Action（项目 firstsun）"
+        Write-Host "操作：$Action（项目 $projectName）"
         $stage = 'Docker Desktop Linux 引擎'
         $endpoint = @(Invoke-DockerData @('context','inspect','desktop-linux','--format','{{.Endpoints.docker.Host}}'))[0]
         if ($endpoint -notmatch '^npipe:/+/\./pipe/[^/]+$') { throw 'WRONG_DOCKER_CONTEXT' }
@@ -168,9 +178,8 @@ function Invoke-Main {
             foreach ($service in $requiredImages) {
                 if (-not $imageIds.ContainsKey($service)) { throw "MISSING_IMAGE:$service" }
             }
-            foreach ($key in $volumeDefaults.Keys) {
-                $volume = if ($values.ContainsKey($key) -and $values[$key]) { [string]$values[$key] } else { $volumeDefaults[$key] }
-                try { $null = Invoke-DockerData @('volume','inspect',$volume,'--format','{{.Name}}') }
+            foreach ($key in $volumes.Keys) {
+                try { $null = Invoke-DockerData @('volume','inspect',$volumes[$key],'--format','{{.Name}}') }
                 catch { throw "MISSING_VOLUME:$key" }
             }
             $stage = '本机端口'
@@ -195,15 +204,25 @@ function Invoke-Main {
             'stop' { Invoke-ComposeQuiet @('stop','--timeout','30') }
             'status' { }
             'rebuild' {
+                $vitePrevious = @{}
                 Push-Location (Join-Path $repo 'customer-web')
                 try {
+                    foreach ($key in 'FIRSTSUN_BACKEND_URL','FIRSTSUN_LOCAL_TEST_LOGIN','FIRSTSUN_TENANT_ID') {
+                        $vitePrevious[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+                        if ($values.ContainsKey($key)) {
+                            [Environment]::SetEnvironmentVariable($key, [string]$values[$key], 'Process')
+                        }
+                    }
                     $viteArgs = @('build')
                     if ($values['FIRSTSUN_LOCAL_TEST_LOGIN'] -ceq 'true') {
                         $viteArgs += @('--mode', 'local-acceptance')
                     }
                     & node './node_modules/vite/bin/vite.js' @viteArgs *> $null
                     if ($LASTEXITCODE -ne 0) { throw 'CUSTOMER_BUILD_FAILED' }
-                } finally { Pop-Location }
+                } finally {
+                    Restore-FirstSunEnvironment $vitePrevious
+                    Pop-Location
+                }
                 # 向量库镜像是官方镜像，本地缺就先拉取；向量化服务是本仓库构建的
                 if (-not (Get-ImageIds).ContainsKey('qdrant')) { Invoke-ComposeQuiet @('pull','qdrant') }
                 Invoke-ComposeQuiet @('build','embedding','backend','admin-ui','customer-web')
@@ -222,19 +241,22 @@ function Invoke-Main {
         }
         $stage = '服务状态'
         Write-Host '[4/4] 查看服务状态与本机入口'
-        $logVolume = if ($values.ContainsKey('FIRSTSUN_LOGS_VOLUME') -and $values.FIRSTSUN_LOGS_VOLUME) { [string]$values.FIRSTSUN_LOGS_VOLUME } else { $volumeDefaults.FIRSTSUN_LOGS_VOLUME }
+        $logVolume = $volumes.FIRSTSUN_LOGS_VOLUME
         Show-Services (Get-ComposeRows) $ports $logVolume
         Write-Host '操作完成。'
         return 0
     } catch {
         $reason = [string]$_.Exception.Message
-        if ($reason -notmatch '^(LOCK_BUSY|DOCKER_CLI_MISSING|ENV_MISSING|MISSING_CONFIG:[A-Z_]+|INVALID_PORT:[a-z-]+|DUPLICATE_PORT|WRONG_DOCKER_CONTEXT|WRONG_DOCKER_ENGINE|DOCKER_COMMAND_FAILED|COMPOSE_STATUS_FAILED|MISSING_IMAGE:[a-z-]+|MISSING_VOLUME:[A-Z_]+|PORT_CHECK_FAILED|PORT_IN_USE:[a-z-]+ \([0-9]+\)|CUSTOMER_BUILD_FAILED|BUILT_IMAGE_MISSING)$') { $reason = 'CHECK_FAILED' }
+        if ($reason -notmatch '^(LOCK_BUSY|DOCKER_CLI_MISSING|ENV_MISSING|MISSING_CONFIG:[A-Z_]+|INVALID_PROJECT_NAME|UNSAFE_PROJECT_VOLUME:[A-Z_]+|DUPLICATE_VOLUME|INVALID_PORT:[a-z-]+|DUPLICATE_PORT|WRONG_DOCKER_CONTEXT|WRONG_DOCKER_ENGINE|DOCKER_COMMAND_FAILED|COMPOSE_STATUS_FAILED|MISSING_IMAGE:[a-z-]+|MISSING_VOLUME:[A-Z_]+|PORT_CHECK_FAILED|PORT_IN_USE:[a-z-]+ \([0-9]+\)|CUSTOMER_BUILD_FAILED|BUILT_IMAGE_MISSING)$') { $reason = 'CHECK_FAILED' }
         $advice = switch -Wildcard ($reason) {
             'LOCK_BUSY' { '已有启动/停止操作在运行；等待结束后再试。' }
             'DOCKER_CLI_MISSING' { '安装 Docker Desktop 并确认 docker 在 PATH 中。' }
             'WRONG_DOCKER_*' { '启动 Docker Desktop Linux 引擎并确认 desktop-linux 本机 context。' }
             'ENV_MISSING' { '恢复现有私有 .env，不要新建空数据库。' }
             'MISSING_CONFIG:*' { '补齐现有私有 .env 的必填项。' }
+            'INVALID_PROJECT_NAME' { 'FIRSTSUN_PROJECT_NAME 使用小写字母、数字、短横线或下划线，并以字母或数字开头。' }
+            'UNSAFE_PROJECT_VOLUME:*' { '请使用合法卷名；独立项目的卷名须以项目名加下划线开头，并避开日常卷。' }
+            'DUPLICATE_VOLUME' { 'MySQL、Redis 和日志必须使用三个不同的卷。' }
             'MISSING_IMAGE:*' { '缺少已有镜像；先运行 rebuild-local.bat 或恢复已有镜像。' }
             'MISSING_VOLUME:*' { '恢复原持久卷；不要创建空卷代替。' }
             'PORT_IN_USE:*' { '释放外部占用端口，或在私有 .env 中调整本机端口。' }
@@ -251,7 +273,7 @@ function Invoke-Main {
         }
         return 1
     } finally {
-        foreach ($key in $previous.Keys) { [Environment]::SetEnvironmentVariable($key, $previous[$key], 'Process') }
+        Restore-FirstSunEnvironment $previous
         if ($lock) { $lock.Dispose() }
     }
 }

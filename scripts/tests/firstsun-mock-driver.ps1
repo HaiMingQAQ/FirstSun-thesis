@@ -2,6 +2,16 @@ param([string]$Runner, [string]$EnvironmentRoot, [string]$Action)
 function docker {
     $joined = $args -join ' '
     $global:LASTEXITCODE = 0
+    if ($joined -match ' compose ' -and
+        ($env:MYSQL_PASSWORD -or $env:REDIS_PASSWORD -or $env:FIRSTSUN_MOCK_PAYMENT_ENABLED -or $env:COMPOSE_PROJECT_NAME)) {
+        $global:LASTEXITCODE = 1
+        return
+    }
+    if ($env:MOCK_EXPECT_PROJECT -and $joined -match ' compose ' -and
+        -not $joined.Contains("--project-name $env:MOCK_EXPECT_PROJECT ")) {
+        $global:LASTEXITCODE = 1
+        return
+    }
     if ($joined -match 'context inspect') { return 'npipe:////./pipe/dockerDesktopLinuxEngine' }
     if ($joined -match ' info ') { return 'linux' }
     if ($joined -match 'image inspect') {
@@ -42,7 +52,13 @@ function node {
 }
 $env:DOCKER_HOST = 'original-mock-host'
 $env:BUILDX_BUILDER = 'original-builder'
+$env:MYSQL_PASSWORD = 'ambient-mock-password'
+$env:REDIS_PASSWORD = 'ambient-mock-redis-password'
+$env:FIRSTSUN_MOCK_PAYMENT_ENABLED = 'true'
+$env:COMPOSE_PROJECT_NAME = 'ambient-mock-project'
 & $Runner -Action $Action -EnvironmentRoot $EnvironmentRoot
 $result = $LASTEXITCODE
-if ($env:DOCKER_HOST -ne 'original-mock-host' -or $env:BUILDX_BUILDER -ne 'original-builder') { exit 92 }
+if ($env:DOCKER_HOST -ne 'original-mock-host' -or $env:BUILDX_BUILDER -ne 'original-builder' -or
+    $env:MYSQL_PASSWORD -ne 'ambient-mock-password' -or $env:REDIS_PASSWORD -ne 'ambient-mock-redis-password' -or
+    $env:FIRSTSUN_MOCK_PAYMENT_ENABLED -ne 'true' -or $env:COMPOSE_PROJECT_NAME -ne 'ambient-mock-project') { exit 92 }
 exit $result
