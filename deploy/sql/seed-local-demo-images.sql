@@ -4,12 +4,23 @@ SET NAMES utf8mb4;
 CREATE TEMPORARY TABLE firstsun_demo_images (
   drug_id BIGINT PRIMARY KEY,
   drug_code VARCHAR(32) NOT NULL,
-  path VARCHAR(80) NOT NULL UNIQUE,
+  path VARCHAR(80) NOT NULL,
   content MEDIUMBLOB NOT NULL
 );
 INSERT INTO firstsun_demo_images VALUES
   (9301, 'FS-DEMO-OTC', 'firstsun-demo/otc.png', FROM_BASE64(@demo_otc_png)),
   (9302, 'FS-DEMO-RX', 'firstsun-demo/rx.png', FROM_BASE64(@demo_rx_png));
+
+INSERT INTO firstsun_demo_images
+SELECT d.id, p.drug_code, CONCAT('firstsun-demo/catalog/', a.name), FROM_BASE64(a.base64_data)
+FROM JSON_TABLE(@demo_catalog, '$.products[*]' COLUMNS (
+  drug_code VARCHAR(32) PATH '$.drugCode', image_name VARCHAR(32) PATH '$.image'
+)) p
+JOIN JSON_TABLE(@demo_catalog_assets, '$[*]' COLUMNS (
+  name VARCHAR(32) PATH '$.name', base64_data LONGTEXT PATH '$.data'
+)) a ON a.name=p.image_name
+JOIN ph_drug d ON d.drug_code=p.drug_code COLLATE utf8mb4_unicode_ci
+             AND d.tenant_id=901 AND d.creator='firstsun-catalog-seed' AND d.deleted=b'0';
 
 START TRANSACTION;
 SELECT id FROM system_tenant WHERE id=901 AND creator='firstsun-demo-seed' AND deleted=b'0' FOR UPDATE;
@@ -33,7 +44,7 @@ INSERT INTO firstsun_demo_image_guard VALUES (IF(NOT EXISTS (
 DROP TEMPORARY TABLE firstsun_demo_image_guard;
 
 INSERT INTO infra_file_content (config_id, path, content, creator)
-SELECT 45000043, a.path, a.content, 'firstsun-demo-seed'
+SELECT DISTINCT 45000043, a.path, a.content, 'firstsun-demo-seed'
 FROM firstsun_demo_images a
 WHERE NOT EXISTS (SELECT 1 FROM infra_file_content f WHERE f.config_id=45000043 AND f.path=a.path AND f.deleted=b'0');
 
@@ -42,7 +53,7 @@ SET f.content=a.content
 WHERE f.config_id=45000043 AND f.deleted=b'0' AND f.creator='firstsun-demo-seed' AND f.content<>a.content;
 
 INSERT INTO infra_file (config_id, name, path, url, type, size, creator)
-SELECT 45000043, SUBSTRING_INDEX(a.path,'/',-1), a.path, CONCAT(@demo_asset_base,a.path),
+SELECT DISTINCT 45000043, SUBSTRING_INDEX(a.path,'/',-1), a.path, CONCAT(@demo_asset_base,a.path),
        'image/png', OCTET_LENGTH(a.content), 'firstsun-demo-seed'
 FROM firstsun_demo_images a
 WHERE NOT EXISTS (SELECT 1 FROM infra_file f WHERE f.config_id=45000043 AND f.path=a.path AND f.deleted=b'0');
@@ -57,7 +68,7 @@ SET d.image_url=CONCAT(@demo_asset_base,a.path)
 WHERE d.tenant_id=901 AND d.deleted=b'0'
   AND (COALESCE(d.image_url,'')='' OR (
     CAST(d.image_url AS BINARY)<>CAST(CONCAT(@demo_asset_base,a.path) AS BINARY)
-    AND d.image_url REGEXP '^http://127[.]0[.]0[.]1:[0-9]{1,5}/admin-api/infra/file/45000043/get/firstsun-demo/(otc|rx)[.]png$'
+    AND d.image_url REGEXP '^http://127[.]0[.]0[.]1:[0-9]{1,5}/admin-api/infra/file/45000043/get/firstsun-demo/(otc|rx|catalog/[a-z]+)[.]png$'
   ));
 
 COMMIT;

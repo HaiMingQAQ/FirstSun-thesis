@@ -3,7 +3,8 @@ param(
     [string]$Database = '',
     [securestring]$DemoManagerPassword,
     [securestring]$DemoPharmacistPassword,
-    [string]$DockerContext = ''
+    [string]$DockerContext = '',
+    [securestring]$DemoPlatformPassword
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,7 +53,7 @@ function Format-DemoDockerError($output, [string]$secret = '') {
     $diagnostic = ($lines -join "`n").Trim()
     if (-not $diagnostic) { return 'Docker did not provide a diagnostic.' }
     $keys = @($config.Keys -match 'PASSWORD|SECRET|API_KEY|TOKEN|SMS_CODE') +
-            @('FIRSTSUN_DEMO_MANAGER_PASSWORD', 'FIRSTSUN_DEMO_PHARMACIST_PASSWORD')
+            @('FIRSTSUN_DEMO_MANAGER_PASSWORD', 'FIRSTSUN_DEMO_PHARMACIST_PASSWORD', 'FIRSTSUN_DEMO_PLATFORM_PASSWORD')
     foreach ($key in $keys) {
         foreach ($raw in @($config[$key], [Environment]::GetEnvironmentVariable($key))) {
             if (-not $raw) { continue }
@@ -89,13 +90,13 @@ function Invoke-DemoMySql([string]$statement, [string]$schema = '') {
 
 function Sql([string]$statement) { return Invoke-DemoMySql $statement $Database }
 
-function Get-DemoPasswordHash([securestring]$secret, [string]$username, [string]$variableName) {
+function Get-DemoPasswordHash([securestring]$secret, [string]$username, [string]$variableName, [string]$defaultPassword) {
     $ErrorActionPreference = 'Continue'
     $PSNativeCommandUseErrorActionPreference = $false
     if (-not $secret) {
         $envPassword = [Environment]::GetEnvironmentVariable($variableName)
-        $secret = if ($envPassword) { ConvertTo-SecureString $envPassword -AsPlainText -Force }
-                  else { Read-Host "New local password for $username" -AsSecureString }
+        if (-not $envPassword) { $envPassword = $defaultPassword }
+        $secret = ConvertTo-SecureString $envPassword -AsPlainText -Force
     }
     $plain = ([pscredential]::new($username, $secret)).GetNetworkCredential().Password
     if ($plain -cnotmatch '^[A-Za-z0-9]{8,16}$') { throw 'Use 8-16 letters or digits for the local demo password.' }
@@ -121,11 +122,12 @@ Migrate
 $tenant = Sql "SELECT CONCAT(id, ':', creator) FROM system_tenant WHERE id=901 OR name='FirstSun-Followup';"
 if ($tenant -and $tenant -ne '901:firstsun-demo-seed') { throw 'The demo tenant ID or name is already in use.' }
 if (-not $tenant) {
-    $manager = Get-DemoPasswordHash $DemoManagerPassword 'demomanager' 'FIRSTSUN_DEMO_MANAGER_PASSWORD'
-    $pharmacist = Get-DemoPasswordHash $DemoPharmacistPassword 'demopharmacist' 'FIRSTSUN_DEMO_PHARMACIST_PASSWORD'
+    $manager = Get-DemoPasswordHash $DemoManagerPassword 'demomanager' 'FIRSTSUN_DEMO_MANAGER_PASSWORD' 'FirstSunShop26'
+    $pharmacist = Get-DemoPasswordHash $DemoPharmacistPassword 'demopharmacist' 'FIRSTSUN_DEMO_PHARMACIST_PASSWORD' 'FirstSunRx26'
+    $platform = Get-DemoPasswordHash $DemoPlatformPassword 'admin' 'FIRSTSUN_DEMO_PLATFORM_PASSWORD' 'FirstSunAdmin26'
     $seed = [IO.File]::ReadAllText((Join-Path $repo 'deploy/sql/seed-local-demo.sql'))
     Configure-LocalFiles
-    [void](Sql "SET @demo_manager_hash='$manager', @demo_pharmacist_hash='$pharmacist';`n$seed")
+    [void](Sql "SET @demo_manager_hash='$manager', @demo_pharmacist_hash='$pharmacist', @demo_platform_hash='$platform';`n$seed")
 }
 
 $ready = Sql @'
@@ -133,7 +135,7 @@ SELECT IF(
   (SELECT COUNT(*) FROM system_tenant WHERE id=901 AND creator='firstsun-demo-seed' AND status=0 AND deleted=b'0')=1
   AND (SELECT COUNT(*) FROM system_users WHERE tenant_id=901 AND username IN ('demomanager','demopharmacist') AND status=0 AND deleted=b'0')=2
   AND (SELECT COUNT(*) FROM ph_employee WHERE tenant_id=901 AND store_id=9101 AND user_id IN (95212,95112) AND status=1 AND deleted=b'0')=2
-  AND (SELECT COUNT(*) FROM ph_drug WHERE tenant_id=901 AND id IN (9301,9302) AND status=1 AND approve_status=1 AND saleable_online=1 AND deleted=b'0')=2
+  AND (SELECT COUNT(*) FROM ph_drug WHERE tenant_id=901 AND id IN (9301,9302) AND status=1 AND approve_status=1 AND deleted=b'0')=2
   AND (SELECT COUNT(*) FROM pay_app a JOIN pay_channel c ON c.app_id=a.id AND c.tenant_id=a.tenant_id
        WHERE a.tenant_id=901 AND a.app_key='firstsun-demo' AND a.deleted=b'0' AND c.code='mock' AND c.deleted=b'0')=1,
   'ready','incomplete');
@@ -141,9 +143,25 @@ SELECT IF(
 if ($ready -ne 'ready') { throw 'Demo seed validation failed; inspect the dedicated database before running it again.' }
 
 $imageRoot = Join-Path $repo 'deploy/demo-assets'
+$catalogRoot = Join-Path $imageRoot 'catalog'
+$catalogPath = Join-Path $catalogRoot 'catalog.json'
+$catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
+$catalogJson = [Convert]::ToHexString([IO.File]::ReadAllBytes($catalogPath))
+$catalogVariable = "SET @demo_catalog=CONVERT(0x$catalogJson USING utf8mb4);"
+$catalogSeed = [IO.File]::ReadAllText((Join-Path $repo 'deploy/sql/seed-local-demo-catalog.sql'))
+[void](Sql "$catalogVariable`n$catalogSeed")
+
+$assets = @(foreach ($name in ($catalog.products.image | Where-Object { $_ } | Sort-Object -Unique)) {
+    if ($name -cnotmatch '^[a-z]+[.]png$') { throw 'Invalid demo catalog asset name.' }
+    @{ name=$name; data=[Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $catalogRoot $name))) }
+})
+$assetJson = ConvertTo-Json -InputObject $assets -Compress
 $otcPng = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $imageRoot 'otc.png')))
 $rxPng = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $imageRoot 'rx.png')))
 $assetBase = "http://127.0.0.1:$($config['BACKEND_PORT'])/admin-api/infra/file/45000043/get/"
 $imageSeed = [IO.File]::ReadAllText((Join-Path $repo 'deploy/sql/seed-local-demo-images.sql'))
-[void](Sql "SET @demo_otc_png='$otcPng', @demo_rx_png='$rxPng', @demo_asset_base='$assetBase';`n$imageSeed")
-Write-Host "Demo data and images ready: $Database / tenant 901 / store 9101."
+[void](Sql "$catalogVariable`nSET @demo_catalog_assets='$assetJson', @demo_otc_png='$otcPng', @demo_rx_png='$rxPng', @demo_asset_base='$assetBase';`n$imageSeed")
+$prescriptionPng = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $imageRoot 'prescription-upload.png')))
+$historySeed = [IO.File]::ReadAllText((Join-Path $repo 'deploy/sql/seed-local-demo-history.sql'))
+[void](Sql "SET @demo_prescription_png='$prescriptionPng';`n$historySeed")
+Write-Host "Demo catalog, images and history ready: $Database / tenant 901 / store 9101."

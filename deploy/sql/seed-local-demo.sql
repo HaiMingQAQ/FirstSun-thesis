@@ -7,26 +7,31 @@ INSERT INTO firstsun_demo_guard VALUES (IF(
   DATABASE() REGEXP '^firstsun_demo_[a-z0-9_]+$'
   AND NOT EXISTS (SELECT 1 FROM system_tenant WHERE id = 901 OR name = 'FirstSun-Followup')
   AND COALESCE(CHAR_LENGTH(@demo_manager_hash), 0) = 60
-  AND COALESCE(CHAR_LENGTH(@demo_pharmacist_hash), 0) = 60,
+  AND COALESCE(CHAR_LENGTH(@demo_pharmacist_hash), 0) = 60
+  AND COALESCE(CHAR_LENGTH(@demo_platform_hash), 0) = 60
+  AND EXISTS (SELECT 1 FROM system_users WHERE id=1 AND tenant_id=1 AND username='admin' AND deleted=b'0'),
   1, 0));
 DROP TEMPORARY TABLE firstsun_demo_guard;
 
 START TRANSACTION;
 
+UPDATE system_users SET password=@demo_platform_hash
+WHERE id=1 AND tenant_id=1 AND username='admin' AND deleted=b'0';
+
 INSERT INTO system_tenant (id, name, contact_name, status, websites, package_id, expire_time, account_count, creator)
 VALUES (901, 'FirstSun-Followup', '合成演示', 0, '[]', 0, DATE_ADD(NOW(), INTERVAL 5 YEAR), 10, 'firstsun-demo-seed');
 
 INSERT INTO system_users (id, username, password, nickname, status, tenant_id)
-VALUES (95212, 'demomanager', @demo_manager_hash, '演示店员', 0, 901),
+VALUES (95212, 'demomanager', @demo_manager_hash, '演示后台管理员', 0, 901),
        (95112, 'demopharmacist', @demo_pharmacist_hash, '演示药师', 0, 901);
 
 INSERT INTO system_role (id, name, code, sort, data_scope, status, type, tenant_id)
-VALUES (95103, '演示店员', 'demo_manager', 1, 1, 0, 2, 901),
+VALUES (95103, '演示后台管理员', 'demo_manager', 1, 1, 0, 2, 901),
        (95101, '演示药师', 'demo_pharmacist', 2, 1, 0, 2, 901);
 INSERT INTO system_user_role (user_id, role_id, tenant_id)
 VALUES (95212, 95103, 901), (95112, 95101, 901);
 
--- Grant only the two workflows and the menus needed to reach them.
+-- Match the pharmacy tenant administrator menus and keep the pharmacist scoped to their workflows.
 INSERT INTO system_role_menu (role_id, menu_id, tenant_id)
 WITH RECURSIVE demo_menus (role_id, id, parent_id) AS (
   SELECT r.id, m.id, m.parent_id FROM system_role r JOIN system_menu m
@@ -35,6 +40,10 @@ WITH RECURSIVE demo_menus (role_id, id, parent_id) AS (
       OR m.permission IN ('pharmacy:base:store:query', 'pharmacy:consultation:query', 'pharmacy:consultation:reply')
       OR (r.id = 95103 AND (m.id = 22111 OR m.permission IN
           ('pharmacy:member:order:query', 'pharmacy:member:order:update', 'pharmacy:member:order:verify')))
+      OR (r.id = 95103 AND EXISTS (
+          SELECT 1 FROM system_role_menu rm
+          WHERE rm.role_id=167 AND rm.tenant_id=163 AND rm.menu_id=m.id AND rm.deleted=b'0'
+      ))
       OR (r.id = 95101 AND (m.id IN (61220, 61230) OR m.permission IN
           ('pharmacy:prescription:query', 'pharmacy:prescription:review'))))
   UNION DISTINCT
@@ -47,7 +56,7 @@ SELECT role_id, id, 901 FROM demo_menus;
 INSERT INTO ph_store (id, store_code, store_name, address, status, tenant_id)
 VALUES (9101, 'FS-LOCAL-DEMO', 'FirstSun 演示门店', '合成演示地址', 1, 901);
 INSERT INTO ph_employee (id, emp_no, emp_name, store_id, user_id, position, status, pharmacist_no, license_expire, tenant_id)
-VALUES (95231, 'DEMO-MANAGER', '演示店员', 9101, 95212, 1, 1, NULL, NULL, 901),
+VALUES (95231, 'DEMO-MANAGER', '演示后台管理员', 9101, 95212, 9, 1, NULL, NULL, 901),
        (95122, 'DEMO-PHARMACIST', '演示药师', 9101, 95112, 2, 1, 'DEMO-NON-CLINICAL', DATE_ADD(CURRENT_DATE, INTERVAL 5 YEAR), 901);
 
 INSERT INTO member_level (id, name, level, experience, discount_percent, status, tenant_id)
