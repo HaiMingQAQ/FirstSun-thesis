@@ -31,6 +31,7 @@ REDIS_PASSWORD='redis $literal # test'
 '@
     [IO.File]::WriteAllText($envFile, "$fixture" + [Environment]::NewLine)
     $daily = Get-ComposeConfig
+    Assert ((Get-Content -LiteralPath $composeFile -Raw) -notmatch '\$\{COMPOSE_PROJECT_NAME') 'Compose resource names depend on a second project variable.'
     Assert ($daily.name -ceq 'firstsun') 'Default daily project changed.'
     $legacy = Get-FirstSunVolumes @{} 'firstsun'
     Assert ($daily.volumes.'mysql-data'.name -ceq $legacy.FIRSTSUN_MYSQL_VOLUME -and
@@ -66,6 +67,7 @@ REDIS_PASSWORD='redis $literal # test'
     }
     Assert ($backend.secrets.Count -eq 3 -and @($backend.secrets.source | Select-Object -Unique).Count -eq 3) 'Secret sources were collapsed.'
     foreach ($secret in $backend.secrets) {
+        Assert ([string]$secret.mode -match '^(0400|256)$') 'Backend secret mode must be 0400.'
         Assert ($targets.ContainsKey($secret.target) -and
             $demo.secrets.($secret.source).environment -ceq $targets[$secret.target]) 'Wrong secret target or source variable.'
         $targets.Remove($secret.target)

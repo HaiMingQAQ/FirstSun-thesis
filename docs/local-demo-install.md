@@ -2,7 +2,7 @@
 
 这份流程面向首次下载项目的 Windows 和 Linux 用户。初始化器创建 `FirstSun-Followup` 租户（901）、演示门店（9101）、演示账号和开账库存，并导入 FirstSun 本机目录快照中的 45 件公开商品。快照包含 10 个商品分类和 15 件商品的配图。
 
-准备 Docker（Windows 使用 Docker Desktop 的 Linux 引擎，Linux 使用 Docker Engine 和 Compose 插件）、PowerShell 7、Node.js 和 npm。管理端最低要求 **Node.js 22.13.0**，构建固定使用 **pnpm@11.22.0**，容器内由 Corepack 安装。顾客端在宿主机使用 npm。在仓库根目录打开一个专用于本次操作的 PowerShell 窗口。
+准备 Docker（Windows 使用 Docker Desktop 的 Linux 引擎，Linux 使用 Docker Engine 和 Compose 插件）、PowerShell 7、Node.js 和 npm。管理端最低要求 **Node.js 22.13.0**，构建镜像时由 npm 安装固定的 **pnpm@11.22.0**。在宿主机单独开发管理端时，从 `admin-ui` 目录运行 `npx --yes pnpm@11.22.0 install --frozen-lockfile`，也可以直接使用同版本的 pnpm。顾客端在宿主机使用 npm。在仓库根目录打开一个专用于本次操作的 PowerShell 窗口。
 
 ## 1. 填写私有配置
 
@@ -15,9 +15,9 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 }
 ```
 
-在演示 `.env` 中填入自己设置的 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 和 `REDIS_PASSWORD`。模板已配置租户 901、本机测试登录、演示验证码和模拟支付。确认 `FIRSTSUN_PROJECT_NAME` 在当前 Docker 引擎上专用于这套演示。可自定义项目名，外部卷名、网络和应用镜像标签随项目派生。模板中的 `MYSQL_DATABASE` 和 `FIRSTSUN_APP_DATABASE` 应一致，库名须以 `firstsun_demo_` 开头。同机运行多套演示时，为每套使用独立配置目录、项目名和宿主机端口。
+在演示 `.env` 中填入自己设置的 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 和 `REDIS_PASSWORD`。模板已配置租户 901、本机测试登录、演示验证码和模拟支付。项目名统一在 `FIRSTSUN_PROJECT_NAME` 设置，按下文命令传给 Compose。外部卷名、网络和应用镜像标签使用同一个名称。模板中的 `MYSQL_DATABASE` 和 `FIRSTSUN_APP_DATABASE` 应一致，库名须以 `firstsun_demo_` 开头。同机运行多套演示时，为每套使用独立配置目录、项目名和宿主机端口。
 
-若修改 `BACKEND_PORT`，同步修改 `FIRSTSUN_BACKEND_URL`。邮箱、微信和外部 AI 密钥可留空。`.env` 只保存在本机。Compose 从选定的 `.env` 获取 `MYSQL_PASSWORD` 和 `REDIS_PASSWORD`，将其作为 secrets 挂载到后端的 `/run/secrets/`。Spring Boot 在启动时通过 `SPRING_CONFIG_IMPORT=configtree:/run/secrets/` 读取主从数据源和 Redis 的密码。数据源地址、用户名等由 Compose 启动配置传入。
+若修改 `BACKEND_PORT`，同步修改 `FIRSTSUN_BACKEND_URL`。邮箱、微信和外部 AI 密钥可留空。`.env` 只保存在本机。Compose 从选定的 `.env` 获取 `MYSQL_PASSWORD` 和 `REDIS_PASSWORD`，以 `0400` 权限将它们提供给后端的 `/run/secrets/`。Spring Boot 在启动时通过 `SPRING_CONFIG_IMPORT=configtree:/run/secrets/` 读取主从数据源和 Redis 的密码。数据源地址、用户名等由 Compose 启动配置传入。
 
 ## 选择环境与 Compose 参数
 
