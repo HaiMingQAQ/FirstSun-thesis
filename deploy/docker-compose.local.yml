@@ -108,7 +108,7 @@
       }
     },
     "embedding": {
-      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-embedding:local",
+      "image": "${FIRSTSUN_PROJECT_NAME:-firstsun}-embedding:local",
       "build": {
         "context": "./embedding",
         "dockerfile": "Dockerfile"
@@ -139,7 +139,7 @@
       }
     },
     "backend": {
-      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-backend:local",
+      "image": "${FIRSTSUN_PROJECT_NAME:-firstsun}-backend:local",
       "build": {
         "context": "../backend",
         "dockerfile": "Dockerfile"
@@ -176,9 +176,9 @@
         "FIRSTSUN_EMBEDDING_URL": "${FIRSTSUN_EMBEDDING_URL:-http://embedding:8000}"
       },
       "secrets": [
-        { "source": "mysql_master_password", "target": "spring.datasource.dynamic.datasource.master.password" },
-        { "source": "mysql_slave_password", "target": "spring.datasource.dynamic.datasource.slave.password" },
-        { "source": "redis_password", "target": "spring.data.redis.password" }
+        { "source": "mysql_master_password", "target": "spring.datasource.dynamic.datasource.master.password", "mode": "0400" },
+        { "source": "mysql_slave_password", "target": "spring.datasource.dynamic.datasource.slave.password", "mode": "0400" },
+        { "source": "redis_password", "target": "spring.data.redis.password", "mode": "0400" }
       ],
       "ports": [
         "127.0.0.1:${BACKEND_PORT:-28080}:48080"
@@ -207,7 +207,7 @@
       }
     },
     "admin-ui": {
-      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-admin-ui:local",
+      "image": "${FIRSTSUN_PROJECT_NAME:-firstsun}-admin-ui:local",
       "build": {
         "context": "../admin-ui",
         "dockerfile": "Dockerfile",
@@ -243,7 +243,7 @@
       }
     },
     "customer-web": {
-      "image": "${COMPOSE_PROJECT_NAME:-firstsun}-customer-web:local",
+      "image": "${FIRSTSUN_PROJECT_NAME:-firstsun}-customer-web:local",
       "build": {
         "context": "../customer-web",
         "dockerfile": "Dockerfile"
@@ -294,12 +294,12 @@
       "name": "${FIRSTSUN_LOGS_VOLUME:-${FIRSTSUN_PROJECT_NAME:-firstsun-thesis-local}_backend-logs}"
     },
     "qdrant-data": {
-      "name": "${COMPOSE_PROJECT_NAME:-firstsun}_qdrant_data"
+      "name": "${FIRSTSUN_PROJECT_NAME:-firstsun}_qdrant_data"
     }
   },
   "networks": {
     "default": {
-      "name": "${COMPOSE_PROJECT_NAME:-firstsun}-network"
+      "name": "${FIRSTSUN_PROJECT_NAME:-firstsun}-network"
     }
   }
 }
