@@ -1,6 +1,6 @@
 # 从零搭建本机演示环境
 
-这份流程面向首次下载项目的 Windows 和 Linux 用户。演示数据由仓库 SQL 生成，包含 `FirstSun-Followup` 租户（901）、演示门店（9101）、一个合成会员、店员、药师、两种带图的合成商品和批次库存。订单、会话、处方和通知在演示过程中通过页面产生。
+这份流程面向首次下载项目的 Windows 和 Linux 用户。初始化器创建 `FirstSun-Followup` 租户（901）、演示门店（9101）、演示账号和开账库存，并导入 FirstSun 本机目录快照中的 45 件公开商品。快照包含 10 个商品分类和 15 件商品的配图。
 
 准备 Docker（Windows 使用 Docker Desktop 的 Linux 引擎，Linux 使用 Docker Engine 和 Compose 插件）、PowerShell 7、Node.js 和 npm。管理端最低要求 **Node.js 22.13.0**，构建固定使用 **pnpm@11.22.0**，容器内由 Corepack 安装。顾客端在宿主机使用 npm。在仓库根目录打开一个专用于本次操作的 PowerShell 窗口。
 
@@ -15,7 +15,7 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 }
 ```
 
-在演示 `.env` 中填入自己设置的 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD`、`REDIS_PASSWORD`，以及仅供本机演示的六位 `PHARMACY_DEV_SMS_CODE`。模板已配置租户 901、本机测试登录和模拟支付。确认 `FIRSTSUN_PROJECT_NAME` 在当前 Docker 引擎上专用于这套演示。可自定义项目名，外部卷名、网络和应用镜像标签随项目派生。模板中的 `MYSQL_DATABASE` 和 `FIRSTSUN_APP_DATABASE` 应一致，库名须以 `firstsun_demo_` 开头。同机运行多套演示时，为每套使用独立配置目录、项目名和宿主机端口。
+在演示 `.env` 中填入自己设置的 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 和 `REDIS_PASSWORD`。模板已配置租户 901、本机测试登录、演示验证码和模拟支付。确认 `FIRSTSUN_PROJECT_NAME` 在当前 Docker 引擎上专用于这套演示。可自定义项目名，外部卷名、网络和应用镜像标签随项目派生。模板中的 `MYSQL_DATABASE` 和 `FIRSTSUN_APP_DATABASE` 应一致，库名须以 `firstsun_demo_` 开头。同机运行多套演示时，为每套使用独立配置目录、项目名和宿主机端口。
 
 若修改 `BACKEND_PORT`，同步修改 `FIRSTSUN_BACKEND_URL`。邮箱、微信和外部 AI 密钥可留空。`.env` 只保存在本机。Compose 从选定的 `.env` 获取 `MYSQL_PASSWORD` 和 `REDIS_PASSWORD`，将其作为 secrets 挂载到后端的 `/run/secrets/`。Spring Boot 在启动时通过 `SPRING_CONFIG_IMPORT=configtree:/run/secrets/` 读取主从数据源和 Redis 的密码。数据源地址、用户名等由 Compose 启动配置传入。
 
@@ -80,13 +80,22 @@ if ($LASTEXITCODE -ne 0) { throw '演示 MySQL 未就绪。' }
 pwsh -NoProfile -File scripts/init-local-demo.ps1 -EnvironmentRoot $environmentRoot -DockerContext $dockerContext
 ```
 
-完整的 Compose JSON 包含私有值。上面的命令只在内存中读取 JSON，提取外部卷名后丢弃原始内容。Qdrant 卷由 Compose 创建。初始化器按[迁移清单](../deploy/local-migrations.json)顺序执行并登记每项迁移。它会提示为 `demomanager` 和 `demopharmacist` 分别设置一个 8–16 位字母数字密码，再从标准输入交给本机 Docker 内的 `htpasswd` 生成 bcrypt 哈希。首次执行会拉取 `httpd:2.4-alpine` 工具镜像，计算时容器不联网。
+完整的 Compose JSON 包含私有值。上面的命令只在内存中读取 JSON，提取外部卷名后丢弃原始内容。Qdrant 卷由 Compose 创建。初始化器按[迁移清单](../deploy/local-migrations.json)顺序执行并登记每项迁移。新建演示库时，初始化器通过本机 Docker 内的 `htpasswd` 生成公开演示账号的 bcrypt 哈希。首次执行会拉取 `httpd:2.4-alpine` 工具镜像，计算时容器不联网。
 
 Windows 示例选择 `desktop-linux`，与重建脚本一致。Linux 可在生成 Compose 参数前设置 `$env:DOCKER_CONTEXT` 以选择本机 Docker 引擎，未设置时使用 `default`。初始化命令通过 `-DockerContext` 使用同一个引擎。
 
-自动部署可由运行环境注入 `FIRSTSUN_DEMO_MANAGER_PASSWORD` 和 `FIRSTSUN_DEMO_PHARMACIST_PASSWORD`，在上面的 `pwsh` 命令中加上 `-NonInteractive`（放在 `-File` 之前）。PowerShell 调用方也可以传入 `-DemoManagerPassword $managerPassword -DemoPharmacistPassword $pharmacistPassword`，其中两个值均为 `SecureString`。密码取值优先级为参数、进程环境变量、交互输入。请通过本地密码管理器或自动部署的私有变量传值。
+| 角色 | 登录入口 | 账号 | 新库默认密码或验证码 |
+| --- | --- | --- | --- |
+| 芋道平台超级管理员 | 管理端「平台管理员登录」，租户芋道源码 | `admin` | `FirstSunAdmin26` |
+| 药店后台管理员 | 管理端药店登录，租户 FirstSun-Followup | `demomanager` | `FirstSunShop26` |
+| 顾客 | 电脑或手机 H5 的本机验收登录 | `19900009011` | `609012` |
+| 药师 | 管理端药店登录，租户 FirstSun-Followup | `demopharmacist` | `FirstSunRx26` |
 
-两张[合成商品图](../deploy/demo-assets)随仓库交付。初始化时会将图片写入演示库的文件存储，并为商品填入本机后端地址。电脑顾客端展示 OTC 图片，处方商品卡保留「处方资料受限」提示。已有这套演示库时，重新运行初始化器即可补图，保留原账号、库存和自行替换的商品图片。
+这些账号用于绑定回环地址的本机演示。顾客验证码来自 `PHARMACY_DEV_SMS_CODE`。首次初始化时，管理端密码可通过 `FIRSTSUN_DEMO_PLATFORM_PASSWORD`、`FIRSTSUN_DEMO_MANAGER_PASSWORD` 和 `FIRSTSUN_DEMO_PHARMACIST_PASSWORD` 覆盖，或通过对应的 `-DemoPlatformPassword`、`-DemoManagerPassword`、`-DemoPharmacistPassword` 参数传入 `SecureString`。参数优先于环境变量和默认值。已有演示库重新运行初始化器会沿用库里的账号密码。
+
+[商品快照和原图](../deploy/demo-assets/catalog)随仓库交付。初始化器将图片写入演示库的文件存储，并按本次部署的后端端口生成图片地址。库存使用快照中的可售数量作为演示门店开账量。部分商品资料为演示数据。已有演示库可以重跑初始化器补齐目录和配图。
+
+演示库还提供 22 笔已完成订单、5 笔已取消订单、3 个咨询会话及 8 条处方审核样例。订单使用演示商品与模拟状态，处方审核保留待审、通过和驳回三种状态。人员、单号、咨询正文、处方影像均使用合成演示内容。需要体验待付款、拣货或核销时，可在页面新建模拟订单。
 
 ## 3. 构建并打开演示
 
@@ -128,7 +137,7 @@ docker @compose up -d --no-build --pull never --wait --wait-timeout 300
 
 宿主机端口均绑定到 `127.0.0.1`。后端在自己的 Compose 网络内访问 Qdrant 的 gRPC 端口 `6334`，修改宿主机映射无需修改容器间地址。
 
-演示可按三个流程核对。先用「演示 OTC」下单、模拟付款并在管理端拣货核销，再发起一条测试咨询，最后用「演示处方品」和仓库自带的[合成处方上传附件](../deploy/demo-assets/prescription-upload.png)提交申请，并检查审核后的站内通知。
+演示可按三个流程核对。先用有库存的非处方商品「青叶」下单、模拟付款并在管理端拣货核销，再发起一条测试咨询，最后选择处方商品，用仓库自带的[合成处方上传附件](../deploy/demo-assets/prescription-upload.png)提交申请，并检查审核后的站内通知。
 
 H5 也可连接这套演示库。在新 PowerShell 窗口从仓库根目录执行：
 
