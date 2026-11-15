@@ -1,6 +1,6 @@
 # 从零搭建本机演示环境
 
-这份流程面向首次下载项目的 Windows 和 Linux 用户。初始化器创建 `FirstSun-Followup` 租户（901）、演示门店（9101）、演示账号和开账库存，并导入 FirstSun 本机目录快照中的 45 件公开商品。快照包含 10 个商品分类和 15 件商品的配图。
+这份流程面向首次下载项目的 Windows 和 Linux 用户。初始化器创建 `FirstSun-Followup` 租户（901）、演示门店（9101）、演示账号和开账库存。空库首次安装后，启用且线上可售的为 [14 款 OTC 演示商品](otc-expansion-20261114.md)。45 件旧目录档案和 2 件流程夹具停用、离线，共保留 61 条药品档案。后台默认启用筛选显示 14 条，选择全部状态可查看 61 条。10 个目录分类仍保留。
 
 准备 Docker（Windows 使用 Docker Desktop 的 Linux 引擎，Linux 使用 Docker Engine 和 Compose 插件）、PowerShell 7、Node.js 和 npm。管理端最低要求 **Node.js 22.13.0**，构建镜像时由 npm 安装固定的 **pnpm@11.22.0**。在宿主机单独开发管理端时，从 `admin-ui` 目录运行 `npx --yes pnpm@11.22.0 install --frozen-lockfile`，也可以直接使用同版本的 pnpm。顾客端在宿主机使用 npm。在仓库根目录打开一个专用于本次操作的 PowerShell 窗口。
 
@@ -59,6 +59,8 @@ docker @compose up -d --no-build --pull never --wait --wait-timeout 300
 
 ## 2. 初始化空库
 
+若自定义平台管理员、药店后台管理员或药师的演示密码，三个账号的密码均须为 **8–16 位 ASCII 字母或数字**（`A–Z`、`a–z`、`0–9`）。此限制只适用于初始化器接收的演示账号密码。
+
 ```powershell
 if ($projectName -eq 'firstsun' -or $values['MYSQL_DATABASE'] -cnotmatch '^firstsun_demo_[a-z0-9_]{1,40}$') {
     throw '初始化需要独立演示项目和 firstsun_demo_ 数据库。'
@@ -82,6 +84,8 @@ pwsh -NoProfile -File scripts/init-local-demo.ps1 -EnvironmentRoot $environmentR
 
 完整的 Compose JSON 包含私有值。上面的命令只在内存中读取 JSON，提取外部卷名后丢弃原始内容。Qdrant 卷由 Compose 创建。初始化器按[迁移清单](../deploy/local-migrations.json)顺序执行并登记每项迁移。新建演示库时，初始化器通过本机 Docker 内的 `htpasswd` 生成公开演示账号的 bcrypt 哈希。首次执行会拉取 `httpd:2.4-alpine` 工具镜像，计算时容器不联网。
 
+若全部迁移已登记为 `APPLIED`、文件哈希一致，且脚本因演示密码校验失败而在写入租户 901 前退出，请换成合规密码，用同一隔离配置和原初始化命令重跑。脚本会跳过已应用的迁移，继续导入演示数据。若账本仍有 `RUNNING` 记录或哈希不符，先排查再继续。`SQL ready` 只表示迁移阶段结束。脚本成功退出并输出 `Demo catalog, images and history ready` 后，才算完成演示初始化。
+
 Windows 示例选择 `desktop-linux`，与重建脚本一致。Linux 可在生成 Compose 参数前设置 `$env:DOCKER_CONTEXT` 以选择本机 Docker 引擎，未设置时使用 `default`。初始化命令通过 `-DockerContext` 使用同一个引擎。
 
 | 角色 | 登录入口 | 账号 | 新库默认密码或验证码 |
@@ -93,7 +97,7 @@ Windows 示例选择 `desktop-linux`，与重建脚本一致。Linux 可在生�
 
 这些账号用于绑定回环地址的本机演示。顾客验证码来自 `PHARMACY_DEV_SMS_CODE`。首次初始化时，管理端密码可通过 `FIRSTSUN_DEMO_PLATFORM_PASSWORD`、`FIRSTSUN_DEMO_MANAGER_PASSWORD` 和 `FIRSTSUN_DEMO_PHARMACIST_PASSWORD` 覆盖，或通过对应的 `-DemoPlatformPassword`、`-DemoManagerPassword`、`-DemoPharmacistPassword` 参数传入 `SecureString`。参数优先于环境变量和默认值。已有演示库重新运行初始化器会沿用库里的账号密码。
 
-[商品快照和原图](../deploy/demo-assets/catalog)随仓库交付。初始化器将图片写入演示库的文件存储，并按本次部署的后端端口生成图片地址。库存使用快照中的可售数量作为演示门店开账量。部分商品资料为演示数据。已有演示库可以重跑初始化器补齐目录和配图。
+[商品种子和既有演示配图](../deploy/demo-assets/catalog)随仓库交付。新增 14 款每款开账 24 盒，顾客端显示「商品图片暂未提供」。仓库中的旧图用于已有演示档案。已有演示库可用同一初始化命令补齐缺少的商品和开账记录，已有商品的启用、上架状态继续沿用，已消耗库存不会补回。
 
 演示库还提供 22 笔已完成订单、5 笔已取消订单、3 个咨询会话及 8 条处方审核样例。订单使用演示商品与模拟状态，处方审核保留待审、通过和驳回三种状态。人员、单号、咨询正文、处方影像均使用合成演示内容。需要体验待付款、拣货或核销时，可在页面新建模拟订单。
 
@@ -137,7 +141,11 @@ docker @compose up -d --no-build --pull never --wait --wait-timeout 300
 
 宿主机端口均绑定到 `127.0.0.1`。后端在自己的 Compose 网络内访问 Qdrant 的 gRPC 端口 `6334`，修改宿主机映射无需修改容器间地址。
 
-演示可按三个流程核对。先用有库存的非处方商品「青叶」下单、模拟付款并在管理端拣货核销，再发起一条测试咨询，最后选择处方商品，用仓库自带的[合成处方上传附件](../deploy/demo-assets/prescription-upload.png)提交申请，并检查审核后的站内通知。
+先在顾客端搜索「龙珠软膏」（`FS901-OTC-P14`，`1163214`），核对库存和缺图占位，然后下单、模拟付款并在管理端拣货核销。人工咨询可用同一合成会员发起。
+
+如使用[定向 OTC 验收脚本](../scripts/otc-acceptance/README.md)，在本机私有配置的 `fixture.drugId` 中使用上述商品 ID，并先执行脚本的只读预检。旧版 AI 演示脚本默认使用已退到后台的旧商品，使用前需按[脚本说明](../scripts/e2e-ai/README.md)配置演示商品、价格和登录参数。
+
+后台可直接查看预置处方审核样例。若要验收新提交，在隔离库中由演示管理员临时启用「合成演示商品」分类（`FS-DEMO-CAT`），在药品档案将状态筛选切换为全部，找到「演示处方品」（`FS-DEMO-RX`，`9302`），将其状态设为启用、线上可售设为是。用仓库自带的[合成处方上传附件](../deploy/demo-assets/prescription-upload.png)提交，核对审核及站内通知，再恢复该商品的启用、线上可售状态及分类的原设置。
 
 H5 也可连接这套演示库。在新 PowerShell 窗口从仓库根目录执行：
 
@@ -159,6 +167,8 @@ npm run dev:h5 -- --mode local-acceptance --host 127.0.0.1 --port 4189
 
 ## 可选 RAG 配置
 
-基础购物、人工咨询和处方演示可离线运行。需要演示知识检索时，先核对[可选 RAG 基线 SQL](../deploy/sql/seed-rag-baseline.sql)中的租户与角色 ID，再导入选定的演示库。SQL 注释中的容器名、数据库名和角色说明来自旧环境，按本次 Compose 项目和演示库核对。导入后确认后台的向量模型配置，再使用具有 `pharmacy:ai:chat` 权限的演示账号调用 `POST /admin-api/pharmacy/ai/knowledge/reindex` 重建知识库索引。
+基础购物、人工咨询和处方演示可离线运行。需要演示知识检索时，先核对[可选 RAG 基线 SQL](../deploy/sql/seed-rag-baseline.sql)中的租户与角色 ID，再导入选定的演示库。SQL 注释中的容器名、数据库名和角色说明来自旧环境，按本次 Compose 项目和演示库核对。导入后确认后台的向量模型配置。使用具有 `pharmacy:ai:chat` 权限的演示账号打开管理端「药店业务 → AI 助手」，点击「重建知识索引」并确认，查看匹配商品数和写入片段数。按钮调用 `POST /admin-api/pharmacy/ai/knowledge/reindex`，接口校验相同权限。
 
 完成基线导入及模型、索引配置后，使用基线向量模型的后端会解析模型 URL 中的 `${FIRSTSUN_EMBEDDING_URL}`。Compose 默认提供 `http://embedding:8000`。只有改用其他后端可访问的向量化地址时，才需在同一份私有 `.env` 中覆盖该变量，并重新创建后端容器以加载配置。此变量配置的是向量化服务地址，知识索引由应用单独建立。
+
+基线 SQL 配置的向量模型（`type=5`）用于建立索引和检索。顾客 AI 的意图识别和答复还需要启用且可用的默认聊天模型（`type=1`）。沿用仓库预置的聊天模型时，请将自己有权使用的服务商密钥设为隔离环境私有 `.env` 中的 `PHARMACY_AI_API_KEY`，并让后端容器加载该配置。也可以另行配置并启用一个可用的默认聊天模型。索引建立与顾客问答分别验收。

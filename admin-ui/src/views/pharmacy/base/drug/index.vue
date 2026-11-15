@@ -4,7 +4,7 @@
       title="药品档案"
       eyebrow="DRUG MASTER"
       icon="ep:document"
-      total-label="药品档案总数"
+      total-label="筛选结果总数"
       :total="total"
       :current-count="list.length"
       page-type="核心档案"
@@ -69,7 +69,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="启用状态" prop="status">
-          <el-select v-model="queryParams.status" placeholder="请选择" clearable class="!w-180px">
+          <el-select v-model="queryParams.status" placeholder="全部" clearable class="!w-180px">
             <el-option
               v-for="dict in getIntDictOptions(DICT_TYPE.PHARMACY_STATUS)"
               :key="dict.value"
@@ -286,7 +286,7 @@ const queryParams = reactive({
   drugType: undefined,
   approveStatus: undefined,
   saleableOnline: undefined,
-  status: undefined
+  status: 1 as number | undefined
 })
 const queryFormRef = ref()
 
@@ -342,6 +342,7 @@ const handleQuery = () => {
 /** 重置 */
 const resetQuery = () => {
   queryFormRef.value.resetFields()
+  queryParams.status = 1
   handleQuery()
 }
 

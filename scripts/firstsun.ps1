@@ -209,12 +209,14 @@ function Invoke-Main {
                 try {
                     foreach ($key in 'FIRSTSUN_BACKEND_URL','FIRSTSUN_LOCAL_TEST_LOGIN','FIRSTSUN_TENANT_ID') {
                         $vitePrevious[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
-                        if ($values.ContainsKey($key)) {
-                            [Environment]::SetEnvironmentVariable($key, [string]$values[$key], 'Process')
-                        }
+                        [Environment]::SetEnvironmentVariable($key, $values[$key], 'Process')
                     }
                     $viteArgs = @('build')
-                    if ($values['FIRSTSUN_LOCAL_TEST_LOGIN'] -ceq 'true') {
+                    if ($values['FIRSTSUN_LOCAL_TEST_LOGIN'] -ceq 'true' -or
+                        $values['FIRSTSUN_MOCK_PAYMENT_ENABLED'] -ceq 'true') {
+                        if (-not $values['FIRSTSUN_BACKEND_URL']) {
+                            $env:FIRSTSUN_BACKEND_URL = "http://127.0.0.1:$($ports.backend)"
+                        }
                         $viteArgs += @('--mode', 'local-acceptance')
                     }
                     & node './node_modules/vite/bin/vite.js' @viteArgs *> $null

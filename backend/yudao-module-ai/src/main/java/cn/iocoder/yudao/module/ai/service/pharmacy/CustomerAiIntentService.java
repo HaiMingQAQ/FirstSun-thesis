@@ -20,7 +20,25 @@ public class CustomerAiIntentService {
     private final AiModelService models;
     private final ObjectMapper json;
     private final CustomerAiModelClient customerModels;
-    public record Intent(String action, String keyword, Long drugId) { }
+    public record Intent(String action, String keyword, Long drugId, String approvalCode) {
+        public Intent(String action, String keyword, Long drugId) {
+            this(action, keyword, drugId, null);
+        }
+    }
+    private static final String LEAFLET_NAME = "([\\p{L}\\p{N}][\\p{L}\\p{N} .·（）()\\-]{0,59}?)";
+    private static final String LEAFLET_SECTION = "(?:适应症|适用范围|禁忌|注意事项|(?:药物)?相互作用)";
+    private static final String LEAFLET_SECTIONS = LEAFLET_SECTION + "(?:[、和或]" + LEAFLET_SECTION + "){0,3}";
+    private static final java.util.regex.Pattern LEAFLET_BY_APPROVAL = java.util.regex.Pattern.compile(
+            "^(?:请)?(?:按|根据)" + LEAFLET_NAME +
+                    "[（(]\\s*国药准字\\s*([A-Z][0-9]{8})\\s*[）)]的说明书[，,]\\s*概括"
+                    + LEAFLET_SECTIONS + "(?:[，,]\\s*并列出引用的小节)?[。？?]?$");
+    private static final java.util.regex.Pattern LEAFLET_QUESTION = java.util.regex.Pattern.compile(
+            "^(?:请问\\s*)?" + LEAFLET_NAME + "(?:的)?(?:说明书(?:怎么说)?)?(?:有(?:哪些|什么))?"
+                    + LEAFLET_SECTIONS + "(?:有哪些|是什么)?"
+                    + "(?:[？?]\\s*请按这款药的说明书回答[，,]\\s*并注明引用小节)?[？?。]?$");
+    private static final java.util.regex.Pattern LEAFLET_USE_AND_ALLERGY = java.util.regex.Pattern.compile(
+            "^(?:请问\\s*)?" + LEAFLET_NAME + "(?:主要)?用于什么(?:问题|症状)[？?]\\s*对"
+                    + LEAFLET_NAME + "过敏时有(?:哪些|什么)(?:禁忌|注意事项)(?:或(?:禁忌|注意事项))?[？?。]?$");
     private static final String POLICY = """
             你是顾客药店助手的只读意图解析器。常见症状、药品知识、追问可以正常处理。
             输出唯一 JSON 对象，字段仅 action、keyword、drugId，不输出医学回答或身份信息。
@@ -51,6 +69,17 @@ public class CustomerAiIntentService {
             return new Intent("followupStock", null, null);
         if (content.trim().matches("^(?:查询|查看)?(?:(?:这些药品|这些药|它们|上述药品)(?:的)?)?库存(?:数量)?(?:是多少|多少|吗|呢)?[？?。！!\\s]*$"))
             return new Intent("clarifyProduct", null, null);
+        // A complete named leaflet question must not fall through to symptom-based product search.
+        var identified = LEAFLET_BY_APPROVAL.matcher(content.strip());
+        if (identified.matches()) {
+            return new Intent("leaflet", identified.group(1).strip(), null, identified.group(2));
+        }
+        var leaflet = LEAFLET_QUESTION.matcher(content.strip());
+        if (leaflet.matches()) return new Intent("leaflet", leaflet.group(1).strip(), null);
+        var allergy = LEAFLET_USE_AND_ALLERGY.matcher(content.strip());
+        if (allergy.matches() && allergy.group(1).strip().contains(allergy.group(2).strip())) {
+            return new Intent("leaflet", allergy.group(1).strip(), null);
+        }
         var browse = java.util.regex.Pattern.compile("(?:看看有哪些|看看有什么|有哪些|展示|列出)([^，。？！?\\n]{1,30}?)药(?:品)?[？?。！!\\s]*$").matcher(content.trim());
         if (browse.find()) return new Intent("browseDrugs", browse.group(1).trim(), null);
         var model = models.getRequiredDefaultModel(AiModelTypeEnum.CHAT.getType());

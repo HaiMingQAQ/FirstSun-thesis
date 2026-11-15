@@ -14,6 +14,69 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 class CustomerAiAnswerServiceTest {
+    @Test void compoundUseAndAllergyQuestionAddsOnlyItsMissingIndicationBeforeGeneration() {
+        var models = mock(AiModelService.class);
+        var client = mock(ChatModel.class);
+        var customerModels = mock(CustomerAiModelClient.class);
+        var knowledge = mock(PharmacyKnowledgeService.class);
+        when(models.getRequiredDefaultModel(anyInt())).thenReturn(AiModelDO.builder().id(1L).platform("DeepSeek").build());
+        when(customerModels.forModel(any(), eq(0.2), eq(1200))).thenReturn(
+                new CustomerAiModelClient.Session(client, org.springframework.ai.chat.prompt.ChatOptions.builder().build()));
+        String question = "硝酸咪康唑乳膏主要用于什么问题？对咪康唑过敏时有哪些禁忌或注意事项？";
+        var cream = new Product(1163202L, "硝酸咪康唑乳膏", "硝酸咪康唑乳膏", "20g",
+                "厂家", "国药准字H61020001", null, null, 24, 9101L, "说明书修订日期；演示资料。");
+        var contraindication = new PharmacyKnowledgeService.Hit(cream.id(), cream.name(), "禁忌", "咪康唑过敏者禁用。", 0.9);
+        var caution = new PharmacyKnowledgeService.Hit(cream.id(), cream.name(), "注意事项", "念珠菌病避免密封包扎。", 0.8);
+        var special = new PharmacyKnowledgeService.Hit(cream.id(), cream.name(), "特殊人群", "孕哺期先咨询医生。", 0.7);
+        var wrongForm = new PharmacyKnowledgeService.Hit(1163210L, "硝酸咪康唑栓", "适应症", "其他剂型的用途。", 0.99);
+        var indication = new PharmacyKnowledgeService.Hit(cream.id(), cream.name(), "适应症", "皮肤及指趾甲真菌感染。", 0.6);
+        when(knowledge.search(question, 4, true)).thenReturn(List.of(contraindication, caution, special, wrongForm));
+        when(knowledge.search(cream.name() + " 适应症", 4, true)).thenReturn(List.of(wrongForm, indication));
+        when(client.stream(any(Prompt.class))).thenAnswer(call -> {
+            Prompt prompt = call.getArgument(0);
+            String input = prompt.getUserMessage().getText();
+            assertTrue(input.contains(indication.text()));
+            assertTrue(input.contains(contraindication.text()));
+            assertTrue(input.contains(caution.text()));
+            assertFalse(input.contains(wrongForm.text()));
+            return Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage(
+                    "说明书适应症列有皮肤及指趾甲真菌感染；咪康唑过敏者禁用。"),
+                    org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build()))));
+        });
+        var request = new CustomerAiConsultReqVO();
+        request.setContent(question);
+        var received = new ArrayList<String>();
+        String answer = new CustomerAiAnswerService(models, new ObjectMapper(), customerModels, knowledge)
+                .answer(request, List.of(cream), received::add);
+        assertEquals(String.join("", received), answer);
+        assertTrue(answer.contains("依据说明书：硝酸咪康唑乳膏·适应症、禁忌、注意事项、特殊人群"));
+        assertFalse(answer.contains("硝酸咪康唑栓"));
+        verify(client).stream(any(Prompt.class));
+    }
+    @Test void missingSameProductIndicationDoesNotInferUseFromCautionOrCallTheModel() {
+        var models = mock(AiModelService.class);
+        var customerModels = mock(CustomerAiModelClient.class);
+        var knowledge = mock(PharmacyKnowledgeService.class);
+        var cream = new Product(1163202L, "硝酸咪康唑乳膏", "硝酸咪康唑乳膏", "20g",
+                "厂家", "国药准字H61020001", null, null, 24, 9101L, "说明书修订日期；演示资料。");
+        String question = "硝酸咪康唑乳膏主要用于什么问题？对咪康唑过敏时有哪些禁忌或注意事项？";
+        var caution = new PharmacyKnowledgeService.Hit(cream.id(), cream.name(), "注意事项", "念珠菌病避免密封包扎。", 0.8);
+        var wrongForm = new PharmacyKnowledgeService.Hit(1163210L, "硝酸咪康唑栓", "适应症", "其他剂型的用途。", 0.99);
+        when(knowledge.search(question, 4, true)).thenReturn(List.of(caution));
+        when(knowledge.search(cream.name() + " 适应症", 4, true)).thenReturn(List.of(wrongForm));
+        var request = new CustomerAiConsultReqVO();
+        request.setContent(question);
+        var received = new ArrayList<String>();
+        String answer = new CustomerAiAnswerService(models, new ObjectMapper(), customerModels, knowledge)
+                .answer(request, List.of(cream), received::add);
+        assertEquals(String.join("", received), answer);
+        assertTrue(answer.contains("无法说明用途"));
+        assertTrue(answer.contains(caution.text()));
+        assertTrue(answer.contains("依据说明书：硝酸咪康唑乳膏·注意事项"));
+        assertFalse(answer.contains("硝酸咪康唑栓"));
+        assertFalse(answer.contains("用于念珠菌"));
+        verifyNoInteractions(models, customerModels);
+    }
     @Test void rejectsDiagnosisDoseUrlsAndUngroundedRecommendation() {
         for (String text : List.of("你患有胃炎。", "服用10mg。", "推荐阿莫西林。", "已接通真实医生。", "请看https://example.invalid"))
             assertEquals("具体用药请让本店药师结合症状和药品说明核对。\n", CustomerAiAnswerService.safeSentence(text,List.of()));

@@ -135,7 +135,7 @@ SELECT IF(
   (SELECT COUNT(*) FROM system_tenant WHERE id=901 AND creator='firstsun-demo-seed' AND status=0 AND deleted=b'0')=1
   AND (SELECT COUNT(*) FROM system_users WHERE tenant_id=901 AND username IN ('demomanager','demopharmacist') AND status=0 AND deleted=b'0')=2
   AND (SELECT COUNT(*) FROM ph_employee WHERE tenant_id=901 AND store_id=9101 AND user_id IN (95212,95112) AND status=1 AND deleted=b'0')=2
-  AND (SELECT COUNT(*) FROM ph_drug WHERE tenant_id=901 AND id IN (9301,9302) AND status=1 AND approve_status=1 AND deleted=b'0')=2
+  AND (SELECT COUNT(*) FROM ph_drug WHERE tenant_id=901 AND id IN (9301,9302) AND status IN (0,1) AND approve_status=1 AND deleted=b'0')=2
   AND (SELECT COUNT(*) FROM pay_app a JOIN pay_channel c ON c.app_id=a.id AND c.tenant_id=a.tenant_id
        WHERE a.tenant_id=901 AND a.app_key='firstsun-demo' AND a.deleted=b'0' AND c.code='mock' AND c.deleted=b'0')=1,
   'ready','incomplete');

@@ -15,7 +15,15 @@ export interface PharmacyAiCommand {
   result?: { purchaseOrderId?: number; purchaseStatus?: string }
 }
 
+interface PharmacyKnowledgeReindexResult {
+  drugs: number
+  chunks: number
+  vectorStore: boolean
+}
+
 export const PharmacyAiApi = {
+  reindexKnowledge: (): Promise<PharmacyKnowledgeReindexResult> =>
+    request.post({ url: '/pharmacy/ai/knowledge/reindex', timeout: 120_000 }),
   stream: async (
     data: any,
     signal: AbortSignal,
