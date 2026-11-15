@@ -179,6 +179,21 @@
         <el-button v-if="canReadInventory" plain @click="inventoryPurchaseDialog?.open()"
           >库存预警 / 采购草稿</el-button
         >
+        <el-button
+          v-hasPermi="['pharmacy:ai:chat']"
+          plain
+          :loading="reindexingKnowledge"
+          @click="reindexKnowledge"
+        >
+          重建知识索引
+        </el-button>
+        <el-alert
+          v-if="knowledgeReindexResult"
+          :title="knowledgeReindexResult.text"
+          :type="knowledgeReindexResult.type"
+          show-icon
+          @close="knowledgeReindexResult = undefined"
+        />
         <el-input
           v-model="content"
           type="textarea"
@@ -227,6 +242,39 @@ type Conversation = {
 }
 
 const message = useMessage()
+const reindexingKnowledge = ref(false)
+const knowledgeReindexResult = ref<{ type: 'success' | 'warning' | 'error'; text: string }>()
+
+const reindexKnowledge = async () => {
+  if (reindexingKnowledge.value) return
+  reindexingKnowledge.value = true
+  try {
+    try {
+      await message.confirm(
+        '将为当前租户读取已配置的药店语料并重建向量索引。确认开始重建？',
+        '重建知识索引'
+      )
+    } catch {
+      return
+    }
+    knowledgeReindexResult.value = undefined
+    const result = await PharmacyAiApi.reindexKnowledge()
+    knowledgeReindexResult.value = result.vectorStore
+      ? {
+          type: 'success',
+          text: `索引重建完成，匹配 ${result.drugs} 款商品，写入 ${result.chunks} 个片段。`
+        }
+      : { type: 'warning', text: '本次未写入索引片段，请检查当前租户的语料和商品。' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+    knowledgeReindexResult.value = {
+      type: 'error',
+      text: detail ? `索引重建未能确认完成：${detail}` : '索引重建未能确认完成，请稍后重试。'
+    }
+  } finally {
+    reindexingKnowledge.value = false
+  }
+}
 const router = useRouter()
 const inventoryPurchaseDialog = ref<InstanceType<typeof InventoryPurchaseDialog>>()
 const canReadInventory = computed(

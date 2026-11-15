@@ -5,4 +5,13 @@ let epoch=0;
 export const identity=()=>({token:sessionStorage.getItem('token')||'',tenant:sessionStorage.getItem('tenant-id')||__TENANT_ID__,epoch});
 export function clearLoginState(){epoch++;for(const key of keys)sessionStorage.removeItem(key);window.dispatchEvent(new Event('firstsun-auth-clear'));}
 export function setTokens(data){if(!data?.accessToken)throw Error('登录接口未返回有效凭证');sessionStorage.setItem('token',data.accessToken);if(data.refreshToken)sessionStorage.setItem('refresh-token',data.refreshToken);}
-export function installUni(){globalThis.uni={getStorageSync(key){const v=sessionStorage.getItem(key);if(!v)return '';try{return JSON.parse(v);}catch{return v;}},setStorageSync(key,value){sessionStorage.setItem(key,typeof value==='string'?value:JSON.stringify(value));},removeStorageSync(key){sessionStorage.removeItem(key);if(key==='token')clearLoginState();}};}
+export function installUni(){
+ globalThis.uni={
+  getStorageSync(key){const v=sessionStorage.getItem(key);if(!v)return '';try{return JSON.parse(v);}catch{return v;}},
+  setStorageSync(key,value){
+   sessionStorage.setItem(key,typeof value==='string'?value:JSON.stringify(value));
+   if(key==='firstsun-store')window.dispatchEvent(new Event('firstsun-store-change'));
+  },
+  removeStorageSync(key){sessionStorage.removeItem(key);if(key==='token')clearLoginState();},
+ };
+}

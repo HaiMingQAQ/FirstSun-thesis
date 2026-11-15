@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.ai.service.pharmacy;
 import cn.hutool.crypto.SecureUtil;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO;
 import cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO;
@@ -8,12 +9,26 @@ import cn.iocoder.yudao.module.ai.dal.mysql.pharmacy.CustomerAiConsultMapper;
 import cn.iocoder.yudao.module.pharmacy.service.member.AppMemberAccess;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.ai.retry.NonTransientAiException;
+import org.springframework.ai.retry.TransientAiException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import javax.net.ssl.SSLException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
+import static cn.iocoder.yudao.module.ai.enums.ErrorCodeConstants.*;
 @Service @RequiredArgsConstructor @lombok.extern.slf4j.Slf4j
 public class CustomerAiConsultService {
+    // Spring AI 1.1.8 drops the typed status from synchronous HTTP failures.
+    private static final Pattern SPRING_AI_HTTP_STATUS = Pattern.compile("^([45][0-9]{2}) - ");
     private final CustomerAiConsultMapper mapper;
     private final CustomerAiIntentService intent;
     private final CustomerAiCatalogueService catalogue;
@@ -45,11 +60,12 @@ public class CustomerAiConsultService {
         var verifiedProducts = List.<CustomerAiConsultRespVO.Product>of();
         var partialAnswer = new StringBuilder();
         java.util.function.Consumer<String> checkedSink = text -> { partialAnswer.append(text); sink.accept(text); };
-        String phase = "intent";
+        String phase = "history";
         try {
             var context = request.getTopicId() != null ? history.context(request.getTopicId(), member)
                     : request.getContext() == null ? List.<CustomerAiConsultReqVO.Turn>of() : request.getContext();
             request.setContext(context);
+            phase = "intent";
             var decision = context.isEmpty() ? intent.resolve(request.getContent()) : intent.resolve(request.getContent(), context);
             if ("followupStock".equals(decision.action())) {
                 Long id = request.getTopicId() == null ? null : history.lastProductId(request.getTopicId(), member, request.getStoreId());
@@ -67,8 +83,12 @@ public class CustomerAiConsultService {
                 checkedSink.accept(urgent);
                 response = response(request, "SUCCESS", urgent, List.of(), false);
             } else {
+                phase = "catalogue";
                 CustomerAiCatalogueService.Result result;
                 if ("browseDrugs".equals(decision.action())) result = catalogue.browseCandidates(request.getStoreId(), decision.keyword());
+                else if ("leaflet".equals(decision.action())) {
+                    result = catalogue.leafletProduct(request.getStoreId(), decision.keyword(), decision.approvalCode());
+                }
                 else if ("advice".equals(decision.action())) {
                     String symptoms = request.getContent() + "\n" + context.stream().filter(t -> "user".equals(t.role()))
                             .map(CustomerAiConsultReqVO.Turn::content).collect(java.util.stream.Collectors.joining("\n"));
@@ -107,11 +127,7 @@ public class CustomerAiConsultService {
                 response = response(request, "SUCCESS", answer, result.products(), result.truncated());
             }
         } catch (Exception e) {
-            String reason = "回答过长".equals(e.getMessage()) ? "ANSWER_TOO_LONG"
-                    : "模型未返回回答".equals(e.getMessage()) ? "EMPTY_ANSWER"
-                    : "模型回答未完成".equals(e.getMessage()) ? "INCOMPLETE_ANSWER"
-                    : e.getMessage() != null && e.getMessage().startsWith("Timeout on blocking read") ? "TIMEOUT" : "OTHER";
-            log.warn("Customer AI failed: phase={}, category={}, reason={}", phase, e.getClass().getSimpleName(), reason);
+            log.warn("Customer AI failed: phase={}, category={}, reason={}", phase, e.getClass().getSimpleName(), failureReason(e));
             // Provider errors may contain credentials/URLs. Never return or persist their raw text.
             String failure = verifiedProducts.isEmpty()
                     ? "AI 查询暂时不可用，请稍后重试，也可以直接搜索药品。"
@@ -122,6 +138,46 @@ public class CustomerAiConsultService {
         if (mapper.finish(row.getId(), response.status(), write(response)) != 1)
             return response(request, "FAILED", "本次请求已失效，请重新发起咨询。", List.of(), false);
         return response;
+    }
+
+    // Return only fixed labels and numeric HTTP statuses, never exception text.
+    static String failureReason(Throwable failure) {
+        String fallback = "OTHER";
+        for (int depth = 0; failure != null && depth < 12; depth++, failure = failure.getCause()) {
+            if (failure instanceof RestClientResponseException e) return "PROVIDER_HTTP_" + e.getStatusCode().value();
+            if (failure instanceof WebClientResponseException e) return "PROVIDER_HTTP_" + e.getStatusCode().value();
+            String message = failure.getMessage();
+            if (message != null && (failure instanceof NonTransientAiException || failure instanceof TransientAiException)) {
+                var status = SPRING_AI_HTTP_STATUS.matcher(message);
+                if (status.find()) return "PROVIDER_HTTP_" + status.group(1);
+            }
+            if (failure instanceof TimeoutException || failure instanceof SocketTimeoutException
+                    || (message != null && message.startsWith("Timeout on blocking read"))) return "TIMEOUT";
+            if (failure instanceof UnknownHostException) return "DNS_FAILURE";
+            if (failure instanceof SSLException) return "TLS_FAILURE";
+            if (failure instanceof ConnectException) return "CONNECT_FAILURE";
+            if (failure instanceof ResourceAccessException) fallback = "NETWORK_IO";
+            if (failure instanceof ServiceException e) {
+                if (MODEL_DEFAULT_NOT_EXISTS.getCode().equals(e.getCode())) return "DEFAULT_MODEL_MISSING";
+                if (API_CONFIG_PLACEHOLDER_NOT_RESOLVED.getCode().equals(e.getCode())) return "CONFIG_PLACEHOLDER_UNRESOLVED";
+                if (API_KEY_NOT_EXISTS.getCode().equals(e.getCode()) || API_KEY_DISABLE.getCode().equals(e.getCode())
+                        || MODEL_NOT_EXISTS.getCode().equals(e.getCode()) || MODEL_DISABLE.getCode().equals(e.getCode())) {
+                    return "MODEL_CONFIG_UNAVAILABLE";
+                }
+            }
+            if (message == null) continue;
+            switch (message) {
+                case "回答过长": return "ANSWER_TOO_LONG";
+                case "模型未返回回答": return "EMPTY_ANSWER";
+                case "模型回答未完成": return "INCOMPLETE_ANSWER";
+                case "apiKey 不能为空": return "API_KEY_EMPTY";
+                case "AI 模型与服务商配置不一致": return "PROVIDER_CONFIG_MISMATCH";
+                case "模型未返回允许的查询意图", "模型查询词必须来自用户明确输入", "模型商品编号必须来自用户明确输入":
+                    return "INVALID_INTENT";
+                default: break;
+            }
+        }
+        return fallback;
     }
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter stream(CustomerAiConsultReqVO request) {
         // Validate identity/store on the request thread before committing SSE headers.

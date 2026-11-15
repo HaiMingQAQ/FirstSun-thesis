@@ -42,6 +42,7 @@ public class CustomerAiAnswerService {
             鼻部症状不要直接确定是感冒或过敏；针对说明列出的症状解释可供参考的选项，再澄清持续时间、年龄及相关风险。
             药品查询按候选说明回答，使用商品完整名称，勿以品牌覆盖通用名称。
             evidence 是店内说明书片段的检索结果（适应症、禁忌、注意事项、特殊人群、相互作用），只能依据它解释药品知识；片段里没有的说明书内容不要补充，也不要推测。
+            禁忌、注意事项中提及的疾病名称不能当作适应症；缺少同款适应症片段时，不得扩写用途。
             引用片段时用“说明书里提到”“说明书注意事项写明”这类表述，不要逐字复制整段，也不要给出具体剂量、服用次数或疗程。
             片段与本次问题无关时直接忽略，不要为了用上检索结果而强行引用。
             不编造药品、疗效、说明书、价格、库存、链接、医生已接通或审核结果，不输出内部推理过程。
@@ -54,10 +55,22 @@ public class CustomerAiAnswerService {
             sink.accept(facts);
             return facts;
         }
+        boolean needsIndication = products.size() == 1
+                && request.getContent().matches("(?s).*(适应症|适用范围|用途|用于什么|用于哪些|治什么|治疗什么).*");
+        // 只把本次核对过的商品和通用资料交给模型；组合问题须补齐同款适应症。
+        List<PharmacyKnowledgeService.Hit> evidence = evidence(request.getContent(), products, needsIndication);
+        if (needsIndication && evidence.stream().noneMatch(h ->
+                products.get(0).id().equals(h.drugId()) && "适应症".equals(h.section()))) {
+            var precautions = evidence.stream().filter(h -> products.get(0).id().equals(h.drugId())
+                    && ("禁忌".equals(h.section()) || "注意事项".equals(h.section()))).toList();
+            String answer = "当前没有可核对的" + products.get(0).name() + "适应症片段，无法说明用途。"
+                    + precautions.stream().map(h -> "\n说明书" + h.section() + "：" + h.text())
+                    .collect(java.util.stream.Collectors.joining()) + citation(precautions);
+            sink.accept(answer);
+            return answer;
+        }
         var model = models.getRequiredDefaultModel(AiModelTypeEnum.CHAT.getType());
         var session = customerModels.forModel(model, 0.2, 1200);
-        // 只把「本次核对过的商品」和「通用用药常识」的说明书片段交给模型，避免召回结果串到别的药品上
-        List<PharmacyKnowledgeService.Hit> evidence = evidence(request.getContent(), products);
         String input;
         try { input = json.writeValueAsString(java.util.Map.of("question", request.getContent(),
                 "context", request.getContext() == null ? List.of() : request.getContext(), "verifiedProducts", products,
@@ -101,11 +114,17 @@ public class CustomerAiAnswerService {
      * 取与本次核对商品相关的说明书片段；商品为空（纯咨询）时只保留通用用药常识。
      * 召回结果里出现别的药品一律丢弃——同一柜台的其他药不能成为这次回答的依据。
      */
-    private List<PharmacyKnowledgeService.Hit> evidence(String question, List<Product> products) {
-        List<PharmacyKnowledgeService.Hit> hits = knowledge.search(question, 4, true);
-        if (hits.isEmpty()) return List.of();
+    private List<PharmacyKnowledgeService.Hit> evidence(String question, List<Product> products, boolean needsIndication) {
         List<Long> ids = products.stream().map(Product::id).toList();
-        return hits.stream().filter(h -> h.drugId() == null || ids.contains(h.drugId())).limit(4).toList();
+        var relevant = knowledge.search(question, 4, true).stream()
+                .filter(h -> h.drugId() == null || ids.contains(h.drugId())).limit(4).toList();
+        if (!needsIndication || relevant.stream().anyMatch(h ->
+                products.get(0).id().equals(h.drugId()) && "适应症".equals(h.section()))) return relevant;
+        // 全问题的前四条可能全是风险提示。仅补查同一已核对商品的适应症，不借用其他剂型。
+        var indication = knowledge.search(products.get(0).name() + " 适应症", 4, true).stream()
+                .filter(h -> products.get(0).id().equals(h.drugId()) && "适应症".equals(h.section()))
+                .limit(1).toList();
+        return java.util.stream.Stream.concat(indication.stream(), relevant.stream()).limit(4).toList();
     }
 
     /** 同一条药品的小节合并成“药品·小节、小节”，多条药品用分号隔开，避免正文末尾挂一长串重复药名。 */

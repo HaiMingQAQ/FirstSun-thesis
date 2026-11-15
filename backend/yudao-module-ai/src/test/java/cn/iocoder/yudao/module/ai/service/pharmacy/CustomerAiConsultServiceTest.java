@@ -1,4 +1,7 @@
 package cn.iocoder.yudao.module.ai.service.pharmacy;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import cn.hutool.crypto.SecureUtil;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.security.core.LoginUser;
@@ -8,6 +11,8 @@ import cn.iocoder.yudao.module.ai.dal.dataobject.pharmacy.CustomerAiConsultDO;
 import cn.iocoder.yudao.module.ai.dal.mysql.pharmacy.CustomerAiConsultMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
+import org.slf4j.LoggerFactory;
+import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.access.AccessDeniedException;
@@ -71,10 +76,156 @@ class CustomerAiConsultServiceTest {
         assertEquals("FAILED",service.consult(req).status()); verify(mapper).finish(eq(9L),eq("FAILED"),anyString()); verifyNoInteractions(intent);
     }
     @Test void modelFailureDoesNotDiscloseProviderDetails() {
-        when(intent.resolve(anyString())).thenThrow(new IllegalStateException("credential=PRIVATE_SECRET"));
-        var response=service.consult(req); assertEquals("FAILED",response.status());
-        assertFalse(response.answer().contains("PRIVATE_SECRET"));
-        verify(mapper).finish(eq(9L),eq("FAILED"),argThat(s -> !s.contains("PRIVATE_SECRET")));
+        var logger = (Logger) LoggerFactory.getLogger(CustomerAiConsultService.class);
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            when(intent.resolve(anyString())).thenThrow(new IllegalStateException("private URL",
+                    new NonTransientAiException("401 - credential=PRIVATE_SECRET")));
+            var response = service.consult(req);
+            assertEquals("FAILED", response.status());
+            assertFalse(response.answer().contains("PRIVATE_SECRET"));
+            verify(mapper).finish(eq(9L), eq("FAILED"), argThat(s -> !s.contains("PRIVATE_SECRET")));
+            assertEquals(1, appender.list.size());
+            var event = appender.list.get(0);
+            assertTrue(event.getFormattedMessage().contains("phase=intent, category=IllegalStateException, reason=PROVIDER_HTTP_401"));
+            assertFalse(event.getFormattedMessage().contains("PRIVATE_SECRET"));
+            assertFalse(event.getFormattedMessage().contains("private URL"));
+            assertNull(event.getThrowableProxy());
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+    @Test void diagnosesWrappedTimeoutAndMissingCredentialsWithoutReadingArbitraryStatusText() {
+        assertEquals("TIMEOUT", CustomerAiConsultService.failureReason(
+                new IllegalStateException(new java.util.concurrent.TimeoutException("synthetic timeout"))));
+        assertEquals("API_KEY_EMPTY", CustomerAiConsultService.failureReason(new IllegalStateException("apiKey 不能为空")));
+        assertEquals("OTHER", CustomerAiConsultService.failureReason(new IllegalStateException("401 - untyped")));
+    }
+    @Test void explicitLeafletQuestionUsesSeededProductEvenWhenModelWouldRouteToAdvice() throws Exception {
+        var json = new ObjectMapper().findAndRegisterModules();
+        var root = java.nio.file.Path.of("..", "..", "deploy");
+        var catalog = json.readTree(root.resolve("demo-assets/catalog/catalog.json").toFile()).path("products");
+        var seeded = java.util.stream.StreamSupport.stream(catalog.spliterator(), false)
+                .filter(node -> "FS901-002".equals(node.path("drugCode").asText())).findFirst().orElseThrow();
+        String name = seeded.path("genericName").asText();
+        long id = seeded.path("id").asLong() + 1_000_000;
+        assertNamedLeaflet(name + "有哪些注意事项？", name, id, seeded.path("tradeName").asText(),
+                seeded.path("description").asText(), seeded.path("qtyAvail").asInt(), id - 1, "其他药品");
+    }
+    @Test void pilotCreamQuestionBindsOnlyTheCreamProductAndLeaflet() {
+        assertNamedLeaflet("硝酸咪康唑乳膏主要用于什么问题？对咪康唑过敏时有哪些禁忌或注意事项？",
+                "硝酸咪康唑乳膏", 1163202L, null, "适应症：试点资料", 24, 1163203L, "硝酸咪康唑散");
+    }
+    @Test void pilotPowderQuestionBindsOnlyThePowderProductAndLeaflet() {
+        assertNamedLeaflet("硝酸咪康唑散的适用范围、禁忌和注意事项是什么？",
+                "硝酸咪康唑散", 1163203L, null, "适用范围：试点资料", 24, 1163202L, "硝酸咪康唑乳膏");
+    }
+    @Test void originalAerosolQuestionMatchesApprovalAndKeepsOnlyItsLeaflet() {
+        assertNamedLeaflet("请按云南白药气雾剂（国药准字 Z53021107）的说明书，概括注意事项，并列出引用的小节。",
+                "云南白药气雾剂", 1163206L, null, "试点资料", 24, 1163201L, "云南白药膏",
+                "注意事项", "国药准字Z53021107");
+    }
+    @Test void originalSuppositoryQuestionDoesNotUseTheCreamLeaflet() {
+        assertNamedLeaflet("硝酸咪康唑栓有哪些注意事项？请按这款药的说明书回答，并注明引用小节。",
+                "硝酸咪康唑栓", 1163210L, null, "试点资料", 24, 1163202L, "硝酸咪康唑乳膏",
+                "注意事项", null);
+    }
+    @Test void originalCreamInteractionQuestionKeepsItsInteractionEvidence() {
+        assertNamedLeaflet("硝酸咪康唑乳膏的说明书怎么说药物相互作用？",
+                "硝酸咪康唑乳膏", 1163202L, null, "试点资料", 24, 1163210L, "硝酸咪康唑栓",
+                "药物相互作用", null);
+    }
+    private void assertNamedLeaflet(String question, String name, long id, String tradeName,
+                                    String description, int quantity, long otherId, String otherName) {
+        assertNamedLeaflet(question, name, id, tradeName, description, quantity, otherId, otherName,
+                "注意事项", null);
+    }
+    private void assertNamedLeaflet(String question, String name, long id, String tradeName,
+                                    String description, int quantity, long otherId, String otherName,
+                                    String section, String approvalNo) {
+        var json = new ObjectMapper().findAndRegisterModules();
+        long storeId = 9101L;
+        req.setStoreId(storeId);
+        req.setContent(question);
+        TenantContextHolder.setTenantId(901L);
+        login(UserTypeEnum.MEMBER.getValue(), 901L);
+
+        var models = mock(cn.iocoder.yudao.module.ai.service.model.AiModelService.class);
+        var customerModels = mock(CustomerAiModelClient.class);
+        var model = cn.iocoder.yudao.module.ai.dal.dataobject.model.AiModelDO.builder().platform("DeepSeek").build();
+        var client = mock(org.springframework.ai.chat.model.ChatModel.class);
+        var options = org.springframework.ai.chat.prompt.ChatOptions.builder().build();
+        when(models.getRequiredDefaultModel(1)).thenReturn(model);
+        when(customerModels.forModel(eq(model), anyDouble(), anyInt()))
+                .thenReturn(new CustomerAiModelClient.Session(client, options));
+        when(client.call(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(
+                        new org.springframework.ai.chat.messages.AssistantMessage(
+                                "{\"action\":\"advice\",\"keyword\":\"" + name + "\"}")))));
+        when(client.stream(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(
+                new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(
+                        new org.springframework.ai.chat.messages.AssistantMessage("请核对说明书的注意事项。"),
+                        org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("stop").build())))));
+
+        var drug = new cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.DrugDO();
+        drug.setId(id);
+        drug.setGenericName(name);
+        drug.setTradeName(tradeName);
+        drug.setDescription(description);
+        drug.setApprovalNo(approvalNo);
+        var otherDrug = new cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.DrugDO();
+        otherDrug.setId(otherId);
+        otherDrug.setGenericName(otherName);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(new com.baomidou.mybatisplus.core.MybatisConfiguration(),
+                        "leaflet-test"), drug.getClass());
+        var drugs = mock(cn.iocoder.yudao.module.pharmacy.dal.mysql.base.DrugMapper.class);
+        when(drugs.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenAnswer(call -> {
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?> query = call.getArgument(0);
+            String sql = query.getSqlSegment();
+            if (sql.contains("description LIKE")) {
+                return drug.getDescription().contains(name) ? List.of(drug) : List.of();
+            }
+            assertTrue(sql.contains("generic_name =") && sql.contains("trade_name ="), sql);
+            for (String guard : List.of("is_rx =", "is_special =", "is_pseudoephedrine =", "approve_status =", "saleable_online =", "drug_type IN")) {
+                assertTrue(sql.contains(guard), sql);
+            }
+            if (approvalNo != null) {
+                assertTrue(sql.contains("approval_no IN"), sql);
+                assertTrue(query.getParamNameValuePairs().containsValue(approvalNo));
+                assertTrue(query.getParamNameValuePairs().containsValue("Z53021107"));
+            }
+            return List.of(drug, otherDrug).stream()
+                    .filter(row -> query.getParamNameValuePairs().containsValue(row.getGenericName())).toList();
+        });
+        var stock = new cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppInventoryAvailableRespVO();
+        stock.setDrugId(id);
+        stock.setQtyAvail(quantity);
+        var inventory = mock(cn.iocoder.yudao.module.pharmacy.dal.mysql.inventory.AppAvailableInventoryMapper.class);
+        when(inventory.selectAvailable(901L, storeId, List.of(id))).thenReturn(List.of(stock));
+        var stores = mock(cn.iocoder.yudao.module.pharmacy.service.base.StoreService.class);
+        var store = new cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.StoreDO();
+        store.setStatus(1);
+        when(stores.getStore(storeId)).thenReturn(store);
+        var catalogue = new CustomerAiCatalogueService(drugs, inventory, stores,
+                mock(cn.iocoder.yudao.module.pharmacy.service.base.CategoryService.class));
+
+        var knowledge = mock(PharmacyKnowledgeService.class);
+        when(knowledge.search(req.getContent(), 4, true)).thenReturn(List.of(
+                new PharmacyKnowledgeService.Hit(otherId, otherName, "禁忌", "另一商品的测试片段", 0.9),
+                new PharmacyKnowledgeService.Hit(id, name, section, "本商品的测试片段", 0.8)));
+        var realService = new CustomerAiConsultService(mapper, new CustomerAiIntentService(models, json, customerModels),
+                catalogue, json, new CustomerAiAnswerService(models, json, customerModels, knowledge), history);
+        var response = realService.consult(req);
+        assertEquals("SUCCESS", response.status());
+        assertEquals(List.of(id), response.products().stream().map(product -> product.id()).toList());
+        assertEquals(quantity, response.products().get(0).availableQty());
+        assertTrue(response.answer().contains("依据说明书：" + name + "·" + section));
+        assertFalse(response.answer().contains(otherName));
+        verify(client, never()).call(any(org.springframework.ai.chat.prompt.Prompt.class));
     }
     @Test void expiredReplayReturnsConcurrentSuccessInsteadOfInventingFailure() throws Exception {
         var expired=pending(); expired.setMemberId(2L); expired.setClientMessageId("request_1");

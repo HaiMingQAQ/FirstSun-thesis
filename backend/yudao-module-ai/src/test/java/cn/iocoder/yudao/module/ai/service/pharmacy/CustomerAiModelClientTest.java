@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -73,11 +75,14 @@ class CustomerAiModelClientTest {
         }
     }
 
-    @Test void providerFailureIsReturnedWithoutHiddenRetries() throws Exception {
-        try (var provider = new Provider(503, "application/json", "{\"error\":{\"message\":\"test unavailable\"}}")) {
+    @ParameterizedTest
+    @ValueSource(ints = {401, 429, 503})
+    void providerFailureKeepsSafeStatusWithoutHiddenRetries(int status) throws Exception {
+        try (var provider = new Provider(status, "application/json", "{\"error\":{\"message\":\"synthetic-secret\"}}")) {
             var session = configured(provider, 256);
-            assertThrows(RuntimeException.class,
+            var failure = assertThrows(RuntimeException.class,
                     () -> session.client().call(new Prompt(List.of(new UserMessage("测试问题")), session.options())));
+            assertEquals("PROVIDER_HTTP_" + status, CustomerAiConsultService.failureReason(failure));
             assertEquals(1, provider.requests.size());
         }
     }
@@ -85,9 +90,10 @@ class CustomerAiModelClientTest {
     @Test void streamedProviderFailureIsReturnedWithoutHiddenRetries() throws Exception {
         try (var provider = new Provider(503, "application/json", "{\"error\":{\"message\":\"test unavailable\"}}")) {
             var session = configured(provider, 1200);
-            assertThrows(RuntimeException.class, () -> session.client()
+            var failure = assertThrows(RuntimeException.class, () -> session.client()
                     .stream(new Prompt(List.of(new UserMessage("测试问题")), session.options()))
                     .blockLast(Duration.ofSeconds(5)));
+            assertEquals("PROVIDER_HTTP_503", CustomerAiConsultService.failureReason(failure));
             assertEquals(1, provider.requests.size());
         }
     }
@@ -95,7 +101,8 @@ class CustomerAiModelClientTest {
     @Test void mismatchedProviderConfigurationIsRejectedBeforeCallingProvider() {
         when(models.validateModel(1L)).thenReturn(model);
         when(apiKeys.validateApiKey(2L)).thenReturn(AiApiKeyDO.builder().platform("OpenAI").build());
-        assertThrows(IllegalStateException.class, () -> service.forModel(model, 0.2, 1200));
+        var failure = assertThrows(IllegalStateException.class, () -> service.forModel(model, 0.2, 1200));
+        assertEquals("PROVIDER_CONFIG_MISMATCH", CustomerAiConsultService.failureReason(failure));
     }
 
     @Test void otherProvidersKeepTheirExistingClientAndOptions() {

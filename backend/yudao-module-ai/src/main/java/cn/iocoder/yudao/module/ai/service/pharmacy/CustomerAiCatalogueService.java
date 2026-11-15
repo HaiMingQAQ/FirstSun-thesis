@@ -27,6 +27,14 @@ public class CustomerAiCatalogueService {
     public Result query(Long storeId, String keyword, Long id) {
         return query(storeId, keyword, id, false, List.of());
     }
+    public Result leafletProduct(Long storeId, String name, String approvalCode) {
+        requireStore(storeId);
+        var found = drugs.selectList(allowedQuery()
+                .and(w -> w.eq(DrugDO::getGenericName, name).or().eq(DrugDO::getTradeName, name))
+                .and(approvalCode != null, w -> w.in(DrugDO::getApprovalNo, approvalCode, "国药准字" + approvalCode))
+                .orderByDesc(DrugDO::getId).last("LIMIT 21"));
+        return project(storeId, found, false, found.size() > 20);
+    }
     public Result adviceCandidates(Long storeId, String symptom) {
         requireStore(storeId);
         if (symptom == null || symptom.isBlank()) return new Result(List.of(), false);
