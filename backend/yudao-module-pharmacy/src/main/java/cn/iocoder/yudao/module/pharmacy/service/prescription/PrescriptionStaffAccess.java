@@ -13,6 +13,15 @@ import java.util.Objects;
 public class PrescriptionStaffAccess {
     private final PharmacyStoreDataAccess stores;
     private final EmployeeService employees;
+    public boolean canAccessPrivateMaterials(Long storeId) {
+        try {
+            requirePharmacist(storeId);
+            return true;
+        } catch (AccessDeniedException denied) {
+            return false;
+        }
+    }
+
     public EmployeeDO requirePharmacist(Long storeId) {
         stores.requireStore(storeId);
         var employee = employees.getEmployeeByUserId(SecurityFrameworkUtils.getLoginUserId());

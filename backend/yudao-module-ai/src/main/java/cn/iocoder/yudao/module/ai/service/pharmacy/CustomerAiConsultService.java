@@ -66,12 +66,23 @@ public class CustomerAiConsultService {
                     : request.getContext() == null ? List.<CustomerAiConsultReqVO.Turn>of() : request.getContext();
             request.setContext(context);
             phase = "intent";
-            var decision = context.isEmpty() ? intent.resolve(request.getContent()) : intent.resolve(request.getContent(), context);
+            var name = CustomerAiIntentService.namedProductKeyword(request.getContent(), context);
+            var exactProduct = name == null ? java.util.Optional.<CustomerAiCatalogueService.Result>empty()
+                    : catalogue.exactProduct(request.getStoreId(), name);
+            var decision = exactProduct.isPresent() ? new CustomerAiIntentService.Intent("priceAndStock", name, null)
+                    : context.isEmpty() ? intent.resolve(request.getContent()) : intent.resolve(request.getContent(), context);
             if ("followupStock".equals(decision.action())) {
                 Long id = request.getTopicId() == null ? null : history.lastProductId(request.getTopicId(), member, request.getStoreId());
                 decision = new CustomerAiIntentService.Intent(id == null ? "clarifyProduct" : "getDrugDetail", null, id);
             }
-            if ("clarifyProduct".equals(decision.action())) {
+            if ("diarrhoeaCatalogue".equals(decision.action()) && request.getTopicId() == null) {
+                decision = new CustomerAiIntentService.Intent("diarrhoeaAge", null, null);
+            }
+            String clarificationPrompt = CustomerAiIntentService.clarification(decision.action());
+            if (clarificationPrompt != null) {
+                checkedSink.accept(clarificationPrompt);
+                response = response(request, "SUCCESS", clarificationPrompt, List.of(), false);
+            } else if ("clarifyProduct".equals(decision.action())) {
                 String clarification = "请明确要查询的药品名称或编号；上一条记录中没有唯一可确认的商品，我不会猜测库存。";
                 checkedSink.accept(clarification);
                 response = response(request, "SUCCESS", clarification, List.of(), false);
@@ -86,8 +97,15 @@ public class CustomerAiConsultService {
                 phase = "catalogue";
                 CustomerAiCatalogueService.Result result;
                 if ("browseDrugs".equals(decision.action())) result = catalogue.browseCandidates(request.getStoreId(), decision.keyword());
+                else if ("priceAndStock".equals(decision.action())) {
+                    result = exactProduct.isPresent() ? exactProduct.get()
+                            : catalogue.priceAndStock(request.getStoreId(), decision.keyword());
+                }
                 else if ("leaflet".equals(decision.action())) {
                     result = catalogue.leafletProduct(request.getStoreId(), decision.keyword(), decision.approvalCode());
+                }
+                else if ("symptomLookup".equals(decision.action()) || "diarrhoeaCatalogue".equals(decision.action())) {
+                    result = catalogue.adviceCandidates(request.getStoreId(), decision.keyword());
                 }
                 else if ("advice".equals(decision.action())) {
                     String symptoms = request.getContent() + "\n" + context.stream().filter(t -> "user".equals(t.role()))
@@ -101,7 +119,12 @@ public class CustomerAiConsultService {
                 verifiedProducts = result.products();
                 phase = "answer";
                 String answer;
-                if ("browseDrugs".equals(decision.action())) {
+                if ("priceAndStock".equals(decision.action())) {
+                    answer = result.products().isEmpty()
+                            ? "本门店暂未找到与“" + decision.keyword() + "”匹配的商品。请核对名称，或联系门店查询。"
+                            : "已查到本门店的商品，价格和可售库存见下方商品卡。";
+                    checkedSink.accept(answer);
+                } else if ("browseDrugs".equals(decision.action())) {
                     if (result.products().isEmpty()) {
                         answer = "本店暂未查到与“" + decision.keyword() + "”匹配的非处方药资料。您可以换一个药品名称搜索，或联系门店药师查询。";
                     } else {
@@ -112,6 +135,25 @@ public class CustomerAiConsultService {
                                     + (result.products().stream().anyMatch(p -> p.availableQty() == 0) ? "缺货商品仅供查看资料，暂不可购买。" : "");
                         answer += "这是商品浏览结果，选择用药前请核对适应症、禁忌和重复成分。";
                     }
+                    checkedSink.accept(answer);
+                } else if ("symptomLookup".equals(decision.action()) || "diarrhoeaCatalogue".equals(decision.action())) {
+                    if (result.products().isEmpty()) {
+                        answer = "本门店暂未查到说明书适应症与问题匹配的非处方商品。";
+                    } else if (result.products().stream().allMatch(p -> p.availableQty() == 0)) {
+                        answer = "已找到说明书适应症相关的非处方商品，但本门店目前均缺货。下方商品卡仅供查阅。";
+                    } else {
+                        answer = "下方是说明书适应症相关的非处方商品，可查看本门店库存。请让药师核对是否适合您的具体情况。";
+                        if (result.products().stream().anyMatch(p -> p.availableQty() == 0)) {
+                            answer += "缺货商品仅供查阅。";
+                        }
+                    }
+                    for (var product : result.products()) {
+                        String indication = CustomerAiCatalogueService.indications(product.description());
+                        if (!indication.isBlank()) answer += "\n" + product.name() + "的适应症资料：" + CustomerAiAnswerService.safeSentence(indication, result.products());
+                    }
+                    answer += "diarrhoeaCatalogue".equals(decision.action())
+                            ? "\n可联系门店药师核对说明书和个人情况。如症状加重或出现危险信号，请及时就医。"
+                            : "\n请补充用药人年龄、主要症状和持续时间，或联系门店药师核对禁忌及正在使用的药物。";
                     checkedSink.accept(answer);
                 } else {
                     String reference = "advice".equals(decision.action()) && !result.products().isEmpty()

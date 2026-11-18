@@ -467,3 +467,20 @@ html.dark {
     transition: none !important;
   }
 }
+
+// Business status text within pharmacy pages and the pharmacy AI drawer.
+.pharmacy-page, .pharmacy-modern-page, .pharmacy-panel, .ai-page {
+  .el-tag--success {
+    --el-tag-text-color: #27643c;
+    --el-tag-bg-color: #f0f9eb;
+    --el-tag-border-color: #b9d7ae;
+    color: #27643c;
+    background-color: #f0f9eb;
+  }
+  .el-tag--success, .el-tag--warning, .el-tag--danger { font-size: 14px; }
+  .el-tag--warning { --el-tag-text-color: #8a5500; color: #8a5500; }
+  .el-tag--danger { --el-tag-text-color: #b42318; color: #b42318; }
+  .el-button--warning.is-link:not(.is-disabled), .el-button--warning.is-text:not(.is-disabled), .el-button--warning.is-plain:not(.is-disabled) { --el-button-text-color: #8a5500; }
+  .el-button--danger.is-link:not(.is-disabled) { color: #b42318; }
+  .pharmacy-text-secondary, .pharmacy-text-weak, .el-text--info { color: #606266; font-size: 14px; }
+}

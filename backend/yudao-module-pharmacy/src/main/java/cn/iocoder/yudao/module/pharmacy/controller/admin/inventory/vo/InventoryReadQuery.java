@@ -22,6 +22,9 @@ public class InventoryReadQuery extends PageParam {
     @Positive private Long batchId;
     @Positive private Long locationId;
     @Positive private Long drugId;
+    @jakarta.validation.constraints.Pattern(regexp = "expired|frozen|qualityBlocked|disabled|available")
+    private String stockState;
+    @Size(max = 128) private String keyword;
     @Size(max = 64) private String code;
     @Size(max = 64) private String name;
     @Size(max = 64) private String batchNo;

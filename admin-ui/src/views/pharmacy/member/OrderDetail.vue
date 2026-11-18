@@ -3,12 +3,29 @@
     v-model="drawerVisible"
     title="订单详情"
     direction="rtl"
-    size="700px"
+    size="min(900px, 98vw)"
     :before-close="handleClose"
   >
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-skeleton v-if="loading" :rows="5" animated />
     <div v-if="loaded">
+      <!-- 订单明细 -->
+      <el-divider content-position="left">订单明细</el-divider>
+      <el-empty description="暂无明细数据" v-if="!orderItems.length" />
+      <el-table v-else :data="orderItems" size="small">
+        <el-table-column label="商品名称" prop="drugName" />
+        <el-table-column label="规格" prop="specification" />
+        <el-table-column label="批号" prop="batchNo" />
+        <el-table-column label="货位编号" prop="locationId" />
+        <el-table-column label="已拣" prop="pickedQty" width="65" />
+        <el-table-column label="数量" align="center" prop="qty" width="80" />
+        <el-table-column label="单价" align="center" prop="price" width="100">
+          <template #default="scope">¥{{ formatMoney(scope.row.price) }}</template>
+        </el-table-column>
+        <el-table-column label="小计" align="center" prop="lineAmount" width="100">
+          <template #default="scope">¥{{ formatMoney(scope.row.lineAmount) }}</template>
+        </el-table-column>
+      </el-table>
       <!-- 订单基本信息 -->
       <el-divider content-position="left">订单信息</el-divider>
       <el-descriptions :column="2" border>
@@ -80,21 +97,7 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <!-- 订单明细 -->
-      <el-divider content-position="left">订单明细</el-divider>
-      <el-empty description="暂无明细数据" v-if="!orderItems.length" />
-      <el-table v-else :data="orderItems" size="small">
-        <el-table-column label="商品名称" prop="drugName" />
-        <el-table-column label="规格" prop="specification" />
-        <el-table-column label="批号" prop="batchNo" />
-        <el-table-column label="数量" align="center" prop="qty" width="80" />
-        <el-table-column label="单价" align="center" prop="price" width="100">
-          <template #default="scope">¥{{ formatMoney(scope.row.price) }}</template>
-        </el-table-column>
-        <el-table-column label="小计" align="center" prop="lineAmount" width="100">
-          <template #default="scope">¥{{ formatMoney(scope.row.lineAmount) }}</template>
-        </el-table-column>
-      </el-table>
+
     </div>
     <template #footer>
       <el-button

@@ -29,10 +29,26 @@ export const formatDate = (value) => {
 export const statusNames = {
   unpaid: '待支付',
   review: '待审核',
-  ready: '待自提 / 待配送',
+  ready: '履约中',
   completed: '已完成',
   cancelled: '已取消',
 };
+
+export function orderStatusName(order) {
+  if (order.status !== 'ready') return statusNames[order.status];
+  // 本地旧 Mock 的 ready 可直接确认取药/收货，没有独立的备货阶段。
+  if (order.readyForHandoff === false) return '备货中';
+  return order.mode === 'pickup' ? '可到店自提' : '待收货';
+}
+
+// Payment capability is not evidence of how any individual order was paid.
+export function orderPaymentLabel(order) {
+  if ('payStatus' in order) {
+    return ({ 0: '未支付', 1: '已支付', 2: '已退款' })[order.payStatus] || '付款状态待核实';
+  }
+  if (['未支付', '已支付', '已退款'].includes(order.paymentLabel)) return order.paymentLabel;
+  return order.paid === true ? '已支付' : order.paid === false ? '未支付' : '付款状态待核实';
+}
 
 const PHARMACY_DEMO_IMAGES = {
   '/pharmacy-demo/medicine.svg': '/static/pharmacy-demo/medicine.svg',
@@ -77,4 +93,20 @@ export function normalizeDrug(raw, availability = {}) {
     device: Number(raw.drugType) === 6,
     active: availability.active !== false,
   };
+}
+
+// Match the desktop allowlist: migrate only local member-avatar asset URLs between backend ports.
+export function memberAvatarUrl(value, mediaBase) {
+  if (typeof value !== 'string' || !value) return '';
+  const local = (url) => ['http:', 'https:'].includes(url.protocol) &&
+    ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) &&
+    !url.username && !url.password && !url.search && !url.hash;
+  try {
+    const source = new URL(value), target = new URL(mediaBase);
+    const path = /^\/admin-api\/infra\/file\/[1-9]\d*\/get\/member-profile-avatar\/\d{8}\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\.(?:png|jpg)$/i;
+    if (local(source) && local(target) && target.pathname === '/' && path.test(source.pathname)) {
+      return target.origin + source.pathname;
+    }
+  } catch { /* Relative or invalid values are not rewritten. */ }
+  return value;
 }

@@ -3,8 +3,8 @@
 const REQUEST_ID = /^[a-zA-Z0-9_-]{8,64}$/;
 
 export function kindLabel(kind) {
-  if (kind === 'PHARMACIST') return '药师文字咨询';
-  if (kind === 'SERVICE') return '门店客服';
+  if (kind === 'PHARMACIST') return '问药师';
+  if (kind === 'SERVICE') return '问订单与取货';
   return '咨询类型待核实';
 }
 

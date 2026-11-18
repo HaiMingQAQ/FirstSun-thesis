@@ -1,6 +1,12 @@
 import request from '@/config/axios'
 
 export interface BatchVO {
+  genericName?: string
+  specification?: string
+  drugCode?: string
+  drugStatus?: number
+  warehouseStatus?: number
+  saleableQty?: number
   id: number
   warehouseId: number
   warehouseName: string
@@ -16,7 +22,9 @@ export interface BatchVO {
 }
 
 export interface StockQuery extends PageParam {
-  warehouseId: number
+  warehouseId?: number
+  keyword?: string
+  stockState?: string
   drugId?: number
   batchNo?: string
   locationId?: number

@@ -2,8 +2,8 @@
   <s-pharmacy-page>
     <s-pharmacy-state v-if="!loggedIn" title="登录后查看处方" action="去登录" @retry="go('login')" />
     <template v-else>
-      <view class="fs-section fs-between"><view class="fs-title">处方资料</view><button class="fs-outline" :disabled="busy" @tap="newForm">提交新申请</button></view>
-      <view class="fs-notice">私有材料仅限本人及有权限的本门店药师读取。提交不代表审核通过，须按核准明细购买。</view>
+      <view class="fs-section fs-between"><view class="fs-title">处方申请记录</view><button class="fs-outline" :disabled="busy" @tap="newForm">提交处方申请</button></view>
+      <view class="fs-notice">在新申请中上传处方材料，在申请记录中查看审核结果。私有材料仅限本人及有权限的本门店药师读取。提交不代表审核通过，须按核准明细购买。</view>
       <s-pharmacy-state v-if="loading || error" :loading="loading" :error="error" @retry="load" />
       <view v-if="showForm" class="fs-section">
         <view class="fs-title">提交处方申请</view>

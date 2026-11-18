@@ -331,7 +331,7 @@ async function loadStubConfig() {
 (async () => {
   const orderActions = fs.readFileSync(path.join(MALL_ROOT, 'sheep/components/s-pharmacy-order-actions/s-pharmacy-order-actions.vue'), 'utf8');
   assert.match(orderActions, /v-if="order\.status === 'unpaid' && mockPaymentAvailable"/, '未开放时不渲染测试支付按钮');
-  assert.match(orderActions, /测试模拟支付/, '按钮必须标明测试性质');
+  assert.match(orderActions, /继续（不扣款）/, '按钮必须标明测试性质');
   // ---------- 首页分类栏：最多四类 + 全部入口 + 等分卡片 + 两行截断 ----------
   const pharmacyHome = fs.readFileSync(path.join(PHARMACY_ROOT, 'index.vue'), 'utf8');
   assert.doesNotMatch(pharmacyHome, /shortcuts-scroll|width:\s*max-content/);
@@ -341,7 +341,7 @@ async function loadStubConfig() {
   assert.match(pharmacyHome, /-webkit-line-clamp:\s*2;/);
   assert.doesNotMatch(pharmacyHome, /overflow-wrap:\s*anywhere/);
   const pharmacyCategoryPage = fs.readFileSync(path.join(PHARMACY_ROOT, 'category.vue'), 'utf8');
-  assert.match(pharmacyCategoryPage, /v-for="cat in categories"/);
+  assert.match(pharmacyCategoryPage, /v-for="cat in \(showCategories \? categories : categories.slice\(0, 3\)\)"/);
   assert.match(pharmacyCategoryPage, /categories\.value = api\.categories/);
   for (const viewport of [320, 375]) {
     const itemWidth = (viewport - 16) / 5;
@@ -353,7 +353,7 @@ async function loadStubConfig() {
   const clientMod = await load(path.join(PHARMACY_ROOT, '../../sheep/api/pharmacy/client.js'));
   await clientMod.evaluate();
   const api = clientMod.namespace.default;
-  const { money, statusNames, normalizeDrug } = clientMod.namespace;
+  const { money, statusNames, orderStatusName, normalizeDrug } = clientMod.namespace;
 
   const commonModule = await load(path.join(PHARMACY_ROOT, '../../sheep/api/pharmacy/common.js'));
   await commonModule.evaluate();
@@ -494,10 +494,15 @@ async function loadStubConfig() {
   // Explicit paid fixture is NOT proof of payment success or stock accounting.
   const fixture = members['13900001611'].orders.find(o => o.id === one.id);
   fixture.payStatus = 1; fixture.status = 1;
-  assert.equal((await api.order(one.id)).canReceive, false);
+  const preparingDelivery = await api.order(one.id);
+  assert.equal(preparingDelivery.canReceive, false);
+  assert.equal(orderStatusName(preparingDelivery), '备货中');
   await assert.rejects(api.orderAction(one.id, 'receive'), /状态已变化/);
   fixture.status = 3;
-  assert.equal((await api.order(one.id)).canReceive, true);
+  const readyDelivery = await api.order(one.id);
+  assert.equal(readyDelivery.canReceive, true);
+  assert.equal(readyDelivery.pickupCode, '');
+  assert.equal(orderStatusName(readyDelivery), '待收货');
   const before = (await api.profile()).points;
   await api.orderAction(one.id, 'receive');
   assert.equal((await api.order(one.id)).status, 'completed');
@@ -509,9 +514,11 @@ async function loadStubConfig() {
   const checkout2 = await api.checkout();
   const order2 = await api.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' });
   assert.equal(order2.mode, 'pickup');
+  assert.equal(order2.pickupCode, '');
   const pointsBeforeCancel = (await api.profile()).points;
   await api.orderAction(order2.id, 'cancel');
   assert.equal((await api.order(order2.id)).status, 'cancelled');
+  assert.equal((await api.order(order2.id)).pickupCode, '');
   assert.equal((await api.profile()).points, pointsBeforeCancel, '取消订单不产生积分变化（未用积分）');
 
   // Immediate buy displays and submits exactly one item even when unrelated rows are selected.
@@ -524,6 +531,20 @@ async function loadStubConfig() {
   assert.equal(buyOrder.items[0].drugId, 163104);
   assert.equal(buyOrder.items[0].qty, 3);
   assert.equal(buyOrder.subtotal, 2380 * 3);
+  const pickupFixture = members['13900001611'].orders.find(o => o.id === buyOrder.id);
+  pickupFixture.payStatus = 1;
+  pickupFixture.status = 2;
+  const preparingPickup = await api.order(buyOrder.id);
+  assert.equal(orderStatusName(preparingPickup), '备货中');
+  assert.equal(preparingPickup.pickupCode, '');
+  pickupFixture.status = 3;
+  const readyPickup = await api.order(buyOrder.id);
+  assert.equal(orderStatusName(readyPickup), '可到店自提');
+  assert.equal(readyPickup.orderNo, pickupFixture.orderNo);
+  assert.equal(readyPickup.pickupCode, '123456');
+  assert.equal(readyPickup.canReceive, false);
+  pickupFixture.status = 4;
+  assert.equal((await api.order(buyOrder.id)).pickupCode, '');
   assert.ok((await api.cart()).filter(r => [163101, 163102].includes(r.drugId)).every(r => !r.checked));
   await api.selectAll(true);
   const cartBeforeRx = JSON.stringify(members['13900001611'].cart);
@@ -625,6 +646,14 @@ async function loadStubConfig() {
   assert.equal((await demo.checkout()).items.length, 1);
   const demoOrder = await demo.createOrder({ mode: 'pickup', address: null, usePoints: false, remark: '' });
   assert.equal(demoOrder.total, 3180);
+  await demo.orderAction(demoOrder.id, 'pay');
+  const legacyReadyOrder = await demo.order(demoOrder.id);
+  assert.equal(legacyReadyOrder.readyForHandoff, undefined);
+  assert.equal(orderStatusName(legacyReadyOrder), '可到店自提');
+  assert.equal(orderStatusName({ ...legacyReadyOrder, mode: 'delivery' }), '待收货');
+  assert.ok(!legacyReadyOrder.pickupCode);
+  await demo.orderAction(demoOrder.id, 'receive');
+  assert.equal((await demo.order(demoOrder.id)).status, 'completed');
 
   console.log('PASS: stub adapter and demo smoke; payment rejection, delivery receipt guards, private-upload rejection, amount/cart/stock/account checks. NOT real HTTP acceptance.');
 })().catch((error) => {

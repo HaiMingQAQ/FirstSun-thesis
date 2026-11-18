@@ -1,6 +1,6 @@
 # 从零搭建本机演示环境
 
-这份流程面向首次下载项目的 Windows 和 Linux 用户。初始化器创建 `FirstSun-Followup` 租户（901）、演示门店（9101）、演示账号和开账库存。空库首次安装后，启用且线上可售的为 [14 款 OTC 演示商品](otc-expansion-20261114.md)。45 件旧目录档案和 2 件流程夹具停用、离线，共保留 61 条药品档案。后台默认启用筛选显示 14 条，选择全部状态可查看 61 条。10 个目录分类仍保留。
+这份流程面向首次下载项目的 Windows 和 Linux 用户。初始化器创建 `FirstSun-Followup` 租户（901）、演示门店（9101）、演示账号和开账库存。空库首次安装后，线上目录显示 23 款日常版商品，包括 17 款非处方药、3 款处方药和 3 款医疗器械。另有 44 件旧目录档案和 2 件流程夹具停用、离线。后台默认启用筛选显示 23 条，选择全部状态可查看 69 条。10 个目录分类仍保留。
 
 准备 Docker（Windows 使用 Docker Desktop 的 Linux 引擎，Linux 使用 Docker Engine 和 Compose 插件）、PowerShell 7、Node.js 和 npm。管理端最低要求 **Node.js 22.13.0**，构建镜像时由 npm 安装固定的 **pnpm@11.22.0**。在宿主机单独开发管理端时，从 `admin-ui` 目录运行 `npx --yes pnpm@11.22.0 install --frozen-lockfile`，也可以直接使用同版本的 pnpm。顾客端在宿主机使用 npm。在仓库根目录打开一个专用于本次操作的 PowerShell 窗口。
 
@@ -97,7 +97,7 @@ Windows 示例选择 `desktop-linux`，与重建脚本一致。Linux 可在生�
 
 这些账号用于绑定回环地址的本机演示。顾客验证码来自 `PHARMACY_DEV_SMS_CODE`。首次初始化时，管理端密码可通过 `FIRSTSUN_DEMO_PLATFORM_PASSWORD`、`FIRSTSUN_DEMO_MANAGER_PASSWORD` 和 `FIRSTSUN_DEMO_PHARMACIST_PASSWORD` 覆盖，或通过对应的 `-DemoPlatformPassword`、`-DemoManagerPassword`、`-DemoPharmacistPassword` 参数传入 `SecureString`。参数优先于环境变量和默认值。已有演示库重新运行初始化器会沿用库里的账号密码。
 
-[商品种子和既有演示配图](../deploy/demo-assets/catalog)随仓库交付。新增 14 款每款开账 24 盒，顾客端显示「商品图片暂未提供」。仓库中的旧图用于已有演示档案。已有演示库可用同一初始化命令补齐缺少的商品和开账记录，已有商品的启用、上架状态继续沿用，已消耗库存不会补回。
+[商品种子和包装图](../deploy/demo-assets/catalog)随仓库交付，初始化时会写入演示库。门店开账库存采用日常版快照，非处方药每款 23 或 24 件，器械每款 20 件，处方药暂无可售库存并保留处方审核规则。参见[包装图来源](../deploy/demo-assets/catalog/image-sources.md)。已有演示库可用同一初始化命令补齐缺少的商品和开账记录，已有商品的启用、上架状态继续沿用，已消耗库存不会补回。
 
 演示库还提供 22 笔已完成订单、5 笔已取消订单、3 个咨询会话及 8 条处方审核样例。订单使用演示商品与模拟状态，处方审核保留待审、通过和驳回三种状态。人员、单号、咨询正文、处方影像均使用合成演示内容。需要体验待付款、拣货或核销时，可在页面新建模拟订单。
 
@@ -141,7 +141,7 @@ docker @compose up -d --no-build --pull never --wait --wait-timeout 300
 
 宿主机端口均绑定到 `127.0.0.1`。后端在自己的 Compose 网络内访问 Qdrant 的 gRPC 端口 `6334`，修改宿主机映射无需修改容器间地址。
 
-先在顾客端搜索「龙珠软膏」（`FS901-OTC-P14`，`1163214`），核对库存和缺图占位，然后下单、模拟付款并在管理端拣货核销。人工咨询可用同一合成会员发起。
+先在顾客端搜索「龙珠软膏」（`FS901-OTC-P14`，`1163214`），核对库存和包装图，然后下单、模拟付款并在管理端拣货核销。人工咨询可用同一合成会员发起。
 
 如使用[定向 OTC 验收脚本](../scripts/otc-acceptance/README.md)，在本机私有配置的 `fixture.drugId` 中使用上述商品 ID，并先执行脚本的只读预检。旧版 AI 演示脚本默认使用已退到后台的旧商品，使用前需按[脚本说明](../scripts/e2e-ai/README.md)配置演示商品、价格和登录参数。
 

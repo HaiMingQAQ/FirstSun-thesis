@@ -32,6 +32,11 @@ class CustomerAiIntentServiceTest {
         assertEquals("refuse", service.resolve("请给我开方").action());
         verifyNoInteractions(models);
     }
+    @Test void productDetailPriceAndStockPromptUsesTheCatalogueWithoutAModel() {
+        assertEquals(new CustomerAiIntentService.Intent("priceAndStock", "电子体温计", null),
+                service.resolve("查询电子体温计的价格和库存"));
+        verifyNoInteractions(models, customerModels);
+    }
     void output(String content) {
         var model = AiModelDO.builder().id(1L).platform("DeepSeek").model("deepseek-flash").build();
         when(models.getRequiredDefaultModel(anyInt())).thenReturn(model);
@@ -42,6 +47,26 @@ class CustomerAiIntentServiceTest {
     @Test void rejectsInventedKeyword() {
         output("{\"action\":\"searchDrugs\",\"keyword\":\"阿莫西林\"}");
         assertThrows(IllegalArgumentException.class, () -> service.resolve("查询板蓝根"));
+    }
+    @Test void invalidFollowupIntentFallsBackWithoutQueryArguments() {
+        var context = List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "我想了解感冒"));
+        for (String invalid : List.of("not json", "{\"action\":\"pay\"}",
+                "{\"action\":\"searchDrugs\",\"keyword\":\"阿莫西林\"}",
+                "{\"action\":\"getDrugDetail\",\"drugId\":123}")) {
+            output(invalid);
+            var result = service.resolve("啊？没有药吗？", context);
+            assertEquals("chat", result.action());
+            assertNull(result.keyword());
+            assertNull(result.drugId());
+        }
+    }
+    @Test void oldSymptomsDoNotTurnAnUnrelatedChatIntoAnAdviceQuery() {
+        output("{\"action\":\"chat\"}");
+        var context = List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "我感冒了"));
+        var result = service.resolve("门店几点关门？", context);
+        assertEquals("chat", result.action());
+        assertNull(result.keyword());
+        assertNull(result.drugId());
     }
     @Test void rejectsInventedProductAndPartialId() {
         output("{\"action\":\"getDrugDetail\",\"drugId\":10}");
@@ -104,21 +129,21 @@ class CustomerAiIntentServiceTest {
         assertNull(intent.keyword());
         assertNull(intent.drugId());
     }
-    @Test void literalSymptomsStillSearchEvidenceWhenModelReturnsChatOrParaphrasesThem() {
+    @Test void literalSymptomsSearchEvidenceOnlyForGroundedModelIntents() {
         output("{\"action\":\"chat\"}");
         assertEquals("advice", service.resolve("流鼻涕，打喷嚏，鼻塞").action());
         output("{\"action\":\"advice\",\"keyword\":\"过敏性鼻炎\"}");
         var intent = service.resolve("流鼻涕，打喷嚏");
-        assertEquals("advice", intent.action()); assertNull(intent.keyword());
+        assertEquals("chat", intent.action()); assertNull(intent.keyword());
         output("{\"action\":\"chat\"}");
         assertEquals("chat", service.resolve("你好").action());
     }
-    @Test void malformedIntentCanOnlySearchLiteralKnownSymptomsWithoutInventingKeywords() {
+    @Test void malformedIntentFallsBackWithoutCatalogueQuery() {
         output("not allowed JSON");
         var context = List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "我感冒了"));
         var intent = service.resolve("成人，刚开始，没有过敏", context);
-        assertEquals("advice", intent.action()); assertNull(intent.keyword()); assertNull(intent.drugId());
-        assertEquals("advice", service.resolve("流鼻涕，鼻塞").action());
+        assertEquals("chat", intent.action()); assertNull(intent.keyword()); assertNull(intent.drugId());
+        assertThrows(IllegalArgumentException.class, () -> service.resolve("流鼻涕，鼻塞"));
         assertEquals("chat", service.resolve("成人，刚开始", List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "肚子疼"))).action());
         assertThrows(IllegalArgumentException.class, () -> service.resolve("成人，刚开始，没有过敏"));
     }
@@ -137,7 +162,9 @@ class CustomerAiIntentServiceTest {
     @Test void historyDoesNotAuthorizeAnIdMissingFromTheCurrentExplicitInput() {
         output("{\"action\":\"getDrugDetail\",\"drugId\":10}");
         var context = List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn("user", "查询药品10"));
-        assertThrows(IllegalArgumentException.class, () -> service.resolve("介绍药品", context));
+        var fallback = service.resolve("介绍药品", context);
+        assertEquals("chat", fallback.action());
+        assertNull(fallback.drugId());
         assertEquals(10L, service.resolve("查询药品10", context).drugId());
     }
     @Test void explicitPriceAndStockQueriesSurviveLegalModelRefusal() {
@@ -178,4 +205,30 @@ class CustomerAiIntentServiceTest {
         output("{\"action\":\"getDrugDetail\",\"drugId\":123}");
         assertThrows(IllegalArgumentException.class, () -> service.resolve(text));
     }
+
+    @Test void simpleSymptomQueriesUseVerifiedLookupAndNamedQueriesKeepTheirProductRoute() {
+        for (var entry : java.util.Map.of("能推荐一款感冒药给我吗", "感冒", "推荐头痛药", "头痛",
+                "可以推荐一种退热药吗", "退热", "帮我推荐一款腹泻的药", "腹泻").entrySet()) {
+            assertEquals(new CustomerAiIntentService.Intent("symptomLookup", entry.getValue(), null),
+                    service.resolve(entry.getKey()));
+        }
+        for (var entry : java.util.Map.of("有没有感冒药推荐", "感冒", "有退烧药吗", "退烧",
+                "拉肚子有药吗", "拉肚子").entrySet()) {
+            assertEquals(new CustomerAiIntentService.Intent("symptomLookup", entry.getValue(), null),
+                    service.resolve(entry.getKey()));
+        }
+        assertEquals("urgent", service.resolve("我便血，能推荐一款腹泻药给我吗").action());
+        verifyNoInteractions(models, customerModels);
+        assertEquals(new CustomerAiIntentService.Intent("priceAndStock", "板蓝根颗粒", null),
+                service.resolve("查询本店板蓝根颗粒的价格和库存"));
+        output("{\"action\":\"advice\",\"keyword\":\"感冒\"}");
+        for (String question : List.of("儿童有没有感冒药推荐", "孕妇能推荐一款感冒药给我吗",
+                "有高血压能推荐感冒药吗", "三岁孩子有退烧药吗")) {
+            assertNotEquals("symptomLookup", service.resolve(question).action());
+        }
+        assertNotEquals("symptomLookup", service.resolve("有没有感冒药推荐",
+                List.of(new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultReqVO.Turn(
+                        "user", "我怀孕了"))).action());
+    }
+
 }

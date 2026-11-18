@@ -15,6 +15,9 @@ public class AppWxOrderLineRespVO {
     @Schema(description = "商品（药品）编号", example = "1")
     private Long drugId;
 
+    @Schema(description = "当前非处方商品图片，仅供识别，非下单时图片快照")
+    private String catalogImageUrl;
+
     @Schema(description = "商品名称快照", example = "阿莫西林胶囊")
     private String drugName;
 

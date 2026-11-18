@@ -12,6 +12,7 @@ export interface PrescItemVO {
 
 // 处方记录 VO
 export interface PrescRecordVO {
+  canAccessPrivateMaterials?: boolean
   id: number
   prescNo: string // 处方号
   storeId: number // 门店

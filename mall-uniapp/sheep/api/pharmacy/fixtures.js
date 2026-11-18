@@ -1,7 +1,7 @@
 export const store = {
   id: 1,
   name: 'FirstSun 药店 · 阳光店',
-  address: '阳光路 88 号（演示门店）',
+  address: '',
   hours: '08:00–22:00',
   phone: '',
 };

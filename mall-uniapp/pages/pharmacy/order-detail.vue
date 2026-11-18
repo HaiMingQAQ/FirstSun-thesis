@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page :dock="!!order && ['unpaid', 'review', 'ready'].includes(order.status)">
+  <s-pharmacy-page :dock="showActions">
     <s-pharmacy-state
       v-if="!loggedIn"
       title="登录后查看订单"
@@ -21,7 +21,7 @@
             color="#176b5b"
           />
           <view>
-            <view class="fs-heading">{{ statusNames[order.status] }}</view>
+            <view class="fs-heading">{{ orderStatusName(order) }}</view>
             <view class="fs-muted fs-gap">{{ statusDescription }}</view>
           </view>
         </view>
@@ -29,7 +29,7 @@
       <view class="fs-section">
         <view class="fs-between">
           <text class="fs-title">{{ order.mode === 'pickup' ? '到店自提' : '门店配送' }}</text>
-          <text class="fs-tag">{{ order.paymentLabel || (order.paid ? '已支付' : '未支付') }}</text>
+          <text class="fs-tag">{{ orderPaymentLabel(order) }}</text>
         </view>
         <view class="fs-gap">
           {{
@@ -41,8 +41,15 @@
         <view class="fs-muted fs-gap">
           {{ order.mode === 'pickup' ? order.store.address : order.address?.detail }}
         </view>
-        <view v-if="order.mode === 'pickup'" class="fs-muted">
-          营业时间 {{ order.store.hours }} · 凭订单号到店取药
+        <view v-if="order.mode === 'pickup' && order.store.hours" class="fs-muted">
+          营业时间 {{ order.store.hours }}
+        </view>
+        <view v-if="order.pickupCode" class="fs-between fs-gap">
+          <view>
+            <view class="fs-muted">提货码</view>
+            <text class="pickup-code">{{ order.pickupCode }}</text>
+          </view>
+          <button class="fs-outline" @tap="copyPickupCode">复制提货码</button>
         </view>
       </view>
       <view class="fs-section">
@@ -86,29 +93,31 @@
         <view v-if="order.prescriptions.length" class="fs-muted fs-gap">
           已提交
           {{ order.prescriptions.length }}
-          张处方。需经药师审核，不承诺审核结果；测试环境不进行真实审核。
+          张处方。需经药师审核，不承诺审核结果。
         </view>
       </view>
+      <view class="fs-section"><button class="fs-outline" @tap="go('consultation?kind=SERVICE&draft=' + encodeURIComponent('咨询订单：' + (order.orderNo || order.id)))">问订单与取货</button><button class="fs-text-btn" @tap="go('consultation?kind=PHARMACIST&draft=' + encodeURIComponent('咨询订单用药：' + (order.orderNo || order.id)))">问药师</button></view>
       <view class="fs-section">
         <view class="fs-title">订单信息</view>
         <view class="meta-row">
           <text>订单编号</text>
-          <text>{{ order.id }}</text>
+          <text>{{ order.orderNo || order.id }}</text>
         </view>
+        <button v-if="order.orderNo" class="fs-outline copy-order-no" @tap="copyOrderNo">复制订单号</button>
         <view class="meta-row">
           <text>创建时间</text>
           <text>{{ order.createdAt }}</text>
         </view>
         <view class="meta-row">
-          <text>支付方式</text>
-          <text>{{ order.paymentLabel ? '以门店支付记录为准' : mockPaymentAvailable ? '测试模拟支付（不扣款）' : '在线支付未开放，请联系门店' }}</text>
+          <text>付款状态</text>
+          <text>{{ orderPaymentLabel(order) }}</text>
         </view>
         <view class="meta-row">
           <text>订单备注</text>
           <text>{{ order.remark || '无' }}</text>
         </view>
       </view>
-      <view v-if="['unpaid', 'review', 'ready'].includes(order.status)" class="fs-dock order-dock">
+      <view v-if="showActions" class="fs-dock order-dock">
         <s-pharmacy-order-actions :order="order" :mock-payment-available="mockPaymentAvailable" @change="load" />
       </view>
     </template>
@@ -117,26 +126,46 @@
 <script setup>
   import { ref, computed } from 'vue';
   import { onLoad, onShow } from '@dcloudio/uni-app';
-  import api, { money, statusNames } from '@/sheep/api/pharmacy/client';
-  import { go, useRequest } from './usePharmacy';
+  import api, { money, orderStatusName, orderPaymentLabel } from '@/sheep/api/pharmacy/client';
+  import { go, toast, useRequest } from './usePharmacy';
   const id = ref(''),
     order = ref(null),
     loggedIn = ref(false),
     mockPaymentAvailable = ref(false);
   const { loading, error, run } = useRequest();
+  const showActions = computed(() => {
+    const current = order.value;
+    return !!current && (
+      ['unpaid', 'review'].includes(current.status) ||
+      (current.status === 'ready' && current.canReceive !== false)
+    );
+  });
+  const readyDescription = (current) => {
+    if (!current || current.readyForHandoff === false) return '门店正在备货，请等待履约状态更新';
+    if (current.readyForHandoff === undefined) {
+      return current.mode === 'pickup' ? '取药后可确认已取药' : '收到商品后可确认收货';
+    }
+    if (current.mode === 'delivery') return '请在收到商品后确认收货';
+    return current.pickupCode ? '商品已备好，到店后请向店员出示提货码' : '商品已备好，请联系门店核实提货码';
+  };
   const statusDescription = computed(
     () =>
       ({
-        unpaid: mockPaymentAvailable.value ? '测试订单已提交，可进行测试模拟支付（不扣款）' : '订单尚未支付，请联系门店',
+        unpaid: '订单尚未支付，请核对金额后处理',
         review: '处方已提交，请等待药师审核',
-        ready:
-          order.value?.mode === 'pickup'
-            ? '订单已支付，等待门店备货'
-            : '订单已支付，等待门店配送',
+        ready: readyDescription(order.value),
         completed: '感谢您的信任，请按说明书使用药品',
         cancelled: '订单已取消，积分返还以门店记录为准',
       }[order.value?.status]),
   );
+  const copyPickupCode = () => {
+    const code = order.value?.pickupCode;
+    if (code) uni.setClipboardData({ data: code, fail: () => toast('复制失败，请向店员出示提货码') });
+  };
+  const copyOrderNo = () => {
+    const orderNo = order.value?.orderNo;
+    if (orderNo) uni.setClipboardData({ data: String(orderNo), fail: () => toast('复制失败，请查看页面上的订单编号') });
+  };
   const load = () =>
     run(async () => {
       mockPaymentAvailable.value = false;
@@ -158,6 +187,11 @@
     padding: 24px 16px;
     background: #edf5f0;
   }
+  .pickup-code {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 2px;
+  }
   .meta-row {
     display: flex;
     justify-content: space-between;
@@ -175,5 +209,6 @@
     text-align: right;
   }
   .meta-row text:last-child { overflow-wrap: anywhere; }
+  .copy-order-no { margin: 10px 0 0 auto; padding: 6px 12px; font-size: 13px; }
   .order-dock :deep(.order-actions) { width: 100%; margin-top: 0; }
 </style>

@@ -23,6 +23,12 @@ public interface WxOrderLineMapper extends BaseMapperX<WxOrderLineDO> {
                 .orderByDesc(WxOrderLineDO::getId));
     }
 
+    default List<WxOrderLineDO> selectListByWxOrderIds(java.util.Collection<Long> orderIds) {
+        return selectList(new LambdaQueryWrapperX<WxOrderLineDO>()
+                .in(WxOrderLineDO::getWxOrderId, orderIds)
+                .orderByAsc(WxOrderLineDO::getId));
+    }
+
     default List<WxOrderLineDO> selectListByWxOrderId(Long wxOrderId) {
         return selectList(WxOrderLineDO::getWxOrderId, wxOrderId);
     }

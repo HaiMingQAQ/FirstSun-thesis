@@ -21,6 +21,7 @@ export const orderState=o=>({'-1':'已取消',0:'待支付',1:'待拣货',2:'拣
 const stale=()=>Object.assign(new Error('登录账号已变化，请重新加载'),{code:'STALE'});
 export function createTradeApi({request,cartApi,orderApi,identity}){
  let revision=0,creation=null;
+ const pendingPayments=new Map();
  const owns=owner=>{const now=identity();return !!owner.token&&owner.token===now.token&&owner.tenant===now.tenant&&owner.epoch===now.epoch;};
  const assertOwner=owner=>{if(!owns(owner))throw stale();};
  const unwrap=r=>{if(r?.code!==0){const error=new Error(r?.msg||'服务返回异常');error.code=r?.code;throw error;}return r.data;};
@@ -28,9 +29,10 @@ export function createTradeApi({request,cartApi,orderApi,identity}){
  async function member(operation){const owner=identity();assertOwner(owner);const data=await operation(()=>assertOwner(owner));assertOwner(owner);return data;}
  async function rowAt(storeId,id,check){const rows=unwrap(await cartApi.getCartList());check();const row=storeRows(rows,storeId).find(r=>Number(r.id)===Number(id));if(!row)throw Error('购物车行已变化或不属于当前门店，请刷新');return row;}
  const api={
-  reset(){revision++;creation=null;},
+  reset(){revision++;creation=null;pendingPayments.clear();},
+  paymentUncertain(id){const record=pendingPayments.get(String(id));return !!record&&owns(record.owner);},
   creation(){if(creation&&!owns(creation.owner))creation=null;return creation;},
-  beginCheckout(){const c=api.creation();if(c?.pending||c?.unknown)throw Error('上一笔创建结果尚未确认，请先去订单列表核对');creation=null;},
+  beginCheckout(){const c=api.creation();if(c?.pending||c?.unknown)throw Error('未确认下单结果，请去我的订单核对');creation=null;},
   cart:storeId=>member(async()=>storeRows(unwrap(await cartApi.getCartList()),storeId)),
   add:(storeId,p,qty=1)=>member(async()=>{if(p.rx)throw Error('处方药不能普通加购，请先提交处方申请');if(!Number.isSafeInteger(qty)||qty<1)throw Error('请输入有效数量');return unwrap(await cartApi.addCart({storeId,drugId:p.id,qty}));}),
   quantity:(storeId,id,qty)=>member(async check=>{if(!Number.isSafeInteger(qty)||qty<1)throw Error('数量至少为1');await rowAt(storeId,id,check);return unwrap(await cartApi.updateCartQty(id,qty));}),
@@ -39,14 +41,38 @@ export function createTradeApi({request,cartApi,orderApi,identity}){
   addresses:()=>member(()=>call({url:'/member/address/list'})),
   available:(storeId,ids)=>member(()=>call({url:'/pharmacy/inventory/available',params:{storeId,drugIds:ids.join(',')}})),
   orders:(pageNo,status)=>member(async check=>{const page=unwrap(await orderApi.getOrderPage({pageNo,pageSize:6,status:status===''?undefined:Number(status)}));check();if(!Number.isSafeInteger(page.total)||page.total<0)throw Error('订单分页返回异常');const list=await Promise.all(page.list.map(async order=>({...order,lines:await call({url:'/member/wx-order/line-list',params:{wxOrderId:order.id}})})));check();return{list,total:page.total};}),
-  order:id=>member(async()=>unwrap(await orderApi.getOrder(id))),
-  cancel:id=>member(async()=>unwrap(await orderApi.cancelOrder(id,'顾客主动取消'))),
+  order:id=>member(async check=>{
+   // 付款请求结束后发起的详情读取，才能核实这次付款，迟到的旧读取不能解除门禁。
+   const key=String(id),pending=pendingPayments.get(key),canConfirm=pending?.settled===true;
+   const result=unwrap(await orderApi.getOrder(id));check();
+   if(api.paymentUncertain(id)){
+    if(String(result?.id)!==String(id)||![0,1,2].includes(result?.payStatus)||![-1,0,1,2,3,4].includes(result?.status))throw Error('订单状态未能确认，请稍后刷新');
+    if(canConfirm&&pendingPayments.get(key)===pending)pendingPayments.delete(key);
+   }
+   return result;
+  }),
+  cancel:id=>member(async()=>{
+   if(api.paymentUncertain(id))throw Error('付款结果待核实，请先刷新订单');
+   return unwrap(await orderApi.cancelOrder(id,'顾客主动取消'));
+  }),
   receive:id=>member(async()=>unwrap(await orderApi.confirmReceive(id))),
   probeCapability:async()=>{try{const value=await member(async()=>unwrap(await orderApi.getMockPaymentAvailable()));return{available:value===true,status:value===true?'enabled':value===false?'disabled':'unavailable'};}catch{return{available:false,status:'unavailable'};}},
   capability:async()=>(await api.probeCapability()).available,
-  simulate:(id,local)=>member(async check=>{if(local!==true||await api.capability()!==true)throw Error('当前环境未开放测试模拟支付');check();return unwrap(await orderApi.simulatePay(id));}),
+  simulate:(id,local)=>member(async check=>{
+   if(api.paymentUncertain(id))throw Error('付款结果待核实，请先刷新订单');
+   if(local!==true||await api.capability()!==true)throw Object.assign(Error('当前环境未开放测试模拟支付'),{code:'CAPABILITY'});
+   check();
+   const key=String(id),record={owner:identity(),settled:false};
+   pendingPayments.set(key,record);
+   try{return unwrap(await orderApi.simulatePay(id));}
+   catch(e){
+    // 仅明确失败可解除门禁。成功响应和传输不确定都要等待订单详情核对。
+    if(e.code&&!(Number(e.code)>=500&&Number(e.code)<600)&&pendingPayments.get(key)===record)pendingPayments.delete(key);
+    throw e;
+   }finally{record.settled=true;}
+  }),
   async create({storeId,orderType,addressId,remark}){
-   const previous=api.creation();if(previous?.id)throw Error('订单已创建，请查看订单详情');if(previous?.pending||previous?.unknown)throw Error('创建结果尚未确认，请先去订单列表核对');
+   const previous=api.creation();if(previous?.id)throw Error('订单已创建，请查看订单详情');if(previous?.pending||previous?.unknown)throw Error('未确认下单结果，请去我的订单核对');
    const owner=identity(),version=revision;assertOwner(owner);creation={owner,storeId,pending:true,unknown:false,id:null};let dispatched=false;
    try{
     const rows=await api.cart(storeId);assertOwner(owner);if(version!==revision)throw stale();

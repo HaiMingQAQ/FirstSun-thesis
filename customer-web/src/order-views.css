@@ -248,3 +248,6 @@
 @media (max-width: 350px) {
   :global(body:is([data-page="orders"], [data-page="order-detail"]) #header .header-tools) { gap: 5px; }
 }
+
+.checkout-next { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--green); font-weight: 600; }
+.checkout-next svg { width: 16px; height: 16px; flex: none; }

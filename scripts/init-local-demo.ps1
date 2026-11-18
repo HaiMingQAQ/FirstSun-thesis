@@ -152,7 +152,7 @@ $catalogSeed = [IO.File]::ReadAllText((Join-Path $repo 'deploy/sql/seed-local-de
 [void](Sql "$catalogVariable`n$catalogSeed")
 
 $assets = @(foreach ($name in ($catalog.products.image | Where-Object { $_ } | Sort-Object -Unique)) {
-    if ($name -cnotmatch '^[a-z]+[.]png$') { throw 'Invalid demo catalog asset name.' }
+    if ($name -cnotmatch '^[a-z0-9-]{1,27}[.](png|jpg)$') { throw 'Invalid demo catalog asset name.' }
     @{ name=$name; data=[Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $catalogRoot $name))) }
 })
 $assetJson = ConvertTo-Json -InputObject $assets -Compress

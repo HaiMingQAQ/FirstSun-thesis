@@ -186,5 +186,13 @@
   {
     "id": 47,
     "path": "sql/migrations/20261102_c_unrelated_ai_menus_disable.sql"
+  },
+  {
+    "id": 48,
+    "path": "sql/migrations/20261116_online_order_menu.sql"
+  },
+  {
+    "id": 49,
+    "path": "sql/migrations/20261118_drug_review_menu.sql"
   }
 ]

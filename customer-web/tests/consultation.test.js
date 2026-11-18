@@ -132,54 +132,36 @@ function appHarness(){
  const location={_hash:'#catalog',get hash(){return this._hash;},set hash(value){this._hash=String(value).startsWith('#')?String(value):'#'+value;}};
  const context={ref:value=>({value}),computed:fn=>({get value(){return fn();}}),watch(){},onMounted(){},onUnmounted(){},nextTick:async()=>{},identity:()=>({...state}),sameIdentity,clearLoginState(){},localTestLogin:false,trade:{reset(){}},window:{addEventListener(){},removeEventListener(){},scrollTo(){}},document:{body:{dataset:{}}},location,history:{replaceState(){}},crypto:{randomUUID:()=>'unit'},URLSearchParams,setTimeout:()=>1,clearTimeout(){},api:{store:{id:407,name:'演示门店'},session:()=>null,profile:async()=>({userId:1}),loadCategories:async()=>{catalogCalls++;return[];},productPage:async()=>{catalogCalls++;return{list:[],total:0};},aiTopics:async()=>[]}};
  const script=source('App.vue').split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm,'');
- vm.runInNewContext(script+'\nglobalThis.view={openConsult,pendingConsult,loginOpen,user,onLoggedIn,closeDialog,parseRoute,route,routeQuery,notConnected,authCleared};',context);
+ vm.runInNewContext(script+'\nglobalThis.view={openConsult,openProductConsult,detail,loginOpen,user,onLoggedIn,closeDialog,parseRoute,route,routeQuery,notConnected,authCleared};',context);
  return{...context.view,location,catalogCalls:()=>catalogCalls,events};
 }
 
-test('logged-out consult entry uses login and only resumes that action after success',async()=>{
+test('guest consult entry opens the service page before authentication',async()=>{
  const h=appHarness();
- h.openConsult();
- assert.equal(h.pendingConsult.value,true);
- assert.equal(h.loginOpen.value,true);
- h.closeDialog();
- assert.equal(h.pendingConsult.value,false);
- await h.onLoggedIn({userId:3,name:'会员'});
- assert.notEqual(h.location.hash,'#consult');
- h.user.value=null;
- h.openConsult();
- await h.onLoggedIn({userId:3,name:'会员'});
- assert.equal(h.location.hash,'#consult');
- h.location.hash='#consult';
- const before=h.catalogCalls();
- h.parseRoute();
- assert.equal(h.route.value,'consult');
- assert.equal(h.catalogCalls(),before);
- h.user.value={userId:3};
- h.location.hash='#catalog';
  h.openConsult();
  assert.equal(h.location.hash,'#consult');
  assert.equal(h.loginOpen.value,false);
+ h.parseRoute();
+ assert.equal(h.route.value,'consult');
+ h.detail.value={id:163187,name:'龙珠软膏',specification:'15g/支'};
+ h.openProductConsult();
+ assert.equal(h.location.hash,'#consult?drugId=163187');
+ h.parseRoute();
+ assert.equal(h.routeQuery.value,'drugId=163187');
+ h.loginOpen.value=true;
+ h.authCleared();
+ await h.onLoggedIn({userId:3,name:'会员'});
+ assert.equal(h.location.hash,'#consult?drugId=163187');
+ assert.equal(h.loginOpen.value,false);
 });
 
-test('leaving the page that opened consult cancels resume so login stays on the later route',async()=>{
+test('login completion preserves the page chosen during authentication',async()=>{
  const h=appHarness();
  h.openConsult();
- assert.equal(h.pendingConsult.value,true);
  h.location.hash='#prescriptions?from=1';
  h.parseRoute();
- assert.equal(h.pendingConsult.value,false);
- assert.equal(h.route.value,'prescriptions');
- assert.equal(h.routeQuery.value,'from=1');
  await h.onLoggedIn({userId:3,name:'会员'});
  assert.equal(h.location.hash,'#prescriptions?from=1');
- h.user.value=null;
- h.location.hash='#catalog';
- h.openConsult();
- h.authCleared();
- assert.equal(h.pendingConsult.value,false);
- assert.equal(h.user.value,null);
- await h.onLoggedIn({userId:4,name:'另一会员'});
- assert.equal(h.location.hash,'#catalog');
 });
 
 test('consult and prescription stay on separate routes and do not mark each other unavailable',()=>{
@@ -207,7 +189,9 @@ async function renderConsult(state){
 test('consultation text is escaped and empty, error and unattended states are explicit',async()=>{
  assert.equal(source('ConsultationPage.vue').includes('v-html'),false);
  const guest=await renderConsult({user:null,error:'',emit(){}});
- assert.match(guest,/登录后联系门店/);
+ assert.match(guest,/联系时需登录会员账号/);
+ assert.match(guest,/咨询药师/);
+ assert.match(guest,/文字回复/);
  const failed=await renderConsult({user:{userId:1},error:'会话列表加载失败',failed:null,conversation:null,loading:false,busy:false,conversations:[],total:0,currentStore:{id:407,name:'演示门店'},storeAttribution,emit(){}});
  assert.match(failed,/会话列表加载失败/);
  const thread=await renderConsult({user:{userId:1},error:'',failed:{content:'未确认的原文',clientRequestId:'web_123_abcd'},conversation:{id:4,kind:'SERVICE',storeId:88,attended:false},loading:false,busy:false,polling:false,messages:[{id:1,senderType:'STAFF',senderName:'客服',content:'<img src=x onerror=alert(1)>'}],hasOlder:true,input:'',currentStore:{id:407,name:'演示门店'},storeAttribution,kindLabel,formatDate:()=>'2026-10-30 09:00'});

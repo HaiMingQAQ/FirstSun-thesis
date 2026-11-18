@@ -567,7 +567,7 @@ export default defineComponent({
         }}
       >
         {renderMenuWrap()}
-        {unref(menuMode) === 'vertical' && checkPermi(['pharmacy:ai:chat']) ? (
+        {unref(menuMode) === 'vertical' && !isTwoColumnLayout(unref(layout)) && checkPermi(['pharmacy:ai:chat']) ? (
           <AiAssistantMenuEntry
             class="flex-none"
             collapse={unref(collapse) && !isTwoColumnLayout(unref(layout))}

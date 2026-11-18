@@ -26,6 +26,7 @@ class InventoryReadMapperTest {
         var configuration = configuration();
         var query = new InventoryReadQuery();
         query.setCode("x%' OR 1=1 --");
+        query.setKeyword("合成药名' OR 1=1 --");
         query.setName("中心");
         query.setStatus(1);
         query.setWarehouseId(3L);
@@ -50,6 +51,7 @@ class InventoryReadMapperTest {
             var bound = statement.getBoundSql(parameters);
             assertTrue(bound.getSql().contains("tenant_id"));
             assertTrue(bound.getSql().contains("store_id"));
+            assertFalse(bound.getSql().contains(query.getKeyword()));
             assertFalse(bound.getSql().contains(query.getCode()), "search must remain a bound parameter");
             for (var mapping : bound.getParameterMappings()) {
                 assertNotNull(configuration.newMetaObject(parameters).getValue(mapping.getProperty()), mapping.getProperty());

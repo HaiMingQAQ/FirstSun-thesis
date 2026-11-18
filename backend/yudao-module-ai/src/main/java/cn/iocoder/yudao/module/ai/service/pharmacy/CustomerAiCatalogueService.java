@@ -18,6 +18,7 @@ public class CustomerAiCatalogueService {
     private final AppAvailableInventoryMapper inventory;
     private final StoreService stores;
     private final CategoryService categories;
+    private final PharmacyKnowledgeService knowledge;
     public record Result(List<Product> products, boolean truncated) { }
     public void requireStore(Long storeId) {
         var store = stores.getStore(storeId);
@@ -26,6 +27,21 @@ public class CustomerAiCatalogueService {
     }
     public Result query(Long storeId, String keyword, Long id) {
         return query(storeId, keyword, id, false, List.of());
+    }
+    public Result priceAndStock(Long storeId, String name) {
+        requireStore(storeId);
+        var found = allowedQuery(true)
+                .and(w -> w.like(DrugDO::getGenericName, name).or().like(DrugDO::getTradeName, name))
+                .orderByDesc(DrugDO::getId).last("LIMIT 21");
+        var rows = drugs.selectList(found);
+        return project(storeId, rows, true, rows.size() > 20);
+    }
+    public Optional<Result> exactProduct(Long storeId, String name) {
+        requireStore(storeId);
+        var rows = drugs.selectList(allowedQuery(true)
+                .and(w -> w.eq(DrugDO::getGenericName, name).or().eq(DrugDO::getTradeName, name))
+                .orderByDesc(DrugDO::getId).last("LIMIT 21"));
+        return rows.isEmpty() ? Optional.empty() : Optional.of(project(storeId, rows, true, rows.size() > 20));
     }
     public Result leafletProduct(Long storeId, String name, String approvalCode) {
         requireStore(storeId);
@@ -50,13 +66,26 @@ public class CustomerAiCatalogueService {
         var found = drugs.selectList(query);
         // A mention in contraindications/source notes or a category name is not an indication.
         var matched = found.stream().filter(d -> searchTerms.stream().anyMatch(t -> indications(d.getDescription()).contains(t))).toList();
+        if (!symptomTerms(symptom).isEmpty() && matched.isEmpty()) {
+            var evidence = knowledge.search(String.join(" ", searchTerms) + " 适应症", 24, true).stream()
+                    .filter(hit -> hit.drugId() != null && "适应症".equals(hit.section())
+                            && hit.text() != null && searchTerms.stream().anyMatch(hit.text()::contains))
+                    .collect(Collectors.toMap(PharmacyKnowledgeService.Hit::drugId, PharmacyKnowledgeService.Hit::text, (first, next) -> first));
+            var ids = List.copyOf(evidence.keySet());
+            if (!ids.isEmpty()) {
+                matched = drugs.selectList(allowedQuery().in(DrugDO::getId, ids).orderByDesc(DrugDO::getId));
+                // Only enrich the response projection; no database update.
+                matched.forEach(drug -> drug.setDescription("适应症：" + evidence.get(drug.getId())
+                        + "\n" + Objects.toString(drug.getDescription(), "")));
+            }
+        }
         return project(storeId, matched, true, found.size() > 60);
     }
     static List<String> symptomTerms(String text) {
         if (text == null) return List.of();
         var terms = new LinkedHashSet<String>();
         for (var group : List.of(List.of("流鼻涕", "流涕"), List.of("打喷嚏", "喷嚏"), List.of("鼻塞"),
-                List.of("头疼", "头痛"), List.of("发烧", "发热"), List.of("嗓子疼", "咽痛"), List.of("咳嗽"), List.of("感冒")))
+                List.of("头疼", "头痛"), List.of("发烧", "发热", "退热", "退烧"), List.of("嗓子疼", "咽痛"), List.of("咳嗽"), List.of("感冒"), List.of("腹泻", "拉肚子", "泄泻", "拉稀")))
             if (group.stream().anyMatch(word -> java.util.regex.Pattern.compile("(?<!没有)(?<!没有明显)(?<!没)(?<!无)(?<!不)(?<!未)(?<!否认)" + java.util.regex.Pattern.quote(word)).matcher(text).find())) terms.addAll(group);
         return List.copyOf(terms);
     }
@@ -66,11 +95,14 @@ public class CustomerAiCatalogueService {
         return line.find() ? line.group(1) : "";
     }
     private LambdaQueryWrapperX<DrugDO> allowedQuery() {
+        return allowedQuery(false);
+    }
+    private LambdaQueryWrapperX<DrugDO> allowedQuery(boolean includeDevices) {
         var query = new LambdaQueryWrapperX<DrugDO>();
         query
                 .eq(DrugDO::getStatus, 1).eq(DrugDO::getApproveStatus, 1).eq(DrugDO::getSaleableOnline, 1)
                 .eq(DrugDO::getIsRx, 0).eq(DrugDO::getIsSpecial, 0).eq(DrugDO::getIsPseudoephedrine, 0)
-                .in(DrugDO::getDrugType, 1, 2);
+                .in(DrugDO::getDrugType, includeDevices ? List.of(1, 2, 6) : List.of(1, 2));
         return query;
     }
     public Result browseCandidates(Long storeId, String keyword) {
@@ -104,7 +136,7 @@ public class CustomerAiCatalogueService {
                 .map(d -> new Product(d.getId(), displayName(d),
                         d.getGenericName(), d.getSpecification(), d.getManufacturer(), d.getApprovalNo(), d.getImageUrl(),
                         d.getMemberPrice() == null ? d.getRetailPrice() : d.getMemberPrice(), Math.max(0, stocks.getOrDefault(d.getId(), 0)), storeId,
-                        d.getDescription())).toList();
+                        d.getDescription(), d.getDrugType())).toList();
         return new Result(products, truncated || (includeUnavailable && found.size() > 20));
     }
     static String displayName(DrugDO drug) {

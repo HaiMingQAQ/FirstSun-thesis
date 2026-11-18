@@ -50,6 +50,13 @@ public class PharmacyAiController {
         return success(toolService.getInventoryAlerts(drugId, keyword, limit));
     }
 
+    @PostMapping("/drug/preview")
+    @PreAuthorize("@ss.hasPermission('pharmacy:ai:chat') && @ss.hasPermission('pharmacy:base:drug:create')")
+    @ApiAccessLog(requestEnable = false, responseEnable = false)
+    public CommonResult<PharmacyAiCommandService.Preview> drugPreview(@RequestBody JsonNode body) {
+        return success(commandService.prepare("prepareCreateDrug", body, null, UUID.randomUUID().toString()));
+    }
+
     @PostMapping("/purchase/preview")
     @PreAuthorize("@ss.hasPermission('pharmacy:ai:chat')")
     @ApiAccessLog(requestEnable = false, responseEnable = false, sanitizeKeys = {"purchase", "remark", "lines"})

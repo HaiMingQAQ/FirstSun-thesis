@@ -25,6 +25,7 @@ public interface WxOrderMapper extends BaseMapperX<WxOrderDO> {
         return selectPage(reqVO, new LambdaQueryWrapperX<WxOrderDO>()
                 .likeIfPresent(WxOrderDO::getOrderNo, reqVO.getOrderNo())
                 .eqIfPresent(WxOrderDO::getMemberId, reqVO.getMemberId())
+                .eqIfPresent(WxOrderDO::getPickupCode, reqVO.getPickupCode())
                 .eqIfPresent(WxOrderDO::getStoreId, scopedStoreId)
                 .eqIfPresent(WxOrderDO::getOrderType, reqVO.getOrderType())
                 .eqIfPresent(WxOrderDO::getStatus, reqVO.getStatus())

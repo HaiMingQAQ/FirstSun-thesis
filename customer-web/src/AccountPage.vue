@@ -1,6 +1,7 @@
 <script setup>
-import {ref,onMounted,onUnmounted} from 'vue';
+import {ref,onMounted,onUnmounted,nextTick} from 'vue';
 import account from './account.js';
+import trade from './trade.js';
 import {identity} from './session.js';
 import {sameIdentity} from './guards.js';
 import PasswordGate from '#test-password';
@@ -9,6 +10,7 @@ import EmailChangePassword from './EmailChangePassword.vue';
 import MemberAvatar from './MemberAvatar.vue';
 const props=defineProps({user:Object}),emit=defineEmits(['profile','logout','login']);
 const passwordBusy=ref(false);
+const loginManagementOpen=ref(false),addressesOpen=ref(false),addresses=ref([]),addressesLoading=ref(false),addressesError=ref(''),addressSection=ref(null);
 const profile=ref(null),nickname=ref(''),email=ref(''),busy=ref(false),loading=ref(false),error=ref(''),notice=ref('');
 let disposed=false;const owner=identity(),valid=()=>!disposed&&sameIdentity(owner,identity());
 function accept(p){if(!valid())return;profile.value=p;nickname.value=p.name;email.value=p.email;emit('profile',p);}
@@ -16,6 +18,17 @@ onMounted(async()=>{if(!props.user)return;loading.value=true;try{accept(await ac
 onUnmounted(()=>{disposed=true;nickname.value='';email.value='';profile.value=null;});
 async function save(){if(busy.value||passwordBusy.value||!valid())return;busy.value=true;error.value='';notice.value='';try{accept(await account.saveProfile({nickname:nickname.value,email:email.value},valid));if(valid())notice.value='资料已保存';}catch(e){if(valid())error.value=e.message;}finally{if(valid())busy.value=false;}}
 async function upload(event){const file=event.target.files?.[0];event.target.value='';if(!file||busy.value||passwordBusy.value||!valid())return;busy.value=true;error.value='';notice.value='';try{accept(await account.saveAvatar(file,valid));if(valid())notice.value='头像已保存';}catch(e){if(valid())error.value=e.message;}finally{if(valid())busy.value=false;}}
+async function showAddresses(){
+ if(addressesLoading.value||!props.user||!valid())return;
+ addressesOpen.value=true;
+ await nextTick();
+ if(!valid())return;
+ addressSection.value?.focus();
+ addressesLoading.value=true;addressesError.value='';
+ try{const result=await trade.addresses();if(valid())addresses.value=result;}
+ catch(e){if(valid())addressesError.value=e.message;}
+ finally{if(valid())addressesLoading.value=false;}
+}
 </script>
 <template>
   <main class="customer-page account-page">
@@ -42,9 +55,19 @@ async function upload(event){const file=event.target.files?.[0];event.target.val
       </section>
       <nav class="account-shortcuts" aria-label="会员快捷入口">
         <a href="#orders"><Icon name="package"/><span>我的订单</span><Icon name="chevron-right"/></a>
-        <a href="#prescriptions"><Icon name="file-check-2"/><span>我的处方</span><Icon name="chevron-right"/></a>
-        <a href="#consult"><Icon name="headset"/><span>药师 / 客服</span><Icon name="chevron-right"/></a>
+        <a href="#prescriptions"><Icon name="file-check-2"/><span>处方申请记录</span><Icon name="chevron-right"/></a>
+        <a href="#consult"><Icon name="headset"/><span>咨询与回复</span><Icon name="chevron-right"/></a>
+        <button type="button" :aria-expanded="addressesOpen" aria-controls="account-addresses" @click="showAddresses"><Icon name="map-pin"/><span>收货地址</span><Icon name="chevron-right"/></button>
+        <a href="#notifications"><Icon name="bell"/><span>业务通知</span><Icon name="chevron-right"/></a>
       </nav>
+      <section v-if="addressesOpen" id="account-addresses" ref="addressSection" class="account-card account-addresses" tabindex="-1" aria-labelledby="account-addresses-title">
+        <div class="account-section-head"><h2 id="account-addresses-title">收货地址</h2><button type="button" class="btn link" @click="addressesOpen=false">收起</button></div>
+        <p v-if="addressesLoading" role="status">正在读取收货地址…</p>
+        <p v-else-if="addressesError" class="error-panel" role="alert">{{addressesError}}<button type="button" class="btn link" @click="showAddresses">重试</button></p>
+        <ul v-else-if="addresses.length" class="account-address-list"><li v-for="a in addresses" :key="a.id"><strong>{{a.name}} · {{a.mobile}}</strong><span v-if="a.defaultStatus" class="tag neutral">默认地址</span><p>{{a.detailAddress}}</p></li></ul>
+        <p v-else class="muted">暂无收货地址，下单时可选择到店自提。</p>
+        <p class="small muted">已有地址可在配送结算时选择。电脑端暂未开放新增和编辑。</p>
+      </section>
       <p v-if="error" class="error-panel" role="alert">{{error}}</p>
       <p v-if="notice" class="account-feedback" role="status">{{notice}}</p>
       <div class="account-grid">
@@ -52,7 +75,7 @@ async function upload(event){const file=event.target.files?.[0];event.target.val
           <h2><Icon name="user-round"/>个人资料</h2>
           <form @submit.prevent="save">
             <label class="form-field">昵称<input v-model="nickname" maxlength="30" :disabled="busy||passwordBusy" required></label>
-            <label class="form-field">联系邮箱
+            <label class="form-field">联系邮箱（不用于登录）
               <input v-model="email" type="email" maxlength="255" :disabled="busy||passwordBusy" aria-describedby="contact-email-note">
             </label>
             <p id="contact-email-note" class="small muted">选填，此邮箱未经验证，不用于登录。</p>
@@ -66,7 +89,8 @@ async function upload(event){const file=event.target.files?.[0];event.target.val
             <div><dt>手机号</dt><dd>{{profile.mobile||'未填写'}}</dd></div>
             <div><dt>登录密码</dt><dd>{{profile.passwordSet?'已设置':'未设置，可继续使用验证码登录'}}</dd></div>
           </dl>
-          <div v-if="profile.loginEmail||(!profile.passwordSet&&profile.mobile)" class="account-password">
+          <button v-if="profile.loginEmail||(!profile.passwordSet&&profile.mobile)" type="button" class="btn account-manage" :aria-expanded="loginManagementOpen" aria-controls="account-login-management" :disabled="busy||passwordBusy" @click="loginManagementOpen=!loginManagementOpen"><Icon name="settings-2"/>{{loginManagementOpen?'收起登录方式':'管理登录方式'}}</button>
+          <div v-if="loginManagementOpen" id="account-login-management" class="account-password">
             <EmailChangePassword v-if="profile.passwordSet&&profile.loginEmail" :disabled="busy" @busy="passwordBusy=$event"/>
             <EmailFirstPassword v-else-if="!profile.passwordSet&&profile.loginEmail" :disabled="busy" @busy="passwordBusy=$event" @profile="accept"/>
             <PasswordGate v-else-if="!profile.passwordSet&&profile.mobile" :disabled="busy" @busy="passwordBusy=$event" @profile="accept"/>
@@ -94,9 +118,9 @@ async function upload(event){const file=event.target.files?.[0];event.target.val
 .avatar-picker input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .avatar-picker:has(input:disabled) { opacity: .65; cursor: default; }
 .account-shortcuts, .account-grid { display: grid; gap: 14px; margin-top: 16px; }
-.account-shortcuts { grid-template-columns: repeat(3,minmax(0,1fr)); }
-.account-shortcuts a { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 10px 15px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-weight: 600; }
-.account-shortcuts a:hover { border-color: var(--green); color: var(--green); }
+.account-shortcuts { grid-template-columns: repeat(5,minmax(0,1fr)); }
+.account-shortcuts :is(a,button) { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 10px 15px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-weight: 600; }
+.account-shortcuts :is(a,button):hover { border-color: var(--green); color: var(--green); }
 .account-shortcuts svg { width: 18px; height: 18px; flex: none; color: var(--green); }
 .account-shortcuts svg:last-child { margin-left: auto; }
 .account-grid { grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: start; }
@@ -109,8 +133,19 @@ async function upload(event){const file=event.target.files?.[0];event.target.val
 .account-identities dt { color: var(--muted); }
 .account-identities dd { margin: 0; overflow-wrap: anywhere; }
 .account-verified { display: inline-block; margin-left: 4px; color: var(--green); font-size: 11px; }
-.account-password { margin-top: 18px; }
+.account-password { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.account-manage { display:inline-flex; align-items:center; gap:8px; margin-top:18px }
+.account-manage svg { width:17px; height:17px }
+.account-addresses { margin-top:16px }
+.account-section-head { display:flex; align-items:center; justify-content:space-between; gap:12px }
+.account-section-head h2 { margin:0; font-size:19px }
+.account-address-list { list-style:none; padding:0; margin:12px 0 }
+.account-address-list li { padding:12px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere }
+.account-address-list p { margin:5px 0 0 }
+.account-address-list .tag { margin-left:10px }
+.account-shortcuts button { text-align:left; color:inherit; font:inherit; font-weight:600 }
 .account-feedback { padding: 10px 14px; border-radius: 8px; color: var(--green); background: #edf5ef; }
+@media (max-width: 1000px) { .account-shortcuts { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media (max-width: 720px) { .account-grid { grid-template-columns: 1fr; } }
 @media (max-width: 520px) {
   .account-summary { align-items: flex-start; flex-direction: column; }

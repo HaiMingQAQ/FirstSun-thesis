@@ -211,7 +211,7 @@ class CustomerAiConsultServiceTest {
         store.setStatus(1);
         when(stores.getStore(storeId)).thenReturn(store);
         var catalogue = new CustomerAiCatalogueService(drugs, inventory, stores,
-                mock(cn.iocoder.yudao.module.pharmacy.service.base.CategoryService.class));
+                mock(cn.iocoder.yudao.module.pharmacy.service.base.CategoryService.class), mock(PharmacyKnowledgeService.class));
 
         var knowledge = mock(PharmacyKnowledgeService.class);
         when(knowledge.search(req.getContent(), 4, true)).thenReturn(List.of(
@@ -241,6 +241,19 @@ class CustomerAiConsultServiceTest {
     @Test void refusalNeverRunsCatalogueQuery() {
         when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("refuse",null,null));
         assertTrue(service.consult(req).products().isEmpty()); verify(catalogue,never()).query(anyLong(),any(),any());
+    }
+    @Test void findsExactDeviceForBareNameAndColloquialStockQuestionWithoutModelCalls() {
+        var device = new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(42L, "电子体温计", "电子体温计", "MC-246",
+                null, null, null, new java.math.BigDecimal("78.00"), 20, 1L, null, 6);
+        when(catalogue.exactProduct(1L, "电子体温计")).thenReturn(java.util.Optional.of(
+                new CustomerAiCatalogueService.Result(List.of(device), false)));
+        for (String question : List.of("电子体温计", "查找电子体温计", "电子体温计还有得卖吗")) {
+            req.setContent(question);
+            var result = service.consult(req);
+            assertEquals("SUCCESS", result.status());
+            assertEquals(List.of(device), result.products());
+        }
+        verifyNoInteractions(intent, answers);
     }
     @Test void browsingReturnsRealCardsWithoutAskingModelForMedicalAdvice() {
         when(intent.resolve(anyString())).thenReturn(new CustomerAiIntentService.Intent("browseDrugs", "感冒", null));
@@ -428,5 +441,90 @@ class CustomerAiConsultServiceTest {
         var result=service.consult(req); assertEquals(List.of(available,unavailable),result.products());
         assertTrue(result.answer().contains("缺货商品仅供查看资料，暂不可购买"));
         assertFalse(result.answer().contains("目前均缺货")); verifyNoInteractions(answers);
+    }
+    @Test void symptomLookupDistinguishesStockAndMissingEvidenceWhileAskingForContext() {
+        req.setContent("能推荐一款感冒药给我吗");
+        when(intent.resolve(req.getContent())).thenReturn(new CustomerAiIntentService.Intent("symptomLookup", "感冒", null));
+        var available = new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(
+                11L, "合成感冒药", "合成感冒药", "规格", "厂家", "批准号", null, null, 3, 1L, "适应症：仅用于合成说明书限定的症状。");
+        var unavailable = new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(
+                12L, "合成缺货药", "合成缺货药", "规格", "厂家", "批准号", null, null, 0, 1L);
+        when(catalogue.adviceCandidates(1L, "感冒")).thenReturn(
+                new CustomerAiCatalogueService.Result(List.of(available), false),
+                new CustomerAiCatalogueService.Result(List.of(unavailable), false),
+                new CustomerAiCatalogueService.Result(List.of(), false));
+        var inStock = service.consult(req);
+        assertEquals(List.of(available), inStock.products());
+        assertTrue(inStock.answer().contains("年龄、主要症状和持续时间"));
+        assertTrue(inStock.answer().contains("仅用于合成说明书限定的症状"));
+        var noStock = service.consult(req);
+        assertEquals(List.of(unavailable), noStock.products());
+        assertTrue(noStock.answer().contains("均缺货"));
+        var noEvidence = service.consult(req);
+        assertTrue(noEvidence.products().isEmpty());
+        assertTrue(noEvidence.answer().contains("暂未查到说明书适应症"));
+        assertFalse(noEvidence.answer().contains("均缺货"));
+        verifyNoInteractions(answers);
+    }
+    @Test void symptomLookupKeepsTheExistingDoseGuardForIndicationText() {
+        req.setContent("推荐发热药");
+        when(intent.resolve(req.getContent())).thenReturn(new CustomerAiIntentService.Intent("symptomLookup", "发热", null));
+        var product = new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(
+                11L, "合成药品", "合成药品", "规格", "厂家", "批准号", null, null, 3, 1L, "适应症：服用10mg。");
+        when(catalogue.adviceCandidates(1L, "发热")).thenReturn(new CustomerAiCatalogueService.Result(List.of(product), false));
+        var result = service.consult(req);
+        assertEquals(List.of(product), result.products());
+        assertFalse(result.answer().contains("10mg"));
+        assertTrue(result.answer().contains(CustomerAiAnswerService.GUARD_FALLBACK.strip()));
+        verifyNoInteractions(answers);
+    }
+    @Test void sameTopicDiarrhoeaFollowupsUseKnownAnswersAndReturnVerifiedCard() {
+        var models = mock(cn.iocoder.yudao.module.ai.service.model.AiModelService.class);
+        var customerModels = mock(CustomerAiModelClient.class);
+        var json = new ObjectMapper().findAndRegisterModules();
+        var realIntent = new CustomerAiIntentService(models, json, customerModels);
+        var realService = new CustomerAiConsultService(mapper, realIntent, catalogue, json, answers, history);
+        var turns = new java.util.ArrayList<CustomerAiConsultReqVO.Turn>();
+        var topic = new cn.iocoder.yudao.module.ai.dal.dataobject.pharmacy.CustomerAiTopicDO();
+        topic.setStoreId(1L);
+        when(history.require(10L, 2L)).thenReturn(topic);
+        when(history.context(10L, 2L)).thenAnswer(call -> List.copyOf(turns));
+        req.setTopicId(10L);
+        var product = new cn.iocoder.yudao.module.ai.controller.app.pharmacy.vo.CustomerAiConsultRespVO.Product(
+                163188L, "蒙脱石散（华纳比乐）", "蒙脱石散", "3g×10袋", "合成厂家", "合成文号", null, null,
+                24, 1L, "适应症：用于合成说明书所载的腹泻资料。");
+        when(catalogue.adviceCandidates(1L, "腹泻")).thenReturn(new CustomerAiCatalogueService.Result(List.of(product), false));
+        var questions = List.of("轻度水样泻", "成人，刚开始", "没有发热呕吐血便剧烈腹痛口干尿少头晕", "没有", "啊？没有药吗？");
+        for (int i = 0; i < questions.size(); i++) {
+            req.setClientMessageId("synthetic_" + i);
+            req.setContent(questions.get(i));
+            var reply = realService.consult(req);
+            assertEquals("SUCCESS", reply.status());
+            if (i < 3) {
+                assertTrue(reply.products().isEmpty());
+                assertEquals(CustomerAiIntentService.clarification(
+                        List.of("diarrhoeaAge", "diarrhoeaWarnings", "diarrhoeaRisks").get(i)), reply.answer());
+            } else {
+                assertEquals(List.of(product), reply.products());
+                assertTrue(reply.answer().contains("适应症资料"));
+                assertFalse(reply.answer().contains("请补充用药人年龄"));
+            }
+            turns.add(new CustomerAiConsultReqVO.Turn("user", questions.get(i)));
+            turns.add(new CustomerAiConsultReqVO.Turn("assistant", reply.answer()));
+        }
+        req.setClientMessageId("synthetic_red_flag");
+        req.setContent("现在有血便");
+        assertTrue(realService.consult(req).products().isEmpty());
+        for (String update : List.of("后来开始发热和呕吐", "刚才说错，现在口干尿少头晕",
+                "其实正在服药", "换个问题，我现在头痛", "刚才说错，不确定")) {
+            var correction = new CustomerAiConsultReqVO.Turn("user", update);
+            turns.add(correction);
+            req.setClientMessageId("synthetic_correction_" + turns.size() + update.length());
+            req.setContent("啊？没有药吗？");
+            assertTrue(realService.consult(req).products().isEmpty(), update);
+            turns.remove(turns.size() - 1);
+        }
+        verify(catalogue, times(2)).adviceCandidates(1L, "腹泻");
+        verifyNoInteractions(models, customerModels, answers);
     }
 }

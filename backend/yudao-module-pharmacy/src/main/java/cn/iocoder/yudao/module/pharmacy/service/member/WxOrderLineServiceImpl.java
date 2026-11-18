@@ -75,6 +75,14 @@ public class WxOrderLineServiceImpl implements WxOrderLineService {
     }
 
     @Override
+    public List<WxOrderLineDO> getWxOrderLineListByWxOrderIds(Collection<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return List.of();
+        }
+        return wxOrderLineMapper.selectListByWxOrderIds(orderIds);
+    }
+
+    @Override
     public WxOrderLineDO validateWxOrderLineExists(Long id) {
         if (id == null) {
             throw exception(PHARMACY_WX_ORDER_LINE_NOT_EXISTS);
