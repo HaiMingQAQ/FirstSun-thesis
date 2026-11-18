@@ -9,13 +9,17 @@ const emit=defineEmits(['quantity','select','remove']);
 const product=ref(null),imageFailed=ref(false);
 const name=computed(()=>(props.showCatalogInfo&&product.value?.name)||props.row.drugName||'商品名称未提供');
 const genericName=computed(()=>props.showCatalogInfo&&product.value?.genericName!==name.value?product.value?.genericName:'');
-const image=computed(()=>!imageFailed.value&&product.value?.image?safeImage(product.value.image):'');
-watch([()=>props.showCatalogInfo||props.showCatalogImage,()=>props.row.drugId,()=>Number(props.row.isRx)===1],async ([enabled,id,rx],_,onCleanup)=>{
+const image=computed(()=>{
+ if(imageFailed.value||Number(props.row.isRx)===1)return '';
+ if(props.showCatalogImage&&props.row.catalogImageUrl!==undefined)return safeImage(props.row.catalogImageUrl);
+ return product.value?.image?safeImage(product.value.image):'';
+});
+watch([()=>props.showCatalogInfo||props.showCatalogImage,()=>props.row.drugId,()=>Number(props.row.isRx)===1,()=>props.row.catalogImageUrl],async ([enabled,id,rx],_,onCleanup)=>{
  let current=true;
  onCleanup(()=>{current=false;});
  product.value=null;
  imageFailed.value=false;
- if(!enabled||!id||rx)return;
+ if(!enabled||!id||rx||(props.showCatalogImage&&props.row.catalogImageUrl!==undefined))return;
  try{
   const result=await DrugApi.getDrug(id);
   const raw=result?.data;

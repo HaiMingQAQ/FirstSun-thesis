@@ -8,9 +8,9 @@
 import { PHARMACY_DEMO } from './config';
 import demo from './demo';
 import server from './server';
-import { money, statusNames, normalizeDrug, formatDate } from './common';
+import { money, statusNames, orderStatusName, orderPaymentLabel, normalizeDrug, formatDate } from './common';
 
 const api = PHARMACY_DEMO ? demo : server;
 
 export default api;
-export { money, statusNames, normalizeDrug, formatDate, PHARMACY_DEMO };
+export { money, statusNames, orderStatusName, orderPaymentLabel, normalizeDrug, formatDate, PHARMACY_DEMO };

@@ -6,7 +6,12 @@ public record CustomerAiConsultRespVO(String clientMessageId, String status, Str
         String source, LocalDateTime queriedAt, boolean truncated, List<Product> products) {
     public record Product(Long id, String name, String genericName, String specification,
             String manufacturer, String approvalNo, String imageUrl, BigDecimal price,
-            Integer availableQty, Long storeId, String description) {
+            Integer availableQty, Long storeId, String description, Integer drugType) {
+        public Product(Long id, String name, String genericName, String specification,
+                       String manufacturer, String approvalNo, String imageUrl, BigDecimal price,
+                       Integer availableQty, Long storeId, String description) {
+            this(id, name, genericName, specification, manufacturer, approvalNo, imageUrl, price, availableQty, storeId, description, null);
+        }
         public Product(Long id, String name, String genericName, String specification,
                        String manufacturer, String approvalNo, String imageUrl, BigDecimal price,
                        Integer availableQty, Long storeId) {

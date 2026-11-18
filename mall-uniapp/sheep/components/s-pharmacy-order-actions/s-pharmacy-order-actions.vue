@@ -15,7 +15,7 @@
       :loading="busy"
       @tap="action('pay')"
     >
-      测试模拟支付
+      继续（不扣款）
     </button>
     <button
       v-if="order.status === 'ready' && order.canReceive !== false"
@@ -42,17 +42,17 @@
     act(async () => {
       if (type === 'pay' && !(await api.mockPaymentAvailable())) {
         emit('change');
-        toast('测试模拟支付已关闭，请联系门店');
+        toast('当前不可继续，请联系门店');
         return;
       }
       const messages = {
-        cancel: ['取消订单', '确定取消此订单？已使用的测试积分会退回。'],
-        pay: ['测试模拟支付', '仅限独立测试环境，不会真实扣款。确认完成测试支付？'],
+        cancel: ['取消订单', '确定取消此订单？已使用的积分会退回。'],
+        pay: ['继续（不扣款）', '继续后订单状态会更新，不会扣款。是否继续？'],
         receive: ['确认收货', '请确认已收到或取到全部药品。'],
       };
       if (!(await confirm(...messages[type]))) return;
       await api.orderAction(props.order.id, type);
-      toast(type === 'pay' ? '测试模拟支付成功' : '操作成功');
+      toast(type === 'pay' ? '流程已完成，未扣款' : '操作成功');
       emit('change');
     });
 </script>

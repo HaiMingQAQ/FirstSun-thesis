@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page tab="category">
+  <s-pharmacy-page assistant tab="category">
     <view class="fs-pad fs-white">
       <view class="fs-search">
         <uni-icons type="search" size="20" color="#64716c" />
@@ -11,7 +11,7 @@
         />
         <button class="fs-text-btn" @tap="search">搜索</button>
       </view>
-      <view v-if="history.length" class="history">
+      <view v-if="history.length && !keyword.trim()" class="history">
         <text class="fs-muted">最近</text>
         <text
           v-for="word in history.slice(0, 3)"
@@ -29,9 +29,9 @@
       </view>
     </view>
     <view class="category-layout">
-      <view class="category-nav">
+      <view v-if="!keyword.trim() || showCategories" class="category-nav" :class="{ expanded: showCategories }">
         <button
-          v-for="cat in categories"
+          v-for="cat in (showCategories ? categories : categories.slice(0, 3))"
           :key="cat.id"
           :class="{ active: String(category) === String(cat.id) }"
           @tap="select(cat.id)"
@@ -39,6 +39,7 @@
           {{ cat.name }}
         </button>
       </view>
+      <button class="fs-text-btn category-more" @tap="showCategories = !showCategories">{{ showCategories ? '收起分类' : '全部分类' }}</button>
       <view class="category-filters">
         <button :class="{ active: inStock }" @tap="toggleFilter('stock')"><uni-icons :type="inStock ? 'checkbox-filled' : 'circle'" color="#176b5b" size="18" />仅看有货</button>
         <button :class="{ active: otcOnly }" @tap="toggleFilter('otc')"><uni-icons :type="otcOnly ? 'checkbox-filled' : 'circle'" color="#176b5b" size="18" />非处方商品</button>
@@ -81,7 +82,7 @@
     category = ref('all'),
     list = ref([]),
     history = ref(api.history());
-  const inStock = ref(false), otcOnly = ref(false);
+  const inStock = ref(false), otcOnly = ref(false), showCategories = ref(false);
   const visibleList = computed(() => list.value.filter(p => (!inStock.value || p.active && p.stock > 0) && (!otcOnly.value || !p.rx)));
   const categories = ref(api.categories);
   const loading = ref(false), error = ref(''), total = ref(0), hasMore = ref(false);
@@ -123,6 +124,7 @@
     return load();
   }
   function search() {
+    showCategories.value = false;
     api.remember(keyword.value);
     history.value = api.history();
     category.value = 'all';
@@ -166,10 +168,13 @@
   .history > text:not(:first-child) { max-width: 76px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .history button { margin-left: auto; }
   .category-layout { background: #fff; min-height: 70vh; }
-  .category-nav { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 12px; }
+  .category-nav { display: flex; flex-wrap: nowrap; gap: 6px; padding: 0 16px; }
+  .category-nav.expanded { flex-wrap: wrap; }
+  .category-more { margin-left: 16px; }
+  .category-nav button { white-space: nowrap; }
   .category-nav button { min-width: 0; max-width: 100%; padding: 8px 12px; font-size: 14px; background: #f4f6f3; color: #62756c; border: 1px solid #e2e9e4; border-radius: 8px; }
   .category-nav button.active { color: #176b5b; border-color: #176b5b; background: #edf5f0; font-weight: 600; }
-  .category-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 12px; border-bottom: 7px solid #f4f6f3; }
+  .category-filters { display:flex; flex-wrap:wrap; gap:12px; padding:0 16px 12px; border-bottom:7px solid #f4f6f3; }
   .category-filters button { background: transparent; color: #62756c; padding: 0; gap: 6px; font-size: 13px; }
   .category-results { padding: 0 16px; }
   .result-title { padding-top: 18px; }

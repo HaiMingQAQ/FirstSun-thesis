@@ -1,0 +1,310 @@
+.catalog-page {
+  max-width: 1280px;
+  padding-top: 20px;
+}
+
+.catalog-search {
+  margin-bottom: 12px;
+}
+
+.catalog-title {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.catalog-title h1 {
+  color: #243c34;
+  font-size: clamp(23px, 2.4vw, 30px);
+  line-height: 1.2;
+  margin: 0;
+}
+
+.catalog-title .live-store {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+}
+
+.catalog-title svg, .catalog-help :is(a, button) svg {
+  width: 15px;
+  height: 15px;
+}
+
+.catalog-search .search-box {
+  width: 100%;
+  height: 50px;
+  margin: 0;
+  border-width: 1px;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.catalog-search .search-box input {
+  min-width: 0;
+  height: 40px;
+}
+
+.catalog-search .search-box .btn {
+  height: 38px;
+  min-height: 38px;
+  border-radius: 6px;
+  padding-inline: 18px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.catalog-shortcuts, .catalog-shortcut-terms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.catalog-shortcuts {
+  margin-top: 7px;
+  color: #52685b;
+  font-size: 12px;
+}
+
+.catalog-shortcuts button,
+.catalog-filters :is(button, select) {
+  min-height: 34px;
+  padding: 5px 12px;
+  border: 1px solid #dce6df;
+  border-radius: 7px;
+  background: #fff;
+  color: #315347;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.catalog-shortcuts button:hover,
+.catalog-filters :is(button, select):hover {
+  border-color: #8da99a;
+  color: #0e5e3f;
+}
+
+.catalog-work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 20px;
+  align-items: start;
+}
+
+.catalog-work .catalog-results {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.catalog-filters, .catalog-tabs {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.catalog-filters {
+  min-width: 0;
+  margin-bottom: 5px;
+}
+
+.catalog-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  padding-block: 3px;
+}
+
+.catalog-filters select {
+  width: min(32%, 140px);
+  flex: none;
+  text-overflow: ellipsis;
+}
+
+.catalog-filters button[aria-pressed="true"] {
+  border-color: #0e5e3f;
+  background: #0e5e3f;
+  color: #fff;
+}
+
+.catalog-result-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 10px;
+}
+
+.catalog-result-heading h2 { margin: 0; font-size: 19px; color: #243c34; }
+
+.catalog-result-heading span {
+  color: #52685b;
+  font-size: 12px;
+}
+
+.catalog-page .catalog-results .products {
+  gap: 16px;
+}
+
+.catalog-page .catalog-results .product-card {
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.catalog-results .product-card .product-photo {
+  height: clamp(122px, 11vw, 156px);
+  width: auto;
+  margin: 11px 11px 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: #f6f8f5;
+}
+
+.catalog-results .product-card .product-photo img {
+  display: block;
+  max-height: none;
+  object-fit: contain;
+}
+
+.catalog-results .product-card .product-photo.missing {
+  gap: 6px;
+  color: #667970;
+}
+
+.catalog-results .product-photo.missing svg {
+  width: 20px;
+  height: 20px;
+}
+
+.catalog-results .product-card .product-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 8px;
+  padding: 9px 13px 7px;
+}
+
+.catalog-results .product-card .product-body h3 {
+  order: -1;
+  margin: 0;
+  font-size: 17px;
+}
+
+.catalog-results .product-card .product-body p {
+  flex-basis: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.catalog-page .catalog-results .product-card .product-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 13px 13px;
+}
+
+.catalog-results .product-bottom > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 5px;
+  border-top: 1px solid #e7eee8;
+  padding-top: 8px;
+}
+
+.catalog-results .product-bottom .stock { margin: 0; }
+.catalog-results .product-bottom :is(.add-btn, .rx-btn, .qty-stepper) { width: 100%; justify-content: center; }
+
+.catalog-help {
+  border: 1px solid #dce6df;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.catalog-help > div { padding: 13px 15px; }
+.catalog-help > div + div { border-top: 1px solid #e7eee8; }
+.catalog-help h2 { margin: 0 0 5px; font-size: 14px; color: #243c34; }
+.catalog-help p { margin: 0 0 4px; font-size: 12px; line-height: 1.55; color: #52685b; }
+
+.catalog-help :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: #0e5e3f;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0;
+}
+
+.catalog-help :is(a, button):hover { text-decoration: underline; }
+
+.catalog-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid #dce6df;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.catalog-empty > svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: #0e5e3f;
+}
+
+.catalog-empty > div {
+  min-width: 0;
+}
+
+.catalog-empty h3 {
+  margin: 0;
+  color: #243c34;
+  font-size: 17px;
+}
+
+.catalog-empty p {
+  margin: 7px 0 14px;
+  color: #52685b;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.catalog-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 1080px) {
+  .catalog-page .catalog-results .products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .catalog-page { padding-top: 18px; }
+  .catalog-search { margin-bottom: 10px; }
+  .catalog-search .search-box .btn { padding-inline: 10px; }
+  .catalog-work { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .catalog-results .product-bottom > div:first-child { flex-wrap: wrap; }
+  .catalog-filters { flex-wrap: wrap; margin-bottom: 10px; }
+  .catalog-tabs { flex-wrap: wrap; overflow-x: visible; }
+  .catalog-filters :is(button, select) { padding-inline: 7px; }
+  .catalog-filters select { width: auto; max-width: 100%; }
+  .catalog-title { margin-bottom: 11px; }
+  .catalog-shortcuts { gap: 4px; }
+  .catalog-shortcut-terms { gap: 4px; }
+  .catalog-shortcuts button { padding-inline: 7px; }
+  .catalog-page .catalog-results .products { gap: 10px; }
+  .catalog-results .product-card .product-photo { height: 114px; }
+  .catalog-results .product-card .product-body, .catalog-results .product-card .product-bottom { padding-inline: 11px; }
+  .catalog-results .product-card .product-body h3 { font-size: 15px; }
+  .catalog-empty { padding: 15px; gap: 8px; }
+}

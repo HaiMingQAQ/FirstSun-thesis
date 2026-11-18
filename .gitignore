@@ -24,6 +24,12 @@ node_modules/
 .trae/
 .tmp/
 /.local/
+/.local-*/
+
+# Private screenshots, source material, and presentation drafts
+/图片/
+/药品说明书临时存放目录/
+/汇报用文件夹/
 
 # 系统文件
 Thumbs.db

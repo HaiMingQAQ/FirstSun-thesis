@@ -51,7 +51,7 @@ Windows 安装并打开 Docker Desktop（Linux containers），在仓库根目�
 
 启动和重建都不会自动执行SQL、初始化种子或清空数据库。旧迁移安全函数保留在 `scripts/local-migration-helpers.ps1`，仅供离线检查或明确授权的迁移工具复用，日常入口不会调用。迁移清单与配套说明仍在 `deploy/local-migrations.json`、`docs/backend-readiness.md`；已验证的迁移不能为了启动环境重新运行一遍。
 
-隔离测试库按 `deploy/local-migrations.json` 当前 **01–47 + `firstsun_local_migration` 迁移账本**初始化；快照恢复的区别、手工命令及 **108/109 张 BASE TABLE** 口径见 [数据库初始化路径说明](docs/database-init-paths.md)。
+隔离测试库按 `deploy/local-migrations.json` 的完整清单初始化，并记录 `firstsun_local_migration` 迁移账本。快照恢复、手工命令和表数核对见 [数据库初始化路径说明](docs/database-init-paths.md)。
 
 正常停止使用入口脚本，保留所有卷。禁止 `down -v`、全局prune或用空库替代原库。`.env`、`.local`、数据库、日志、凭据和编译产物不提交Git。
 

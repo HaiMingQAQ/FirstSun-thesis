@@ -37,8 +37,42 @@ class CustomerAiCatalogueServiceTest {
             assertTrue(sql.indexOf("drug_type")<sql.indexOf("LIMIT 21"));
             return List.of();
         });
-        assertTrue(new CustomerAiCatalogueService(drugs,inventory,stores,mock(CategoryService.class)).query(1L,"药品",null).products().isEmpty());
+        assertTrue(new CustomerAiCatalogueService(drugs,inventory,stores,mock(CategoryService.class), mock(PharmacyKnowledgeService.class)).query(1L,"药品",null).products().isEmpty());
         verifyNoInteractions(inventory);
+    }
+    @Test void namedPriceAndStockIncludesDevicesAndKeepsZeroStockVisible() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "price-stock-test"), DrugDO.class);
+        var drugs = mock(DrugMapper.class);
+        var inventory = mock(AppAvailableInventoryMapper.class);
+        var stores = mock(StoreService.class);
+        var knowledge = mock(PharmacyKnowledgeService.class);
+        var store = new StoreDO();
+        store.setStatus(1);
+        when(stores.getStore(1L)).thenReturn(store);
+        var device = new DrugDO();
+        device.setId(42L);
+        device.setGenericName("电子体温计");
+        device.setDrugType(6);
+        device.setRetailPrice(new java.math.BigDecimal("78.00"));
+        when(drugs.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenAnswer(call -> {
+            LambdaQueryWrapper<DrugDO> query = call.getArgument(0);
+            String sql = query.getSqlSegment();
+            assertTrue(sql.contains("generic_name LIKE") && sql.contains("approve_status =") && sql.contains("saleable_online ="), sql);
+            assertTrue(query.getParamNameValuePairs().containsValue(6));
+            assertTrue(query.getParamNameValuePairs().containsValue("%电子体温计%"));
+            return List.of(device);
+        });
+        var stock = new cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppInventoryAvailableRespVO();
+        stock.setDrugId(42L);
+        stock.setQtyAvail(20);
+        when(inventory.selectAvailable(any(), eq(1L), eq(List.of(42L)))).thenReturn(List.of(stock), List.of());
+        var catalogue = new CustomerAiCatalogueService(drugs, inventory, stores, mock(CategoryService.class), knowledge);
+        var product = catalogue.priceAndStock(1L, "电子体温计").products().get(0);
+        assertEquals(6, product.drugType());
+        assertEquals(new java.math.BigDecimal("78.00"), product.price());
+        assertEquals(20, product.availableQty());
+        assertEquals(0, catalogue.priceAndStock(1L, "电子体温计").products().get(0).availableQty());
+        verifyNoInteractions(knowledge);
     }
     @Test void categoryCandidatesMatchDescriptionOrMedicineNameWithinOtcBoundary() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "category-test"), DrugDO.class);
@@ -53,7 +87,7 @@ class CustomerAiCatalogueServiceTest {
             return List.of();
         });
         var categories = mock(CategoryService.class);
-        var catalogue = new CustomerAiCatalogueService(drugs, inventory, stores, categories);
+        var catalogue = new CustomerAiCatalogueService(drugs, inventory, stores, categories, mock(PharmacyKnowledgeService.class));
         verifyNoInteractions(categories);
         var category = new cn.iocoder.yudao.module.pharmacy.dal.dataobject.base.CategoryDO();
         category.setId(11L); category.setCatName("感冒用药");
@@ -81,7 +115,7 @@ class CustomerAiCatalogueServiceTest {
         var stock = new cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppInventoryAvailableRespVO();
         stock.setDrugId(2L); stock.setQtyAvail(7);
         when(inventory.selectAvailable(any(), eq(1L), anyList())).thenReturn(List.of(stock));
-        var result = new CustomerAiCatalogueService(drugs, inventory, stores, categories).adviceCandidates(1L, "流鼻涕，打喷嚏，鼻塞");
+        var result = new CustomerAiCatalogueService(drugs, inventory, stores, categories, mock(PharmacyKnowledgeService.class)).adviceCandidates(1L, "流鼻涕，打喷嚏，鼻塞");
         assertEquals(List.of(2L, 1L), result.products().stream().map(p -> p.id()).toList());
         assertEquals(List.of(7, 0), result.products().stream().map(p -> p.availableQty()).toList());
         assertFalse(result.truncated()); verifyNoInteractions(categories);
@@ -101,7 +135,7 @@ class CustomerAiCatalogueServiceTest {
         var a=new cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppInventoryAvailableRespVO(); a.setDrugId(2L); a.setQtyAvail(4);
         var z=new cn.iocoder.yudao.module.pharmacy.controller.app.pharmacy.vo.AppInventoryAvailableRespVO(); z.setDrugId(3L); z.setQtyAvail(0);
         when(inventory.selectAvailable(any(),eq(1L),anyList())).thenReturn(List.of(a,z));
-        var catalogue=new CustomerAiCatalogueService(drugs,inventory,stores,categories);
+        var catalogue=new CustomerAiCatalogueService(drugs,inventory,stores,categories, mock(PharmacyKnowledgeService.class));
         var result=catalogue.browseCandidates(1L,"感冒");
         assertEquals(List.of(2L,1L,3L),result.products().stream().map(p->p.id()).toList());
         assertEquals(List.of(4,0,0),result.products().stream().map(p->p.availableQty()).toList());
@@ -117,8 +151,41 @@ class CustomerAiCatalogueServiceTest {
         var found=java.util.stream.LongStream.rangeClosed(1,21).mapToObj(id->{var d=new DrugDO();d.setId(id);d.setGenericName("资料"+id);return d;}).toList();
         when(drugs.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenReturn(found);
         when(inventory.selectAvailable(any(),eq(1L),anyList())).thenReturn(List.of());
-        var result=new CustomerAiCatalogueService(drugs,inventory,stores,mock(CategoryService.class)).browseCandidates(1L,"感冒");
+        var result=new CustomerAiCatalogueService(drugs,inventory,stores,mock(CategoryService.class), mock(PharmacyKnowledgeService.class)).browseCandidates(1L,"感冒");
         assertEquals(20,result.products().size()); assertTrue(result.truncated());
         assertTrue(result.products().stream().allMatch(p->p.availableQty()==0));
     }
+
+    @Test void verifiedLeafletIndicationsCanRecallProductsWithMetadataOnlyDescriptions() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "leaflet-recall"), DrugDO.class);
+        var drugs = mock(DrugMapper.class);
+        var inventory = mock(AppAvailableInventoryMapper.class);
+        var stores = mock(StoreService.class);
+        var knowledge = mock(PharmacyKnowledgeService.class);
+        var store = new StoreDO();
+        store.setStatus(1);
+        when(stores.getStore(1L)).thenReturn(store);
+        var product = new DrugDO();
+        product.setId(13L);
+        product.setGenericName("合成药品");
+        product.setDescription("仅含商品来源");
+        when(knowledge.search(anyString(), eq(24), eq(true))).thenReturn(List.of(
+                new PharmacyKnowledgeService.Hit(99L, "副作用项", "注意事项", "可能腹泻", 0.9),
+                new PharmacyKnowledgeService.Hit(13L, "合成药品", "适应症", "经核对条件下的泄泻", 0.8)));
+        when(drugs.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenAnswer(call -> {
+            LambdaQueryWrapper<DrugDO> query = call.getArgument(0);
+            String sql = query.getSqlSegment();
+            if (sql.contains("description LIKE")) return List.of();
+            assertTrue(sql.contains("is_rx =") && sql.contains("saleable_online =") && sql.contains("id IN"));
+            assertTrue(query.getParamNameValuePairs().containsValue(13L));
+            assertFalse(query.getParamNameValuePairs().containsValue(99L));
+            return List.of(product);
+        });
+        var catalogue = new CustomerAiCatalogueService(drugs, inventory, stores, mock(CategoryService.class), knowledge);
+        var result = catalogue.adviceCandidates(1L, "拉肚子");
+        assertEquals(List.of(13L), result.products().stream().map(p -> p.id()).toList());
+        assertEquals(0, result.products().get(0).availableQty());
+        assertTrue(result.products().get(0).description().contains("经核对条件下的泄泻"));
+    }
+
 }

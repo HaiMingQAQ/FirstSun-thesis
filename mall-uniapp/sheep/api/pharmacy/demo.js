@@ -87,7 +87,7 @@ const api = {
   async login(mobile, code) {
     return execute(() => {
       if (!/^1[3-9]\d{9}$/.test(mobile)) throw new Error('请输入正确的 11 位手机号');
-      if (code !== TEST_CODE) throw new Error('测试验证码不正确');
+      if (code !== TEST_CODE) throw new Error('验证码不正确');
       const db = read();
       db.user = { mobile, name: 'FirstSun 会员', level: '普通会员' };
       db.accounts[mobile] ||= newAccount();

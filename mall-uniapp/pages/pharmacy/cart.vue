@@ -3,10 +3,7 @@
     <view class="fs-pad fs-white">
       <view class="fs-title">{{ api.store.name }}</view>
       <view class="fs-muted">下单前为您核对价格与库存</view>
-      <view class="fs-between fs-gap">
-        <text class="fs-muted">处方药须先申请药师核准</text>
-        <button class="fs-text-btn" @tap="go('prescription-upload')">查看处方记录</button>
-      </view>
+
     </view>
     <s-pharmacy-state
       v-if="!loggedIn"
@@ -61,6 +58,7 @@
               >
                 提交处方申请
               </button>
+              <view v-if="row.product.rx" class="fs-muted">此商品需药师审核，从处方详情按核准明细单独结算。</view>
               <view class="fs-between cart-actions">
                 <button class="fs-text-btn fs-danger" :disabled="busy" @tap="remove(row)">
                   删除
@@ -76,7 +74,7 @@
           </view>
         </view>
       </view>
-      <view class="fs-footer">处方药请先提交申请，药师审核通过后从处方详情按核准明细结算</view>
+
       <view class="fs-dock above-tabs">
         <button
           class="fs-check cart-select-all"
@@ -90,7 +88,7 @@
         <view class="fs-grow">
           <text class="fs-small">合计</text>
           <text class="fs-price">¥{{ money(total) }}</text>
-          <view class="fs-muted">已选 {{ selected.length }} 种，不含配送费</view>
+          <view class="fs-muted">已选 {{ selected.length }} 款、{{ selected.reduce((sum, row) => sum + row.qty, 0) }} 件，不含配送费</view>
         </view>
         <button class="fs-primary" :disabled="busy || !selected.length" @tap="checkout">
           去结算

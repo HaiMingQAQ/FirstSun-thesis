@@ -84,7 +84,7 @@
         <el-table-column label="操作" align="center" width="120" fixed="right">
           <template #default="scope">
             <el-button
-              v-if="scope.row.reviewStatus === 0 && scope.row.status === 0 && allowReview"
+              v-if="canReviewRecord(scope.row)"
               v-hasPermi="['pharmacy:prescription:review']"
               link
               type="primary"
@@ -99,8 +99,9 @@
       <Pagination :total="total" v-model:page="queryParams.pageNo" v-model:limit="queryParams.pageSize" @pagination="getList" />
     </ContentWrap>
 
-    <el-dialog v-model="reviewVisible" :title="canEdit && submitState !== 'unknown' ? '药师审核' : '审核记录'" width="min(860px, 96vw)" destroy-on-close @close="closeReview" @closed="finishReview">
+    <el-dialog v-model="reviewVisible" :title="canEdit && submitState !== 'unknown' ? '药师审核' : '审核记录'" width="min(1280px, 96vw)" class="review-dialog" destroy-on-close @close="closeReview" @closed="finishReview">
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" class="mb-12px" />
+      <el-collapse><el-collapse-item title="处方登记信息（展开查看患者、医师与诊断）" name="registration">
       <el-descriptions v-if="reviewTarget" :column="2" border class="mb-12px">
         <el-descriptions-item label="处方号">{{ reviewTarget.prescNo }}</el-descriptions-item>
         <el-descriptions-item label="门店">{{ reviewTarget.storeName || reviewTarget.storeId }}</el-descriptions-item>
@@ -118,13 +119,15 @@
         </el-descriptions-item>
         <el-descriptions-item label="用法用量" :span="2">{{ reviewTarget.usageDesc || '-' }}</el-descriptions-item>
       </el-descriptions>
-      <el-form v-if="reviewTarget" ref="reviewFormRef" :model="reviewForm" label-width="110px">
+      </el-collapse-item></el-collapse>
+      <el-radio-group v-model="reviewPane" class="review-pane"><el-radio-button value="materials">材料</el-radio-button><el-radio-button value="details">明细与审核</el-radio-button></el-radio-group>
+      <el-form v-if="reviewTarget" :class="['review-grid', 'review-pane-' + reviewPane]" ref="reviewFormRef" :model="reviewForm" label-width="110px">
         <template v-if="reviewTarget.wxMemberId != null">
           <el-alert title="私有处方材料仅供同门店具备资质的药师审核。核准明细只允许生成一笔使用中的订单。身份证号不在此页展示。" type="info" :closable="false" />
-          <el-form-item label="处方材料">
+          <el-form-item label="处方材料" class="review-materials">
             <span v-if="materialLoading">正在读取私有材料…</span>
             <el-alert v-if="materialError" :title="materialError" type="error" :closable="false" />
-            <el-image v-for="url in materialUrls" :key="url" :src="url" :preview-src-list="materialUrls" fit="contain" class="material-image" />
+            <div v-for="(url, index) in materialUrls" :key="url" class="material-page"><div>第 {{ index + 1 }} / {{ materialUrls.length }} 页 · 点击放大</div><el-image :src="url" :preview-src-list="materialUrls" :initial-index="index" preview-teleported fit="contain" class="material-image" /></div>
           </el-form-item>
           <el-form-item label="申请明细">
             <el-table :data="requestedItems" size="small" border empty-text="没有可读取的申请明细">
@@ -154,6 +157,16 @@
             </div>
           </el-form-item>
         </template>
+        <el-form-item v-if="!canEdit" label="审方药师">
+          <el-input :model-value="reviewTarget.pharmacistName || (reviewTarget.pharmacistId ?? '-')" disabled />
+        </el-form-item>
+        <el-form-item v-if="!canEdit && reviewTarget.dblCheckBy" label="复核人">
+          <el-input :model-value="reviewTarget.dblCheckByName || reviewTarget.dblCheckBy" disabled />
+        </el-form-item>
+        <el-alert v-if="submitState === 'unknown'" title="提交结果未确认。请先刷新这条处方，确认服务端状态后再操作，不要重复提交。" type="warning" :closable="false" />
+      </el-form>
+      <template #footer>
+        <div v-if="reviewTarget" class="review-decision">
         <el-form-item v-if="canEdit && submitState !== 'unknown'" label="审核结果">
           <el-radio-group v-model="reviewForm.reviewStatus">
             <el-radio :value="1">通过</el-radio>
@@ -167,15 +180,8 @@
         <el-form-item :label="opinionLabel">
           <el-input v-model="reviewForm.reviewOpinion" type="textarea" :rows="3" maxlength="300" show-word-limit placeholder="驳回或超量通过时必填" :disabled="fieldsLocked" />
         </el-form-item>
-        <el-form-item v-if="!canEdit" label="审方药师">
-          <el-input :model-value="reviewTarget.pharmacistName || (reviewTarget.pharmacistId ?? '-')" disabled />
-        </el-form-item>
-        <el-form-item v-if="!canEdit && reviewTarget.dblCheckBy" label="复核人">
-          <el-input :model-value="reviewTarget.dblCheckByName || reviewTarget.dblCheckBy" disabled />
-        </el-form-item>
-        <el-alert v-if="submitState === 'unknown'" title="提交结果未确认。请先刷新这条处方，确认服务端状态后再操作，不要重复提交。" type="warning" :closable="false" />
-      </el-form>
-      <template #footer>
+        </div>
+
         <template v-if="canEdit">
           <el-button v-if="submitState === 'unknown'" :loading="reviewLoading" @click="reloadReview">刷新审核结果</el-button>
           <el-button v-else v-hasPermi="['pharmacy:prescription:review']" :loading="reviewLoading" type="primary" @click="submitReview">提交</el-button>
@@ -208,6 +214,7 @@ import {
 
 defineOptions({ name: 'PharmacyPrescriptionReview' })
 
+const reviewPane = ref('materials')
 const route = useRoute()
 const message = useMessage()
 const allowReview = computed(() => checkPermi(['pharmacy:prescription:review']))
@@ -292,7 +299,10 @@ const materialError = ref('')
 const detailError = ref('')
 const submitState = ref<'idle' | 'unknown'>('idle')
 const requestedItems = computed(() => parseItems(reviewTarget.value?.prescribedItems).items)
-const canEdit = computed(() => reviewTarget.value?.reviewStatus === 0 && reviewTarget.value?.status === 0 && allowReview.value)
+const canReviewRecord = (row?: PrescRecordVO | null) =>
+  !!row && row.reviewStatus === 0 && row.status === 0 && allowReview.value &&
+  (row.wxMemberId == null || row.canAccessPrivateMaterials === true)
+const canEdit = computed(() => canReviewRecord(reviewTarget.value))
 const fieldsLocked = computed(() => !canEdit.value || submitState.value === 'unknown')
 const opinionLabel = computed(() => (reviewForm.reviewStatus === 2 || reviewTarget.value?.limitCheck === 1 ? '审方意见(必填)' : '审方意见'))
 let reviewGeneration = 0
@@ -357,6 +367,7 @@ const openReview = async (row: Pick<PrescRecordVO, 'id'>) => {
   reviewLoading.value = true
   clearImages()
   const generation = reviewGeneration
+  reviewPane.value = 'materials'
   materialError.value = ''
   detailError.value = ''
   submitState.value = 'idle'
@@ -376,6 +387,10 @@ const openReview = async (row: Pick<PrescRecordVO, 'id'>) => {
     applyRecord(fresh)
     reviewVisible.value = true
     if (fresh.wxMemberId == null) return
+    if (fresh.canAccessPrivateMaterials !== true) {
+      materialError.value = '私有材料仅供本门店在职且资质有效的药师查看'
+      return
+    }
     const summary = materialSummary(fresh.images)
     const ids = privateMaterialIds(fresh.images)
     if (!summary.ok || !ids) {
@@ -431,7 +446,7 @@ const reloadReview = async () => {
 }
 
 const submitReview = async () => {
-  if (!reviewTarget.value || reviewLoading.value || submitState.value === 'unknown' || !allowReview.value) return
+  if (!reviewTarget.value || reviewLoading.value || submitState.value === 'unknown' || !canEdit.value) return
   const currentId = reviewTarget.value.id
   const generation = reviewGeneration
   const decision = buildReviewPayload({
@@ -452,6 +467,15 @@ const submitReview = async () => {
     return
   }
   reviewLoading.value = true
+  try {
+    await message.confirm(reviewForm.reviewStatus === 2
+      ? `确认驳回？原因：${reviewForm.reviewOpinion}`
+      : `确认通过？${approvedItems.value.map(item => `${item.drugName} × ${item.qty}`).join('；') || '按登记处方审核'}`)
+  } catch {
+    if (generation === reviewGeneration) reviewLoading.value = false
+    return
+  }
+  if (generation !== reviewGeneration || reviewTarget.value?.id !== currentId) return
   let submitted = false
   try {
     await PrescRecordApi.reviewPrescRecord({ ...decision.payload, reviewSnapshot: reviewForm.reviewSnapshot })
@@ -519,7 +543,26 @@ onDeactivated(leaveReview)
 onBeforeUnmount(leaveReview)
 </script>
 <style scoped>
-.material-image { width: 120px; height: 120px; margin: 8px; }
+.material-image { width: 100%; height: 420px; margin-top: 8px; }
+.review-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.review-grid > * { grid-column: 2; }
+.review-grid .review-materials { grid-column: 1; grid-row: 1 / span 8; position: sticky; top: 0; }
+.material-page { width: 100%; }
+.review-pane { display: none; }
+:deep(.review-dialog) { margin-top: 4vh; }
+:deep(.review-dialog .el-dialog__body) { max-height: calc(92vh - 290px); overflow: auto; }
+.review-materials :deep(.el-form-item__content) { max-height: 470px; overflow: auto; }
+.review-materials { align-self: start; }
+.review-decision { text-align: left; }
+.review-decision :deep(.el-form-item) { margin-bottom: 8px; }
+:deep(.el-dialog__footer) { position: sticky; bottom: 0; background: var(--el-bg-color); border-top: 1px solid var(--el-border-color); }
+@media(max-width: 760px) {
+ .review-pane { display: flex; margin-bottom: 12px; }
+ .review-grid { display: block; }
+ .review-pane-materials > * { display: none; }
+ .review-pane-materials .review-materials { display: flex; }
+ .review-pane-details .review-materials { display: none; }
+}
 .approval-list { width: 100%; }
 .approval-item { margin-bottom: 16px; }
 .approval-title { overflow-wrap: anywhere; margin-bottom: 8px; }

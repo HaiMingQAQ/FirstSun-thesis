@@ -17,6 +17,7 @@
           @keyup.enter="handleQuery"
         />
       </el-form-item>
+      <el-form-item label="提货码" prop="pickupCode"><el-input v-model="queryParams.pickupCode" placeholder="精确查找待自提单" clearable @keyup.enter="handleQuery" /></el-form-item>
       <el-form-item label="会员ID" prop="memberId">
         <el-input
           v-model="queryParams.memberId"
@@ -67,44 +68,28 @@
   <ContentWrap class="pharmacy-panel">
     <el-alert v-if="pickingError" :title="pickingError" type="error" :closable="false" class="mb-4" />
     <el-table v-loading="loading" :data="list" empty-text="没有订单" :show-overflow-tooltip="true">
-      <el-table-column label="订单号" align="center" prop="orderNo" width="180" />
-      <el-table-column label="会员ID" align="center" prop="memberId" width="100" />
-      <el-table-column label="门店ID" align="center" prop="storeId" width="100" />
-      <el-table-column label="订单类型" align="center" prop="orderType" width="120">
-        <template #default="scope">
-          <dict-tag :type="DICT_TYPE.PHARMACY_WX_ORDER_TYPE" :value="scope.row.orderType" />
+      <el-table-column label="订单号 / 履约" min-width="210" :show-overflow-tooltip="false">
+        <template #default="{ row }">
+          <div class="order-number">{{ row.orderNo }}</div>
+          <dict-tag :type="DICT_TYPE.PHARMACY_WX_ORDER_TYPE" :value="row.orderType" />
         </template>
       </el-table-column>
-      <el-table-column label="商品金额" align="center" prop="goodsAmount" width="110">
-        <template #default="scope">
-          ¥{{ formatMoney(scope.row.goodsAmount) }}
+      <el-table-column label="订单状态" align="center" prop="status" width="120">
+        <template #default="{ row }"><dict-tag :type="DICT_TYPE.PHARMACY_WX_ORDER_STATUS" :value="row.status" /></template>
+      </el-table-column>
+      <el-table-column label="支付状态" align="center" prop="payStatus" width="110">
+        <template #default="{ row }"><dict-tag :type="DICT_TYPE.PHARMACY_WX_PAY_STATUS" :value="row.payStatus" /></template>
+      </el-table-column>
+      <el-table-column label="应付金额" align="right" width="140">
+        <template #default="{ row }">
+          <strong>¥{{ formatMoney(row.payableAmount) }}</strong>
+          <div class="order-secondary">商品 ¥{{ formatMoney(row.goodsAmount) }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="应付金额" align="center" prop="payableAmount" width="110">
-        <template #default="scope">
-          <span class="text-red-500 font-medium">¥{{ formatMoney(scope.row.payableAmount) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="支付状态" align="center" prop="payStatus" width="100">
-        <template #default="scope">
-          <dict-tag :type="DICT_TYPE.PHARMACY_WX_PAY_STATUS" :value="scope.row.payStatus" />
-        </template>
-      </el-table-column>
-      <el-table-column label="订单状态" align="center" prop="status" width="100">
-        <template #default="scope">
-          <dict-tag :type="DICT_TYPE.PHARMACY_WX_ORDER_STATUS" :value="scope.row.status" />
-        </template>
-      </el-table-column>
-      <el-table-column label="下单时间" align="center" prop="createTime" width="170">
-        <template #default="scope">
-          {{ formatDate(scope.row.createTime) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" align="center" width="320" fixed="right">
+      <el-table-column label="操作" align="center" width="240" fixed="right">
         <template #default="scope">
           <el-button
-            link
-            type="primary"
+            size="small"
             @click="openDetail(scope.row.id)"
             v-hasPermi="['pharmacy:member:order:query']"
           >
@@ -113,7 +98,8 @@
           <el-button
             v-if="scope.row.status === 1 && scope.row.payStatus === 1"
             v-hasPermi="['pharmacy:member:order:update']"
-            link
+            size="small"
+            class="order-main-action"
             type="primary"
             :loading="pickingId === scope.row.id"
             :disabled="loading || pickingId !== undefined"
@@ -122,25 +108,28 @@
           <el-button
             v-if="scope.row.status === 2 && scope.row.payStatus === 1"
             v-hasPermi="['pharmacy:member:order:update']"
-            link
-            type="success"
+            size="small"
+            class="order-main-action"
+            type="primary"
             :loading="pickingId === scope.row.id"
             :disabled="loading || pickingId !== undefined"
             @click="handlePicking(scope.row, true)"
           >完成拣货</el-button>
-          <el-button
-            link
-            type="warning"
-            @click="handleCancel(scope.row.id)"
+          <el-dropdown
+            v-if="scope.row.status === 0 || scope.row.status === 1"
             v-hasPermi="['pharmacy:member:order:cancel']"
-            :disabled="scope.row.status !== 0 && scope.row.status !== 1"
+            @command="handleCancel(scope.row.id)"
           >
-            取消
-          </el-button>
+            <el-button size="small">更多</el-button>
+            <template #dropdown>
+              <el-dropdown-menu><el-dropdown-item command="cancel" class="order-cancel-action">取消订单</el-dropdown-item></el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button
             v-if="scope.row.orderType === 0 && scope.row.payStatus === 1 && scope.row.status === 3"
-            link
-            type="success"
+            size="small"
+            class="order-main-action"
+            type="primary"
             @click="handleVerify(scope.row)"
             v-hasPermi="['pharmacy:member:order:verify']"
             :disabled="loading || verifyLoading || pickingId !== undefined"
@@ -188,7 +177,6 @@
 </template>
 <script lang="ts" setup>
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
-import { formatDate } from '@/utils/formatTime'
 import { checkPermi } from '@/utils/permission'
 import * as OrderApi from '@/api/pharmacy/member/order'
 import OrderDetail from './OrderDetail.vue'
@@ -206,8 +194,9 @@ const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
   orderNo: '',
+  pickupCode: '',
   memberId: undefined,
-  status: undefined,
+  status: undefined as number | undefined,
   payStatus: undefined,
   orderType: undefined
 })
@@ -238,6 +227,8 @@ const handleDetailSuccess = async () => {
 
 /** 搜索按钮操作 */
 const handleQuery = () => {
+  queryParams.pickupCode = queryParams.pickupCode.trim()
+  if (queryParams.pickupCode) queryParams.status = 3
   queryParams.pageNo = 1
   getList()
 }
@@ -327,7 +318,27 @@ const submitVerify = async () => {
 }
 
 /** 初始化 **/
-onMounted(() => {
+const route = useRoute()
+watch(() => route.query.status, (value) => {
+  const status = Number(value)
+  queryParams.status = [1, 2, 3].includes(status) ? status : undefined
+  if (queryParams.status !== undefined) {
+    queryParams.orderNo = ''
+    queryParams.pickupCode = ''
+    queryParams.memberId = undefined
+    queryParams.payStatus = undefined
+    queryParams.orderType = undefined
+  }
+  queryParams.pageNo = 1
   getList()
-})
+}, { immediate: true })
 </script>
+
+<style scoped>
+.order-number { white-space: normal; overflow-wrap: anywhere; user-select: all; margin-bottom: 4px; }
+.order-secondary { color: #606266; font-size: 14px; }
+.pharmacy-panel :deep(.el-dropdown) { margin-left: 8px; }
+.order-main-action { min-height: 32px; background: #176b5b; border-color: #176b5b; color: #fff; }
+.order-main-action:not(.is-disabled):hover { background: #125447; border-color: #125447; }
+.order-cancel-action { color: #b42318; font-size: 14px; }
+</style>

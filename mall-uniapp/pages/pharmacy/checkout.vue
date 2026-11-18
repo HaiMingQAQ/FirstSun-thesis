@@ -77,7 +77,7 @@
         </view>
         <view class="fs-between fs-field">
           <text>支付方式</text>
-          <text class="fs-tag">{{ mockPaymentAvailable ? '测试模拟支付（不扣款）' : '在线支付未开放' }}</text>
+          <text class="fs-tag">{{ mockPaymentAvailable ? '不扣款流程' : '在线支付未开放' }}</text>
         </view>
         <view class="fs-field">
           <text class="fs-label">订单备注（选填）</text>
@@ -103,7 +103,7 @@
           <text class="fs-price">¥{{ money(total) }}</text>
         </view>
       </view>
-      <view class="fs-footer">{{ mockPaymentAvailable ? '独立测试环境演示：不会真实扣款或配送' : '提交后请联系门店确认支付及履约' }}</view>
+      <view class="fs-footer">{{ mockPaymentAvailable ? '此流程不会扣款或安排配送' : '提交后请联系门店确认支付及履约' }}</view>
       <view class="fs-dock">
         <view class="fs-grow">
           <text class="fs-small">合计</text>

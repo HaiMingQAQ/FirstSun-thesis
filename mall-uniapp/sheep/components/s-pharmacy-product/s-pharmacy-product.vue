@@ -1,10 +1,6 @@
 <template>
   <view class="fs-product" :class="{ compact }">
-    <view v-if="product.rx" class="product-image rx-image" @tap="open">
-      <uni-icons type="locked" size="24" color="#62756c" />
-      <text>审核前不展示</text>
-    </view>
-    <image v-else
+    <image
       class="product-image"
       :src="failed || !product.image ? '/static/pharmacy/medicine-placeholder.png' : product.image"
       mode="aspectFit"
@@ -16,8 +12,9 @@
         <text class="fs-tag" :class="{ 'fs-tag-rx': product.rx }">
           {{ product.device ? '器械' : product.rx ? '处方药' : 'OTC' }}
         </text>
-        {{ product.name }}
+        {{ primaryName }}
       </view>
+      <view v-if="secondaryName" class="fs-muted trade-name" @tap="open">商品名：{{ secondaryName }}</view>
       <view class="fs-muted specification" @tap="open">{{ product.specification }}</view>
       <view v-if="!hideStock" class="stock" :class="{ low: product.stock < 5 }">
         {{
@@ -50,7 +47,7 @@
 </template>
 <script setup>
   defineOptions({ options: { styleIsolation: 'apply-shared' } });
-  import { ref, watch } from 'vue';
+  import { computed, ref, watch } from 'vue';
   import { money } from '@/sheep/api/pharmacy/client';
   const props = defineProps({
     product: Object,
@@ -61,6 +58,12 @@
     qty: Number,
   });
   defineEmits(['add']);
+  const primaryName = computed(() => props.product.genericName?.trim() || props.product.name?.trim() || '商品名称待补充');
+  const secondaryName = computed(() => {
+    // The adapter's name is the existing tradeName-or-genericName projection.
+    const name = props.product.name?.trim();
+    return name && name !== primaryName.value ? name : '';
+  });
   const failed = ref(false);
   watch(() => props.product.image, () => (failed.value = false));
   const open = () => uni.navigateTo({ url: `/pages/pharmacy/detail?id=${props.product.id}` });
@@ -93,6 +96,7 @@
   .specification {
     margin-top: 5px;
   }
+  .trade-name { margin-top: 4px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
   .stock {
     color: #64796e;
     font-size: 13px;
@@ -123,7 +127,6 @@
   .compact .fs-price {
     font-size: 19px;
   }
-  .rx-image { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; color: #62756c; font-size: 11px; text-align: center; }
   .specification { font-size: 14px; }
   .price-line { flex-wrap: wrap; }
   @media (max-width: 340px) {

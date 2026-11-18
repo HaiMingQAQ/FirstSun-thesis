@@ -59,7 +59,7 @@ export type DrugCreateVO = Omit<
 export type DrugUpdateVO = DrugCreateVO & { id: number }
 
 // 查询药品分页
-export const getDrugPage = (params: PageParam) => {
+export const getDrugPage = (params: PageParam & Partial<DrugVO>) => {
   return request.get({ url: '/pharmacy/base/drug/page', params })
 }
 

@@ -1,3 +1,4 @@
+import { drugLeaflet } from './leaflet';
 // =====================================================
 // 药店小程序真实适配器（接入后端 app-api）
 // -----------------------------------------------------
@@ -14,7 +15,7 @@ import OrderApi from './order';
 import PrescriptionApi from './prescription';
 import InventoryApi from './inventory';
 import { TEST_CODE, MAX_PRESCRIPTIONS, DEFAULT_AREA_ID } from './config';
-import { money, statusNames, normalizeDrug, fen, yuan, formatDate, reviewStatusNames } from './common';
+import { money, statusNames, normalizeDrug, fen, yuan, formatDate, reviewStatusNames, memberAvatarUrl } from './common';
 
 // ---------- 本地会话与结算草稿（与第一版 Mock 共用存储键，避免旧数据残留冲突） ----------
 const SESSION_KEY = 'firstsun-session';
@@ -118,7 +119,20 @@ async function call(config) {
   });
   if (!res) throw new Error('网络请求失败，请稍后重试');
   if (res.code !== 0) {
-    const err = new Error(res.msg || '请求失败，请稍后重试');
+    const emailMessages = {
+      1030006020: '请输入有效邮箱',
+      1030006021: '邮箱登录暂不可用，请稍后重试',
+      1030006023: '操作过于频繁，请稍后重试',
+      1030006024: '验证码发送未完成，请稍后重试',
+      1030006025: '验证码不正确或已失效，请重新获取',
+      1030006026: '该邮箱已有账号，请使用邮箱登录',
+      1030006027: '邮箱或密码不匹配，请核对后重试',
+      1030006028: '邮箱或登录信息不匹配，请核对后重试',
+      1030006029: '此邮箱暂不能接收验证码，请联系门店',
+      1030006031: '账号状态已变化，请重新登录',
+    };
+    const emailRequest = /\/member\/auth\/(?:email-|send-email-)/.test(config.url);
+    const err = new Error((emailRequest && emailMessages[res.code]) || res.msg || '请求失败，请稍后重试');
     err.code = res.code;
     throw err;
   }
@@ -143,6 +157,7 @@ async function via(promise) {
 
 // ---------- 门店 ----------
 // 注意：不可在模块顶层读取 uni 存储（H5 启动期 uni 全局尚未就绪），首次调用时再读缓存。
+const storefrontName = (value, fallback) => value && !/演示|测试|验收|合成/.test(value) ? value : fallback;
 let store = { id: null, name: 'FirstSun 药店', address: '', hours: '', phone: '' };
 let storePromise = null;
 async function ensureStore() {
@@ -162,8 +177,8 @@ async function ensureStore() {
         [...list].sort((a, b) => (a.id || 0) - (b.id || 0))[0];
       store = {
         id: raw.id,
-        name: raw.storeName || 'FirstSun 药店',
-        address: raw.address || '',
+        name: storefrontName(raw.storeName, 'FirstSun 药店'),
+        address: storefrontName(raw.address, ''),
         hours: raw.businessHours || '',
         phone: raw.phone || '',
       };
@@ -228,6 +243,7 @@ async function fetchDrug(id) {
     image: raw.imageUrl || '',
     approval: raw.approvalNo || '',
   });
+  item.leaflet = drugLeaflet(raw);
   productCache.set(key, item);
   return item;
 }
@@ -252,9 +268,50 @@ const api = {
       if (uni.getStorageSync(SESSION_KEY)) uni.removeStorageSync(SESSION_KEY);
       return null;
     }
-    return (
-      uni.getStorageSync(SESSION_KEY) || { name: 'FirstSun 会员', mobile: '', level: '', points: 0 }
-    );
+    const cached = uni.getStorageSync(SESSION_KEY);
+    return cached
+      ? { ...cached, avatar: memberAvatarUrl(cached.avatar, baseUrl) }
+      : { name: 'FirstSun 会员', mobile: '', level: '', points: 0 };
+  },
+  async sendEmailCode(email, scene) {
+    return call({ url: '/member/auth/send-email-code', method: 'POST', data: { email, scene },
+      header: { 'tenant-id': tenantId }, custom: { skipTenant: true, isToken: false, skipRefresh: true } });
+  },
+  async sendResetEmailCode(email) {
+    const token = uni.getStorageSync('token'), tenant = uni.getStorageSync('tenant-id');
+    const result = await call({ url: '/member/auth/send-email-reset-code', method: 'POST', data: { email },
+      header: { 'tenant-id': tenantId }, custom: { skipTenant: true, isToken: false, skipRefresh: true } });
+    if (token !== uni.getStorageSync('token') || tenant !== uni.getStorageSync('tenant-id')) throw new Error('登录状态已变化，请重新操作');
+    return result;
+  },
+  async resetEmailPassword(email, password, code, valid = () => true) {
+    const token = uni.getStorageSync('token'), tenant = uni.getStorageSync('tenant-id');
+    const unchanged = () => valid() && token === uni.getStorageSync('token') && tenant === uni.getStorageSync('tenant-id');
+    if (!unchanged()) throw new Error('登录状态已变化，请重新操作');
+    await call({ url: '/member/auth/email-reset-password', method: 'POST', data: { email, password },
+      header: { 'tenant-id': tenantId, 'X-Email-Code': code },
+      custom: { skipTenant: true, isToken: false, skipRefresh: true } });
+    if (!unchanged()) throw new Error('登录状态已变化，请重新登录');
+    clearAuthSession();
+  },
+  async authenticateEmail(mode, email, password, code) {
+    const endpoint = { password: 'email-password-login', register: 'email-register', code: 'email-login' }[mode];
+    if (!endpoint) throw new Error('登录方式无效');
+    const data = { email };
+    if (mode !== 'code' && password) data.password = password;
+    const result = await call({
+      url: '/member/auth/' + endpoint, method: 'POST', data,
+      // Email identity belongs to the configured storefront tenant, not a stale prior session.
+      header: { 'tenant-id': tenantId, ...(mode === 'password' ? {} : { 'X-Email-Code': code }) },
+      custom: { skipTenant: true, isToken: false, skipRefresh: true },
+    });
+    if (!result?.accessToken) throw new Error('登录未完成，请重试');
+    uni.setStorageSync('tenant-id', tenantId);
+    try { return await api.profile(); }
+    catch (error) {
+      if (uni.getStorageSync('token') === result.accessToken) clearAuthSession();
+      throw error;
+    }
   },
   async sendLoginCode(mobile) {
     if (!/^1[3-9]\d{9}$/.test(mobile)) throw new Error('请输入正确的 11 位手机号');
@@ -341,8 +398,8 @@ const api = {
     if (token !== uni.getStorageSync('token')) throw new Error('登录账号已变化');
     const profile = {
       userId: raw.id,
-      name: raw.nickname || 'FirstSun 会员',
-      avatar: raw.avatar || '',
+      name: storefrontName(raw.nickname, 'FirstSun 会员'),
+      avatar: memberAvatarUrl(raw.avatar, baseUrl),
       loginEmail: raw.loginEmail || '',
       email: raw.email || '',
       passwordSet: raw.passwordSet === true,
@@ -360,14 +417,14 @@ const api = {
     if (!data.nickname || data.nickname.length > 30) throw new Error('昵称须为 1–30 个字符');
     if (avatarFile) {
       data.avatar = await new Promise((resolve, reject) => uni.uploadFile({
-        url: `${baseUrl}${apiPath}/infra/file/upload`, filePath: avatarFile, name: 'file',
+        url: `${baseUrl}${apiPath}/member/user/avatar`, filePath: avatarFile, name: 'file',
         header: { Authorization: token, 'tenant-id': uni.getStorageSync('tenant-id') || tenantId },
-        formData: { directory: 'member-avatar' },
-        success(r) { try { const body = JSON.parse(r.data); if (r.statusCode !== 200 || body.code !== 0 || typeof body.data !== 'string') throw new Error(); resolve(body.data); } catch { reject(new Error('头像上传失败，请重试')); } },
+        success(r) { try { const body = JSON.parse(r.data); if (r.statusCode !== 200 || body.code !== 0 || typeof body.data !== 'string' || !body.data) throw new Error(body.msg || '头像上传失败，请重试'); resolve(body.data); } catch (error) { reject(error instanceof SyntaxError ? new Error('头像上传失败，请重试') : error); } },
         fail: () => reject(new Error('头像上传失败，请检查网络')),
       }));
     }
     requireOwner(owner);
+    if (token !== uni.getStorageSync('token')) throw new Error('登录账号已变化，请重新编辑');
     await accountCall({ url: '/member/user/update', method: 'PUT', data });
     requireOwner(owner);
     return api.profile();
@@ -736,7 +793,7 @@ const api = {
     const page = await via(OrderApi.getOrderPage({ pageNo: 1, pageSize: 50 }));
     const list = page?.list || [];
     const result = [];
-    for (const raw of list) result.push(await mapOrder(raw));
+    for (const raw of list) result.push(await mapOrder(raw, true));
     return result;
   },
   async order(id) {
@@ -806,7 +863,7 @@ const api = {
 };
 
 // ---------- 私有：订单映射（后端 WxOrderRespVO → 客户端契约） ----------
-async function mapOrder(raw) {
+async function mapOrder(raw, summaryOnly = false) {
   const s = await ensureStore();
   const presc = raw.prescId ? await fetchPrescSafe(raw.prescId) : null;
   const status = toStatus(raw, presc);
@@ -815,7 +872,7 @@ async function mapOrder(raw) {
   for (const line of lines) {
     let p = null;
     try {
-      p = await fetchDrug(line.drugId);
+      if (!summaryOnly) p = await fetchDrug(line.drugId);
     } catch (e) {
       p = null;
     }
@@ -826,6 +883,7 @@ async function mapOrder(raw) {
       product: p ? { ...p, price: fen(line.price) } : {
         id: line.drugId,
         name: line.drugName,
+        genericName: line.drugName,
         specification: line.specification,
         unit: line.unit,
         price: fen(line.price),
@@ -837,13 +895,17 @@ async function mapOrder(raw) {
       },
     });
   }
+  const readyForHandoff = raw.payStatus === 1 && raw.status === 3;
   const order = {
     items,
-    canReceive: raw.orderType === 1 && raw.payStatus === 1 && raw.status === 3,
+    readyForHandoff,
+    canReceive: raw.orderType === 1 && readyForHandoff,
+    pickupCode: raw.orderType === 0 && readyForHandoff ? String(raw.pickupCode ?? '').trim() : '',
     id: raw.id,
     orderNo: raw.orderNo,
     status,
     paid: raw.payStatus === 1,
+    payStatus: raw.payStatus,
     paymentLabel: raw.payStatus === 2 ? '已退款' : raw.payStatus === 1 ? '已支付' : '未支付',
     mode: raw.orderType === 1 ? 'delivery' : 'pickup',
     store: { name: s.name, address: s.address, hours: s.hours },
@@ -863,7 +925,7 @@ async function mapOrder(raw) {
 function toStatus(raw, presc) {
   if (raw.status === -1) return 'cancelled';
   if (raw.status === 4) return 'completed';
-  if (raw.payStatus === 1) return 'ready'; // 待拣货 / 拣货中 / 待自提 均按「待收取」展示
+  if (raw.payStatus === 1) return 'ready'; // 列表归入「履约中」，展示文案由交接状态决定
   if (raw.status === 0) {
     // 含处方药且审方仍待审 → 进入「待审核」；通过后回落到「待支付」
     if (presc && Number(presc.reviewStatus) === 0) return 'review';

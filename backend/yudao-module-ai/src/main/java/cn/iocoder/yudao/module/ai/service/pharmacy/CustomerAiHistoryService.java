@@ -58,7 +58,7 @@ public class CustomerAiHistoryService {
         require(topicId, member);
         var rows = consults.selectList(new LambdaQueryWrapperX<CustomerAiConsultDO>()
                 .eq(CustomerAiConsultDO::getMemberId, member).eq(CustomerAiConsultDO::getTopicId, topicId)
-                .eq(CustomerAiConsultDO::getStatus, "SUCCESS").orderByDesc(CustomerAiConsultDO::getId).last("LIMIT 3"));
+                .eq(CustomerAiConsultDO::getStatus, "SUCCESS").orderByDesc(CustomerAiConsultDO::getId).last("LIMIT 6"));
         var context = new ArrayList<CustomerAiConsultReqVO.Turn>(); Collections.reverse(rows);
         for (var row : rows) {
             if (row.getQuestion() == null) continue;

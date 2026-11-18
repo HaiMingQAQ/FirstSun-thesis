@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page>
+  <s-pharmacy-page assistant>
     <s-pharmacy-state v-if="!loggedIn" title="登录后查看业务通知" action="去登录" @retry="go('login')" />
     <template v-else>
       <view class="fs-section fs-between"><text class="fs-title">业务通知</text><text class="fs-muted">{{ unread }} 条未读</text></view>

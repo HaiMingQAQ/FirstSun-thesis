@@ -12,6 +12,7 @@ import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderDO;
 import cn.iocoder.yudao.module.pharmacy.dal.dataobject.member.WxOrderLineDO;
 import cn.iocoder.yudao.module.pharmacy.service.member.WxOrderLineService;
 import cn.iocoder.yudao.module.pharmacy.service.member.WxOrderService;
+import cn.iocoder.yudao.module.pharmacy.service.base.DrugService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,6 +23,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.getLoginUserId;
@@ -43,6 +47,9 @@ public class AppWxOrderController {
 
     @Resource
     private WxOrderLineService wxOrderLineService;
+
+    @Resource
+    private DrugService drugService;
 
     @PostMapping("/payment-notify")
     @jakarta.annotation.security.PermitAll // Pay module sends no member token; service verifies persisted records.
@@ -73,7 +80,16 @@ public class AppWxOrderController {
         reqVO.setStatus(pageReqVO.getStatus());
         reqVO.setPayStatus(pageReqVO.getPayStatus());
         PageResult<WxOrderDO> pageResult = wxOrderService.getWxOrderPage(reqVO);
-        return success(BeanUtils.toBean(pageResult, AppWxOrderRespVO.class));
+        List<AppWxOrderRespVO> result = BeanUtils.toBean(pageResult.getList(), AppWxOrderRespVO.class);
+        // Only use IDs from the authenticated member's tenant-scoped page.
+        Map<Long, List<WxOrderLineDO>> linesByOrder = wxOrderLineService.getWxOrderLineListByWxOrderIds(
+                pageResult.getList().stream().map(WxOrderDO::getId).toList()).stream()
+                .collect(Collectors.groupingBy(WxOrderLineDO::getWxOrderId));
+        for (AppWxOrderRespVO order : result) {
+            order.setLines(BeanUtils.toBean(linesByOrder.getOrDefault(order.getId(), List.of()),
+                    AppWxOrderLineRespVO.class));
+        }
+        return success(new PageResult<>(result, pageResult.getTotal()));
     }
 
     @GetMapping("/get")
@@ -139,7 +155,16 @@ public class AppWxOrderController {
 
     private List<AppWxOrderLineRespVO> getOrderLines(Long wxOrderId) {
         List<WxOrderLineDO> lines = wxOrderLineService.getWxOrderLineListByWxOrderId(wxOrderId);
-        return BeanUtils.toBean(lines, AppWxOrderLineRespVO.class);
+        List<AppWxOrderLineRespVO> result = BeanUtils.toBean(lines, AppWxOrderLineRespVO.class);
+        // 本人订单可识别已下架的非处方商品，不依赖公开在售目录。
+        Map<Long, String> images = drugService.getDrugList(lines.stream()
+                        .map(WxOrderLineDO::getDrugId).filter(Objects::nonNull).distinct().toList()).stream()
+                .filter(drug -> Integer.valueOf(0).equals(drug.getIsRx())
+                        && Integer.valueOf(1).equals(drug.getApproveStatus())
+                        && drug.getImageUrl() != null)
+                .collect(Collectors.toMap(drug -> drug.getId(), drug -> drug.getImageUrl()));
+        result.forEach(line -> line.setCatalogImageUrl(images.getOrDefault(line.getDrugId(), "")));
+        return result;
     }
 
 }

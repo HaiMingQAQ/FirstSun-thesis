@@ -12,6 +12,8 @@ import { useDesign } from '@/hooks/web/useDesign'
 import { isUrl } from '@/utils/is'
 import { createRouteLocation } from '@/utils/routeParams'
 import { getRootPath, isHeaderMixedNavLayout, isTwoColumnLayout } from '@/utils/layout'
+import { checkPermi } from '@/utils/permission'
+import AiAssistantMenuEntry from '../../AiAssistant/AiAssistantMenuEntry.vue'
 import { getRootMenuRoute, normalizeMenuTargetPath } from '@/layout/components/Menu/src/menuRoute'
 
 const { getPrefixCls, variables } = useDesign()
@@ -255,7 +257,7 @@ export default defineComponent({
         id={`${variables.namespace}-menu`}
         class={[
           prefixCls,
-          'relative bg-[var(--left-menu-bg-color)] layout-border__right',
+          'relative flex flex-col bg-[var(--left-menu-bg-color)] layout-border__right',
           {
             'w-[var(--tab-menu-max-width)]': !unref(collapse),
             'w-[var(--tab-menu-min-width)]': unref(collapse)
@@ -263,7 +265,7 @@ export default defineComponent({
         ]}
         onMouseleave={mouseleave}
       >
-        <ElScrollbar class="!h-[calc(100%-var(--tab-menu-collapse-height))]">
+        <ElScrollbar class="!h-auto min-h-0 flex-1">
           <div>
             {() => {
               return unref(tabRouters).map((v) => {
@@ -297,12 +299,15 @@ export default defineComponent({
         <div
           class={[
             `${prefixCls}--collapse`,
-            'text-center h-[var(--tab-menu-collapse-height)] leading-[var(--tab-menu-collapse-height)] cursor-pointer'
+            'flex-none text-center h-[var(--tab-menu-collapse-height)] leading-[var(--tab-menu-collapse-height)] cursor-pointer'
           ]}
           onClick={setCollapse}
         >
           <Icon icon={unref(collapse) ? 'ep:d-arrow-right' : 'ep:d-arrow-left'}></Icon>
         </div>
+        {checkPermi(['pharmacy:ai:chat']) ? (
+          <AiAssistantMenuEntry class="flex-none" collapse />
+        ) : undefined}
         {unref(hasExtraMenu) ? (
           <Menu
             split={false}

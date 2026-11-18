@@ -12,7 +12,7 @@ export interface PharmacyAiCommand {
   expiresAt: string
   confirmationToken?: string
   errorMessage?: string
-  result?: { purchaseOrderId?: number; purchaseStatus?: string }
+  result?: { drugId?: number; purchaseOrderId?: number; purchaseStatus?: string }
 }
 
 interface PharmacyKnowledgeReindexResult {
@@ -22,6 +22,8 @@ interface PharmacyKnowledgeReindexResult {
 }
 
 export const PharmacyAiApi = {
+  drugPreview: (drug: Record<string, any>): Promise<PharmacyAiCommand> =>
+    request.post({ url: '/pharmacy/ai/drug/preview', data: { drug } }),
   reindexKnowledge: (): Promise<PharmacyKnowledgeReindexResult> =>
     request.post({ url: '/pharmacy/ai/knowledge/reindex', timeout: 120_000 }),
   stream: async (

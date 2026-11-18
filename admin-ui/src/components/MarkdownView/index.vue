@@ -60,6 +60,11 @@ onMounted(async () => {
   color: #3b3e55;
   text-align: left;
 
+  strong,
+  b {
+    font-weight: 700;
+  }
+
   pre {
     position: relative;
   }

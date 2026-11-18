@@ -32,6 +32,12 @@ public final class InventoryReadVO {
 
     @Data
     public static class Batch {
+        private String genericName;
+        private String specification;
+        private String drugCode;
+        private Integer drugStatus;
+        private Integer warehouseStatus;
+        private Integer saleableQty;
         private Long id;
         private Long warehouseId;
         private String warehouseName;

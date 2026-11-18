@@ -41,14 +41,18 @@
 
     <!-- 经营待办：待审核药品有真实接口；销售额/订单数/库存预警暂无接口用空状态 -->
     <el-row :gutter="16" class="mt-8px">
-      <el-col :xl="16" :lg="16" :md="24" :sm="24" :xs="24" class="mb-12px">
+      <el-col :xl="24" :lg="24" :md="24" :sm="24" :xs="24" class="mb-12px">
         <div class="pharmacy-panel pharmacy-todo">
           <div class="pharmacy-section-title">经营待办</div>
           <div class="pharmacy-todo__list mt-12px">
+            <div v-hasPermi="['pharmacy:member:order:query']" class="pharmacy-todo__orders">
+              <el-button native-type="button" @click.stop="goOrders(1)">待拣货订单 <span v-if="pendingPickCount !== null">（{{ pendingPickCount }}）</span> →</el-button>
+              <el-button native-type="button" @click.stop="goOrders(3)">待自提核销 <span v-if="pendingPickupCount !== null">（{{ pendingPickupCount }}）</span> →</el-button>
+            </div>
             <div
               v-if="hasApprovePermi && pendingDrugCount !== null"
               class="pharmacy-todo__item"
-              @click="goRoute(`${PHARMACY_BASE_PATH}/drug`)"
+              @click="goRoute(`${PHARMACY_BASE_PATH}/drug-review?status=0`)"
             >
               <el-tag type="warning" size="small" effect="plain">待审核</el-tag>
               <span class="pharmacy-todo__text">待审核药品</span>
@@ -62,23 +66,12 @@
               <span class="pharmacy-text-weak">暂无待审核药品</span>
             </div>
             <div v-if="!hasApprovePermi" class="pharmacy-todo__item pharmacy-todo__item--empty">
-              <span class="pharmacy-text-weak">暂无待办权限</span>
+              <span class="pharmacy-text-weak">暂无可处理的药品审核待办</span>
             </div>
           </div>
         </div>
       </el-col>
-      <el-col :xl="8" :lg="8" :md="24" :sm="24" :xs="24" class="mb-12px">
-        <div class="pharmacy-panel pharmacy-todo">
-          <div class="pharmacy-section-title">经营数据</div>
-          <div class="pharmacy-todo__list mt-12px">
-            <div class="pharmacy-todo__item pharmacy-todo__item--empty">
-              <span class="pharmacy-text-weak">
-                销售额、订单数、库存预警等经营指标暂无统计接口，待后续接入后展示。
-              </span>
-            </div>
-          </div>
-        </div>
-      </el-col>
+
     </el-row>
 
     <!-- 快捷入口：跳转真实存在且用户有权限的药店业务页面 -->
@@ -112,10 +105,12 @@ import * as DrugApi from '@/api/pharmacy/base/drug'
 import * as CategoryApi from '@/api/pharmacy/base/category'
 import * as StoreApi from '@/api/pharmacy/base/store'
 import * as EmployeeApi from '@/api/pharmacy/base/employee'
+import { getOrderPage } from '@/api/pharmacy/member/order'
 
 defineOptions({ name: 'Index' })
 
 const router = useRouter()
+const message = useMessage()
 const userStore = useUserStore()
 const username = computed(() => userStore.getUser.nickname || '')
 
@@ -191,11 +186,14 @@ const visibleKpis = computed(() => baseKpis.filter((kpi) => checkPermi([kpi.perm
 
 /** 待审核药品数（真实接口，approveStatus=0） */
 const pendingDrugCount = ref<number | null>(null)
-const hasApprovePermi = computed(() => checkPermi(['pharmacy:base:drug:query']))
+const pendingPickCount = ref<number | null>(null)
+const pendingPickupCount = ref<number | null>(null)
+const hasApprovePermi = computed(() => checkPermi(['pharmacy:base:drug:query']) && checkPermi(['pharmacy:base:drug:approve']))
 
 /** 快捷入口：仅跳转真实路由，按权限控制可见 */
 const shortcuts = computed(() => {
   const list = [
+    ...(hasApprovePermi.value ? [{ label: '药品审核', icon: 'ep:document-checked', route: `${PHARMACY_BASE_PATH}/drug-review?status=0`, perm: 'pharmacy:base:drug:approve' }] : []),
     {
       label: '药品档案',
       icon: 'ep:first-aid-kit',
@@ -235,6 +233,23 @@ const goRoute = (path: string) => {
   router.push(path)
 }
 
+const goOrders = async (status: 1 | 3) => {
+  const orderRoute = router.getRoutes().find((route) => route.name === 'PharmacyMemberOrder')
+  if (!orderRoute) {
+    message.error('线上订单入口暂不可用，请从菜单打开线上订单')
+    return
+  }
+  try {
+    await router.push({ path: orderRoute.path, query: { status: String(status) } })
+    const current = router.currentRoute.value
+    if (current.path !== orderRoute.path || current.query.status !== String(status)) {
+      message.error('未能打开订单待办，请重试或从菜单进入线上订单')
+    }
+  } catch {
+    message.error('订单待办打开失败，请重试或从菜单进入线上订单')
+  }
+}
+
 /** 取分页 total：pageSize=1 仅取计数，不编造数字 */
 const fetchTotal = async (
   apiFn: KpiItem['api'],
@@ -261,14 +276,27 @@ const loadAll = async () => {
         () => { pendingDrugCount.value = null }
       ))
     }
+    if (checkPermi(['pharmacy:member:order:query'])) {
+      requests.push(fetchTotal(getOrderPage, { status: 1, payStatus: 1 }).then(
+        (count) => { pendingPickCount.value = count },
+        () => { pendingPickCount.value = null }
+      ))
+      requests.push(fetchTotal(getOrderPage, { status: 3, payStatus: 1, orderType: 0 }).then(
+        (count) => { pendingPickupCount.value = count },
+        () => { pendingPickupCount.value = null }
+      ))
+    }
     await Promise.all(requests)
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
-  loadAll()
+let activatedOnce = false
+onMounted(loadAll)
+onActivated(() => {
+  if (activatedOnce) loadAll()
+  activatedOnce = true
 })
 </script>
 <style lang="scss" scoped>
@@ -293,6 +321,20 @@ onMounted(() => {
 .pharmacy-todo {
   height: 100%;
   padding: var(--pharmacy-spacing-md) var(--pharmacy-spacing-lg);
+
+  &__orders {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: var(--pharmacy-spacing-sm);
+
+    :deep(.el-button) {
+      width: 100%;
+      min-height: 44px;
+      height: auto;
+      margin: 0;
+      white-space: normal;
+    }
+  }
 
   &__list {
     display: flex;

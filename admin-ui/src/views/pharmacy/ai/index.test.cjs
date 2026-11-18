@@ -22,7 +22,10 @@ const createPage = (api) => {
     '@/components/MarkdownView/index.vue': {},
     '@/api/pharmacy/ai': { PharmacyAiApi: api },
     './InventoryPurchaseDialog.vue': {},
-    '@/utils/formatTime': { formatDate: (value, pattern) => require('dayjs')(value).format(pattern) },
+    './CommandChanges.vue': {},
+    '@/utils/formatTime': {
+      formatDate: (value, pattern) => require('dayjs')(value).format(pattern)
+    },
     '@/directives/permission/hasPermi': { hasPermission: () => true }
   }
   const storage = new Map()
@@ -55,7 +58,10 @@ const emit = (callback, event, data) => callback({ event, data: JSON.stringify(d
 test('purchase preview renders server date arrays and epoch expiry as readable dates', () => {
   const page = createPage({})
   assert.equal(page.previewDate([2026, 10, 13]), '2026-10-13')
-  assert.equal(page.previewDate(new Date(2026, 9, 13, 16, 30).getTime(), 'YYYY-MM-DD HH:mm:ss'), '2026-10-13 16:30:00')
+  assert.equal(
+    page.previewDate(new Date(2026, 9, 13, 16, 30).getTime(), 'YYYY-MM-DD HH:mm:ss'),
+    '2026-10-13 16:30:00'
+  )
   assert.equal(page.previewDate(null), '未指定')
 })
 
@@ -212,4 +218,17 @@ test('failed cancel retrieves cancelled status and cannot leave an active confir
   await page.cancelCommand(preview)
   assert.equal(preview.status, 'CANCELLED')
   assert.equal(preview.confirmationToken, undefined)
+})
+
+test('read-only examples fill the draft without invoking AI', () => {
+  const page = createPage({
+    stream() {
+      assert.fail('Example must not send a request')
+    }
+  })
+  page.fillExample('查询板蓝根颗粒的药品档案')
+  assert.equal(page.content.value, '查询板蓝根颗粒的药品档案')
+  page.fillExample('查询板蓝根颗粒在当前门店的可售库存')
+  assert.equal(page.messages.value.length, 0)
+  assert.equal(page.content.value, '查询板蓝根颗粒在当前门店的可售库存')
 })

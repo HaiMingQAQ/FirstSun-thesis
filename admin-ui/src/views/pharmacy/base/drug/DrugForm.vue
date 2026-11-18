@@ -433,6 +433,7 @@ const open = async (type: string, id?: number) => {
     if (id) {
       const data = await DrugApi.getDrug(id)
       formData.value = { ...createDefaultFormData(), ...data }
+      dialogTitle.value = `编辑药品 · ${data.genericName || data.tradeName || ''}／${data.drugCode || ''}`
     }
   } catch {
     message.error('药品资料读取失败，请关闭后重试')

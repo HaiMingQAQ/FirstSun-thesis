@@ -52,6 +52,9 @@ public interface WxOrderLineService {
      */
     List<WxOrderLineDO> getWxOrderLineListByWxOrderId(Long wxOrderId);
 
+    /** 批量读取已授权订单的明细，调用方须先限定订单归属。 */
+    List<WxOrderLineDO> getWxOrderLineListByWxOrderIds(Collection<Long> orderIds);
+
     /**
      * 校验订单明细存在
      */

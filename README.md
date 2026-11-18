@@ -6,7 +6,7 @@ FirstSun 在药店课程项目基础上，整合**电脑顾客端**（`customer-
 
 本仓库用于教学、毕设展示和开发验证。商品、会员、处方与咨询使用演示资料，**不是生产数据**。真实支付、真实医生接诊、AI 诊疗和生产部署都不在当前完成范围内。
 
-> **状态说明（2026-11-15）**：本发布候选基于 `main`（`a6d232e1`），补充 14 款 OTC 演示目录、顾客说明书查询和管理端索引重建入口。下文保留既有功能及历史验证范围。前一版候选已通过隔离空库部署和定向接口验收。本版补齐旧档案停用及组合问题适应症引用，71 项 AI 定向测试通过，最终空库和真实组合回复复验仍在进行。页面引用展示尚未核对。
+> **更新（2026-11-18）**：本轮改进了后台订单与库存的阅读和操作、药品档案与审核入口、顾客端搜索与咨询展示，以及 H5 邮箱登录、资料编辑和订单摘要。顾客 AI 改进了多轮上下文与意图解析异常的处理。部分页面已在本机日常环境复验，整批改动的端到端验收仍待完成。
 
 ## 项目来源与个人工作
 
@@ -29,7 +29,7 @@ FirstSun 在药店课程项目基础上，整合**电脑顾客端**（`customer-
 - 购物车、普通 OTC 结算、订单列表与详情；模拟支付默认关闭，只用于明确授权的隔离测试环境。
 - 会员：邮箱注册、验证码登录、密码登录；资料、头像、修改密码；业务通知；门店人工文字咨询。
 
-**uni-app 顾客端（`mall-uniapp`）**：H5 与微信小程序开发编译，复用同一套后端 API。微信原生运行和真机尚未验收。
+**uni-app 顾客端（`mall-uniapp`）**：H5 和微信小程序共用后端 API。H5 支持邮箱注册、密码或验证码登录、找回密码和资料编辑。订单列表显示药品摘要，列表与详情采用一致的付款状态。微信原生运行和真机尚未验收。
 
 **管理端（`admin-ui`，Vue 3 + TypeScript + Element Plus）**
 
@@ -44,7 +44,7 @@ FirstSun 在药店课程项目基础上，整合**电脑顾客端**（`customer-
 **AI 与知识库**
 
 - 顾客 AI 只读查询当前门店允许展示的商品，不开放 AI 下单、诊断或开方；提示词和正则双层拦截越权请求。
-- 药品说明书 RAG 包括 Qdrant 向量库、本地向量化服务 `deploy/embedding`（BAAI/bge-small-zh-v1.5）和按租户过滤的检索。语料 `deploy/knowledge/corpus.json` 为演示摘要，保留来源链接。本候选在隔离环境验证了原三条问句、同款多问题组合及错误批准文号保护，真实接口可返回对应商品和同款引用。页面展示和回答完整性限制见本页状态说明。含运行配置的原始验收材料保存在本机。
+- 药品说明书 RAG 包括 Qdrant 向量库、本地向量化服务 `deploy/embedding`（BAAI/bge-small-zh-v1.5）和按租户过滤的检索。语料 `deploy/knowledge/corpus.json` 为演示摘要，保留来源链接。历史隔离环境验证覆盖了说明书问句、同款组合问题与批准文号校验。
 
 ## 技术栈
 
@@ -84,7 +84,7 @@ FirstSun 在药店课程项目基础上，整合**电脑顾客端**（`customer-
 
 ### uni-app 顾客端（H5）
 
-以下截图同样来自**本地演示环境**：`mall-uniapp` 的 H5 开发服务器（`npm run dev:h5`）连接本机后端、租户 901，用 headless Playwright 以手机视口（390×844，2 倍像素）采集。H5 普通模式只提供微信小程序登录入口，所以截图都是**未登录状态**。这些截图不代表微信原生运行或真机已经验证，两者**均未验收**。
+以下为早期版本的 **H5 访客截图**，通过本地演示环境以 390×844 手机视口采集。登录页截图早于 H5 邮箱认证改动。
 
 <table>
   <tr>
@@ -95,7 +95,7 @@ FirstSun 在药店课程项目基础上，整合**电脑顾客端**（`customer-
   <tr>
     <td align="center"><img src="docs/images/readme/mobile-04-cart.png" width="220" alt="H5 购物车（未登录）"><br>购物车（未登录）</td>
     <td align="center"><img src="docs/images/readme/mobile-06-my.png" width="220" alt="H5 会员中心（未登录）"><br>会员中心（未登录）</td>
-    <td align="center"><img src="docs/images/readme/mobile-07-login.png" width="220" alt="H5 登录页"><br>登录页（仅微信小程序登录）</td>
+    <td align="center"><img src="docs/images/readme/mobile-07-login.png" width="220" alt="早期 H5 登录页"><br>登录页（历史截图）</td>
   </tr>
 </table>
 
@@ -141,7 +141,7 @@ AI 助手可查询药品档案和当前门店批次库存，并生成药品变�
 注意事项：
 
 - 私有配置放在环境根目录的 `.env`，参考 [deploy/.env.thesis.local.example](deploy/.env.thesis.local.example)。示例里没有可用凭据，`.env` 不进 Git。
-- 启动和重建**都不会执行 SQL**。新建隔离测试库时按 [deploy/local-migrations.json](deploy/local-migrations.json) 的 01–47 顺序导入，并记录迁移账本 `firstsun_local_migration`，完成后应有 109 张 BASE TABLE。步骤见 [数据库初始化路径说明](docs/database-init-paths.md)。
+- 启动和重建**都不会执行 SQL**。新建隔离测试库时按 [deploy/local-migrations.json](deploy/local-migrations.json) 顺序导入，并记录迁移账本 `firstsun_local_migration`。第 48、49 项分别更新线上订单菜单和药品审核菜单。步骤见 [数据库初始化路径说明](docs/database-init-paths.md)。
 - 顾客端租户 `FIRSTSUN_TENANT_ID` 在**构建时**写入，修改后要重新构建顾客端。
 - 邮箱登录需要在 `.env` 中配置 `PHARMACY_MEMBER_EMAIL_*` 和 `RESEND_API_KEY`；未配置时邮箱认证返回“暂不可用”。
 - 不要用 `down -v`、全局 prune 或空库替换来处理环境问题。
@@ -177,7 +177,7 @@ FirstSun-thesis/
 │  ├─ docker-compose.local.yml  # 本机统一环境（7 个服务）
 │  ├─ embedding/                # 本地向量化服务
 │  ├─ knowledge/corpus.json     # 说明书演示语料
-│  ├─ local-migrations.json     # 初始化清单 01–47
+│  ├─ local-migrations.json     # 本机数据库迁移清单
 │  └─ sql/                      # 部署辅助 SQL（RAG 基线等）
 ├─ sql/                   # 业务初始化与 migrations 增量
 ├─ scripts/               # 启动器、readiness、OTC 验收（e2e-otc）、AI 演示（e2e-ai）

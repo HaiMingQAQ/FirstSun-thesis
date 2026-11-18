@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page dock>
+  <s-pharmacy-page assistant :drug-name="product?.genericName || product?.name" dock>
     <s-pharmacy-state
       v-if="loading || error || !product"
       :loading="loading"
@@ -7,11 +7,7 @@
       @retry="load"
     />
     <template v-else>
-      <view v-if="product.rx" class="detail-restricted">
-        <uni-icons type="locked" size="36" color="#62756c" />
-        <view>处方审核前暂不展示包装和详细资料</view>
-      </view>
-      <view v-else class="detail-hero">
+      <view class="detail-hero" :class="{ 'detail-no-image': failed || !product.image }">
         <image
           :src="
             failed || !product.image ? '/static/pharmacy/medicine-placeholder.png' : product.image
@@ -33,11 +29,12 @@
           <text class="fs-tag" :class="{ 'fs-tag-rx': product.rx }">
             {{ product.device ? '器械' : product.rx ? '处方药' : 'OTC' }}
           </text>
-          {{ product.name }}
+          {{ primaryName }}
         </view>
-        <view class="fs-muted">通用名：{{ product.genericName }}</view>
+        <view v-if="secondaryName" class="fs-muted">商品名：{{ secondaryName }}</view>
         <view class="fs-gap fs-small">{{ product.specification }}</view>
       </view>
+      <view class="fs-section detail-services"><button class="fs-outline" @tap="go('consultation?kind=PHARMACIST&draft=' + encodeURIComponent('想咨询药品：' + consultationName + '，规格：' + product.specification))">问药师</button><button class="fs-text-btn" @tap="go('consultation?kind=SERVICE&draft=' + encodeURIComponent('咨询门店商品：' + consultationName))">咨询门店客服</button></view>
       <view v-if="product.rx" class="fs-notice">
         处方药须经药师审核后购买。请先提交私有处方材料，审核通过后按核准明细结算。
       </view>
@@ -60,11 +57,21 @@
           <text>{{ api.store.name }}</text>
         </view>
       </view>
-      <view class="fs-section">
-        <view class="fs-title">用药提示</view>
-        <view class="fs-muted fs-gap">
-          请仔细阅读药品说明书，按说明书或在药师指导下使用。处方药请遵医嘱；本页面不提供诊断或个体化用药建议。
-        </view>
+      <view class="fs-section leaflet">
+        <view class="fs-title">药品说明书</view>
+        <view v-if="product.rx" class="fs-muted fs-gap">处方药说明书请咨询门店药师。</view>
+        <template v-else-if="product.leaflet">
+          <view class="fs-muted fs-gap">{{ product.leaflet.source }}<text v-if="product.leaflet.revised"> · 修订于 {{ product.leaflet.revised }}</text></view>
+          <view v-for="section in product.leaflet.sections" :key="section.label" class="fs-gap">
+            <view class="leaflet-label">{{ section.label }}</view>
+            <view class="leaflet-text">{{ section.text }}</view>
+          </view>
+          <!-- #ifdef H5 -->
+          <component :is="'a'" class="fs-outline leaflet-link" :href="product.leaflet.url" target="_blank" rel="noopener noreferrer">查看完整说明书</component>
+          <!-- #endif -->
+        </template>
+        <view v-else class="fs-muted fs-gap">本商品说明书暂未上线。</view>
+        <button class="fs-text-btn fs-gap" @tap="go('consultation?kind=PHARMACIST&draft=' + encodeURIComponent('想咨询药品说明书：' + consultationName))">咨询门店药师</button>
       </view>
       <view v-if="!product.rx" class="fs-section fs-between">
         <text>购买数量</text>
@@ -89,7 +96,7 @@
   </s-pharmacy-page>
 </template>
 <script setup>
-  import { ref } from 'vue';
+  import { computed, ref } from 'vue';
   import { onLoad, onShow } from '@dcloudio/uni-app';
   import api, { money } from '@/sheep/api/pharmacy/client';
   import { go, toast, requireLogin, useRequest, useAction } from './usePharmacy';
@@ -97,6 +104,12 @@
     product = ref(null),
     qty = ref(1),
     failed = ref(false);
+  const primaryName = computed(() => product.value?.genericName?.trim() || product.value?.name?.trim() || '商品名称待补充');
+  const secondaryName = computed(() => {
+    const name = product.value?.name?.trim();
+    return name && name !== primaryName.value ? name : '';
+  });
+  const consultationName = computed(() => primaryName.value + (secondaryName.value ? '（商品名：' + secondaryName.value + '）' : ''));
   const { loading, error, run } = useRequest();
   const { busy, act } = useAction();
   const load = () =>
@@ -130,6 +143,9 @@
   onShow(load);
 </script>
 <style scoped>
+  .leaflet-label { font-weight: 700; }
+  .leaflet-text { margin-top: 4px; line-height: 1.65; }
+  .leaflet-link { display: flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 12px; text-decoration: none; }
   .detail-hero {
     background: #fff;
     padding: 22px;
@@ -139,6 +155,9 @@
     width: 100%;
     height: 225px;
   }
+  .detail-no-image { padding: 8px 16px; }
+  .detail-no-image image { height: 96px; }
+  .detail-services { display: flex; gap: 12px; padding-top: 0; }
   .image-caption {
     display: block;
     color: #829086;
@@ -162,6 +181,5 @@
   }
   .detail-title { font-size: 22px; line-height: 1.5; font-weight: 600; }
   .detail-price { font-size: 28px; }
-  .detail-restricted { height: 225px; background: #f3f6f3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; color: #62756c; font-size: 14px; }
   @media (max-width: 340px) { .detail-title { font-size: 20px; } }
 </style>

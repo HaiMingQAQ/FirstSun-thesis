@@ -228,8 +228,9 @@ public class PrescRecordServiceImpl implements PrescRecordService {
     public PageResult<PrescRecordRespVO> getPrescRecordPage(PrescRecordPageReqVO pageReqVO) {
         pageReqVO.setStoreId(storeAccess.scopeStoreId(pageReqVO.getStoreId()));
         PageResult<PhPrescRecordDO> pageResult = prescRecordMapper.selectPage(pageReqVO);
+        var materialAccess = new java.util.HashMap<Long, Boolean>();
         List<PrescRecordRespVO> list = pageResult.getList().stream()
-                .map(this::toRespVO)
+                .map(record -> toRespVO(record, materialAccess))
                 .collect(java.util.stream.Collectors.toList());
         return new PageResult<>(list, pageResult.getTotal());
     }
@@ -239,18 +240,22 @@ public class PrescRecordServiceImpl implements PrescRecordService {
         var record = prescRecordMapper.selectById(id);
         if (record == null) throw exception(ErrorCodeConstants.PRESC_NOT_EXISTS);
         storeAccess.requireStore(record.getStoreId());
-        return toRespVO(record);
+        return toRespVO(record, new java.util.HashMap<>());
     }
 
     /**
      * 组装响应 VO，并填充门店名称 / 审方药师姓名 / 双人复核人姓名（保证数据关联可读）
      */
-    private PrescRecordRespVO toRespVO(PhPrescRecordDO record) {
+    private PrescRecordRespVO toRespVO(PhPrescRecordDO record, java.util.Map<Long, Boolean> materialAccess) {
         if (record == null) {
             return null;
         }
         PrescRecordRespVO respVO = new PrescRecordRespVO();
         org.springframework.beans.BeanUtils.copyProperties(record, respVO);
+        if (record.getWxMemberId() != null) {
+            respVO.setCanAccessPrivateMaterials(materialAccess.computeIfAbsent(record.getStoreId(),
+                    prescriptionStaffAccess::canAccessPrivateMaterials));
+        }
         respVO.setUses(uses.selectList(cn.iocoder.yudao.module.pharmacy.dal.dataobject.prescription.PrescriptionUseDO::getPrescId,record.getId()).stream()
                 .map(use->new cn.iocoder.yudao.module.pharmacy.controller.app.prescription.vo.AppPrescRecordRespVO.Use(use.getWxOrderId(),use.getStatus(),use.getReleaseReason(),use.getCreateTime())).toList());
         if (record.getStoreId() != null) {

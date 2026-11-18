@@ -10,7 +10,7 @@ import {compile} from '@vue/compiler-dom';
 async function render(file,extra={}){
  const {descriptor}=parse(fs.readFileSync(new URL('../src/'+file,import.meta.url),'utf8'));
  const render=new Function('Vue',compile(descriptor.template.content,{mode:'function'}).code)(Vue);
- const state={email:'member@example.test',code:'123456',password:'',confirm:'',busy:false,sending:false,sentEmail:'member@example.test',cooldown:0,error:'',mode:'code',props:{disabled:false},sent:true,validEmail:()=>true,submit(){},sendCode(){},changeMode(){},...extra};
+ const state={email:'member@example.test',code:'123456',password:'',confirm:'',busy:false,sending:false,sentEmail:'member@example.test',cooldown:0,error:'',mode:'code',passwordVisible:false,passwordInput:null,togglePassword(){},props:{disabled:false},sent:true,validEmail:()=>true,submit(){},sendCode(){},changeMode(){},...extra};
  return renderToString(Vue.createSSRApp({setup:()=>state,render}));
 }
 const inputs=html=>[...html.matchAll(/<input\b[^>]*>/g)].map(match=>match[0]);

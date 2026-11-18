@@ -1,5 +1,5 @@
 <template>
-  <s-pharmacy-page>
+  <s-pharmacy-page assistant>
     <scroll-view scroll-x class="order-tabs fs-white">
       <view class="tabs-inner">
         <button
@@ -12,6 +12,7 @@
         </button>
       </view>
     </scroll-view>
+    <view class="status-scroll-hint">左右滑动查看全部状态</view>
     <s-pharmacy-state
       v-if="!loggedIn"
       title="登录后查看订单"
@@ -30,37 +31,37 @@
     <view v-else v-for="order in filtered" :key="order.id" class="fs-section">
       <view class="fs-between">
         <text class="fs-small">{{ order.store?.name || api.store.name }}</text>
-        <text class="order-status">{{ statusNames[order.status] }}</text>
+        <text class="order-status">{{ orderStatusName(order) }}</text>
       </view>
-      <view class="fs-muted fs-gap">订单号 {{ order.id }}</view>
-      <s-pharmacy-product
-        v-for="row in order.items"
-        :key="row.drugId"
-        :product="row.product"
-        compact
-        hide-stock
-        :qty="row.qty"
-      />
-      <view class="fs-between fs-gap">
-        <text class="fs-muted">{{ order.paymentLabel || (order.paid ? '已支付' : '未支付') }}</text>
-        <text>
-          {{ order.paid ? '实付合计' : '应付合计' }}
-          <text class="fs-price">¥{{ money(order.total) }}</text>
-        </text>
+      <view class="fs-muted fs-gap">订单号 {{ order.orderNo || order.id }}</view>
+      <view v-for="row in (expanded[order.id] ? order.items : order.items.slice(0, 1))" :key="row.drugId" class="order-summary">
+        <view class="fs-grow"><view class="summary-name">{{ row.product.genericName || row.product.name }}</view><view class="fs-muted">{{ row.product.specification || '规格未提供' }}</view></view>
+        <text>× {{ row.qty }}</text>
       </view>
-      <s-pharmacy-order-actions :order="order" :mock-payment-available="mockPaymentAvailable" detail @change="load" />
+      <view v-if="!order.items.length" class="fs-muted fs-gap">商品摘要暂未提供，可查看订单详情</view>
+      <view class="fs-between summary-count">
+        <text class="fs-muted">{{ order.items.length ? itemKinds(order) + ' 款 · 共 ' + itemCount(order) + ' 件' : '' }}</text>
+        <button v-if="order.items.length > 1" class="fs-text-btn" @tap="expanded[order.id] = !expanded[order.id]">{{ expanded[order.id] ? '收起商品' : '展开全部商品' }}</button>
+      </view>
+      <view class="order-bottom">
+        <view class="fs-grow"><view class="fs-muted">{{ orderPaymentLabel(order) }}</view><text>{{ order.paid ? '实付合计' : '应付合计' }} </text><text class="fs-price">¥{{ money(order.total) }}</text></view>
+        <s-pharmacy-order-actions :order="order" :mock-payment-available="mockPaymentAvailable" detail @change="load" />
+      </view>
     </view>
   </s-pharmacy-page>
 </template>
 <script setup>
   import { ref, computed } from 'vue';
   import { onLoad, onShow, onPullDownRefresh } from '@dcloudio/uni-app';
-  import api, { money, statusNames } from '@/sheep/api/pharmacy/client';
+  import api, { money, orderStatusName, orderPaymentLabel, statusNames } from '@/sheep/api/pharmacy/client';
   import { go, useRequest } from './usePharmacy';
   const orders = ref([]),
     filter = ref('all'),
     loggedIn = ref(false),
     mockPaymentAvailable = ref(false);
+  const expanded = ref({});
+  const itemCount = order => order.items.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+  const itemKinds = order => order.items.length;
   const { loading, error, run } = useRequest();
   const tabs = [
     { value: 'all', label: '全部' },
@@ -116,5 +117,12 @@
     color: #176b5b;
     font-size: 14px;
   }
+  .status-scroll-hint { font-size: 12px; color: #62756c; text-align: right; padding: 4px 16px 8px; background: #fff; }
+  .order-summary { display: flex; align-items: flex-start; gap: 12px; padding-top: 12px; }
+  .summary-name { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+  .summary-count { min-height: 32px; font-size: 13px; margin-top: 4px; }
+  .order-bottom { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; border-top: 1px solid #e2e9e4; padding-top: 12px; margin-top: 4px; }
+  .order-bottom :deep(.order-actions) { margin-top: 0; }
+  .order-bottom :deep(.order-actions button) { padding: 8px 10px; }
   .order-tabs { border-bottom: 1px solid #e2e9e4; }
 </style>

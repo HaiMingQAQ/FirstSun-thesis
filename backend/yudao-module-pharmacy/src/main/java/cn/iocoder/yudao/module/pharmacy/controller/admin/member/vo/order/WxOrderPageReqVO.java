@@ -18,6 +18,9 @@ public class WxOrderPageReqVO extends PageParam {
     @Schema(description = "线上订单号，模糊匹配", example = "WX-001-20240101-0001")
     private String orderNo;
 
+    @Schema(description = "待自提订单取货码，精确匹配")
+    private String pickupCode;
+
     @Schema(description = "会员用户编号", example = "1024")
     private Long memberId;
 

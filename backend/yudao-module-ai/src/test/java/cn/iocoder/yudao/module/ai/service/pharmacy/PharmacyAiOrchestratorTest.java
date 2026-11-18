@@ -359,4 +359,30 @@ class PharmacyAiOrchestratorTest {
         assertEquals("TOOL_ERROR", ((Map<?, ?>) events.get(1).getData()).get("errorCode"));
         verifyNoInteractions(toolService, commandService);
     }
+    @Test
+    void incompleteCreateRequestOpensFormWithoutPreparingOrWriting() {
+        ChatModel model = streamModel();
+        when(model.call(any(Prompt.class))).thenReturn(response(
+                "{\"action\":\"openCreateDrugForm\",\"arguments\":{\"drug\":{\"genericName\":\"演示药物A\"}}}"));
+        List<PharmacyAiEvent> result = events();
+        assertEquals(List.of("metadata", "delta", "form_request", "done"),
+                result.stream().map(PharmacyAiEvent::getType).toList());
+        Map<?, ?> form = (Map<?, ?>) result.get(2).getData();
+        assertEquals("CREATE_DRUG", form.get("form"));
+        JsonNode draft = (JsonNode) form.get("draft");
+        assertEquals("演示药物A", draft.path("genericName").asText());
+        assertFalse(draft.has("retailPrice"));
+        verifyNoInteractions(commandService, toolService);
+    }
+
+    @Test
+    void legacyCreateDecisionAlsoRequiresUserFormSubmission() {
+        ChatModel model = streamModel();
+        when(model.call(any(Prompt.class))).thenReturn(response(
+                "{\"action\":\"prepareCreateDrug\",\"arguments\":{\"drug\":{\"genericName\":\"待填写药品\"}}}"));
+        List<PharmacyAiEvent> result = events();
+        assertTrue(result.stream().anyMatch(event -> "form_request".equals(event.getType())));
+        verifyNoInteractions(commandService, toolService);
+    }
+
 }
