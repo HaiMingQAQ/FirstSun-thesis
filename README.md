@@ -4,27 +4,24 @@ FirstSun 是一个毕业设计项目，包含电脑顾客端、手机顾客端�
 
 [从零部署](docs/local-demo-install.md) · [演示账号](docs/local-demo-install.md#2-初始化空库) · [界面展示](#界面展示) · [开发文档](docs/README.md)
 
-## 从零部署
-
-1. 下载本仓库，在仓库根目录打开 PowerShell 7。准备 Docker Compose 和 Node.js **22.13.0 或以上**。
-2. 按[从零搭建本机演示环境](docs/local-demo-install.md)复制本机配置、初始化空库并构建服务。初始化器会导入 **23 款商品及其包装图**，其中有 17 款非处方药、3 款处方药和 3 款医疗器械，也会创建演示账号和合成订单、咨询、处方记录。
-3. 打开顾客端或管理端，按部署文档的账号表登录。若要体验 H5 或 AI 说明书检索，按同一文档启动 H5 或配置可选的 RAG 索引。
-
-| 界面 | 首次部署的默认地址 |
-| --- | --- |
-| 电脑顾客端 | <http://127.0.0.1:5193> |
-| 药店管理端 | <http://127.0.0.1:38081> |
-| 手机 H5 | <http://127.0.0.1:4189>（按部署指南单独启动） |
-
-已有日常环境按 [README.local.md](README.local.md)启动。演示目录和包装图随仓库交付，门店库存为初始化时的演示库存。处方药保留审核规则。[包装图来源](deploy/demo-assets/catalog/image-sources.md)
-
 ## 界面展示
 
 ### 电脑顾客端
 
-顾客可按通用名或商品名查找当前门店商品，在详情页查看规格、库存和说明书。
+**首页** · 顾客进入药店后，可从「开始选药」进入商品目录。
+
+[<img src="docs/images/readme/customer-storefront.png" width="920" alt="电脑顾客端首页，展示药店导览和开始选药入口">](docs/images/readme/customer-storefront.png)
+
+**找药购药** · 在当前门店搜索和筛选商品，直接查看包装、规格、售价和库存。
+
+[<img src="docs/images/readme/customer-product-list.png" width="920" alt="电脑顾客端商品列表，展示商品包装、搜索分类、售价与库存">](docs/images/readme/customer-product-list.png)
+
+<details>
+<summary>查看商品详情与说明书</summary>
 
 [<img src="docs/images/readme/customer-product-leaflet.jpg" width="920" alt="电脑顾客端商品详情与说明书">](docs/images/readme/customer-product-leaflet.jpg)
+
+</details>
 
 ### 手机顾客端（H5）
 
@@ -43,7 +40,16 @@ FirstSun 是一个毕业设计项目，包含电脑顾客端、手机顾客端�
 
 ### 药店管理端
 
+**后台总览** · 员工登录后可查看药品、门店和员工概况，并从待办进入拣货、核销或药品审核。
+
+[<img src="docs/images/readme/admin-overview.png" width="920" alt="药店管理端总览，显示基础数据、经营待办和快捷入口">](docs/images/readme/admin-overview.png)
+
+**药品档案** · 查看商品包装、规格、启用状态与审核结果。
+
 [<img src="docs/images/readme/admin-drug-catalog.png" width="920" alt="管理端药品档案，显示包装图、规格和审核状态">](docs/images/readme/admin-drug-catalog.png)
+
+<details>
+<summary>查看 AI 新增药品与待审核流程</summary>
 
 AI 新增药品使用同一条答辩演示资料。员工核对预填内容并提交后，档案进入待审核队列，由有权限的员工处理。
 
@@ -53,7 +59,23 @@ AI 新增药品使用同一条答辩演示资料。员工核对预填内容并�
 | **档案已创建** | **在审核队列查回记录** |
 | [<img src="docs/images/readme/admin-ai-created.png" width="460" alt="药品档案已创建并标记待审核">](docs/images/readme/admin-ai-created.png) | [<img src="docs/images/readme/admin-drug-review.png" width="460" alt="药品审核列表显示同一条待审记录">](docs/images/readme/admin-drug-review.png) |
 
-截图中门店库存和审核数量为采集时的界面数据。
+</details>
+
+截图来自本机日常环境，门店库存和审核数量以采集时为准。
+
+## 从零部署
+
+1. 下载本仓库，在仓库根目录打开 PowerShell 7。准备 Docker Compose 和 Node.js **22.13.0 或以上**。
+2. 按[从零搭建本机演示环境](docs/local-demo-install.md)复制本机配置、初始化空库并构建服务。初始化器会导入 **23 款商品及其包装图**，其中有 17 款非处方药、3 款处方药和 3 款医疗器械，也会创建演示账号和合成订单、咨询、处方记录。
+3. 打开顾客端或管理端，按部署文档的账号表登录。若要体验 H5 或 AI 说明书检索，按同一文档启动 H5 或配置可选的 RAG 索引。
+
+| 界面 | 首次部署的默认地址 |
+| --- | --- |
+| 电脑顾客端 | <http://127.0.0.1:5193> |
+| 药店管理端 | <http://127.0.0.1:38081> |
+| 手机 H5 | <http://127.0.0.1:4189>（按部署指南单独启动） |
+
+已有日常环境按 [README.local.md](README.local.md)启动。演示目录和包装图随仓库交付，门店库存为初始化时的演示库存。处方药保留审核规则。[包装图来源](deploy/demo-assets/catalog/image-sources.md)
 
 ## 功能与技术
 
