@@ -7,7 +7,7 @@ CREATE TEMPORARY TABLE firstsun_catalog_guard (ok TINYINT NOT NULL CHECK (ok = 1
 INSERT INTO firstsun_catalog_guard VALUES (IF(
   DATABASE() REGEXP '^firstsun_demo_[a-z0-9_]+$'
   AND EXISTS (SELECT 1 FROM system_tenant WHERE id=901 AND creator='firstsun-demo-seed' AND deleted=b'0')
-  AND JSON_LENGTH(@demo_catalog, '$.products')=59, 1, 0));
+  AND JSON_LENGTH(@demo_catalog, '$.products')=67, 1, 0));
 
 CREATE TEMPORARY TABLE firstsun_catalog_categories AS
 SELECT c.* FROM JSON_TABLE(@demo_catalog, '$.categories[*]' COLUMNS (
@@ -27,19 +27,19 @@ SELECT p.* FROM JSON_TABLE(@demo_catalog, '$.products[*]' COLUMNS (
   need_expiry TINYINT PATH '$.needExpiry', retail_price DECIMAL(18,2) PATH '$.retailPrice',
   member_price DECIMAL(18,2) PATH '$.memberPrice', instructions_url VARCHAR(512) PATH '$.instructionsUrl',
   description TEXT PATH '$.description', approval_no VARCHAR(64) PATH '$.approvalNo',
-  qty_avail INT PATH '$.qtyAvail'
+  qty_avail INT PATH '$.qtyAvail', on_sale TINYINT PATH '$.onSale' DEFAULT '0' ON EMPTY
 )) p;
 
--- Pilot identities are reserved. A conflicting or deleted row must not receive pilot stock.
+-- Listed catalog identities are reserved. Conflicting or deleted rows cannot receive opening stock.
 -- MySQL cannot reopen the same temporary table twice in one statement.
 INSERT INTO firstsun_catalog_guard VALUES (IF(
-  (SELECT COUNT(*) FROM firstsun_catalog_products WHERE drug_code LIKE 'FS901-OTC-P%')=14, 1, 0));
+  (SELECT COUNT(*) FROM firstsun_catalog_products WHERE on_sale=1)=23, 1, 0));
 INSERT INTO firstsun_catalog_guard VALUES (IF(
   NOT EXISTS (
     SELECT 1 FROM firstsun_catalog_products p JOIN ph_drug d ON
       d.id=p.id+1000000 OR d.drug_code=p.drug_code COLLATE utf8mb4_unicode_ci
       OR (d.tenant_id=901 AND d.approval_no=p.approval_no COLLATE utf8mb4_unicode_ci)
-    WHERE p.drug_code LIKE 'FS901-OTC-P%'
+    WHERE p.on_sale=1
       AND NOT (d.id=p.id+1000000 AND d.drug_code=p.drug_code COLLATE utf8mb4_unicode_ci
         AND d.tenant_id=901 AND COALESCE(d.creator,'')='firstsun-catalog-seed' AND d.deleted=b'0'
         AND COALESCE(d.approval_no,'')=p.approval_no COLLATE utf8mb4_unicode_ci)
@@ -55,7 +55,7 @@ SELECT c.id + 1000000, c.cat_code, c.cat_name, 0, c.cat_type, c.sort_order, 1, 9
 FROM firstsun_catalog_categories c
 WHERE NOT EXISTS (SELECT 1 FROM ph_category x WHERE x.cat_code=c.cat_code COLLATE utf8mb4_unicode_ci AND x.tenant_id=901);
 
--- On a fresh catalog, enable only new OTC pilot rows. Keep existing operator settings on upgrades.
+-- Set visibility for newly seeded rows. Keep existing operator settings on upgrades.
 INSERT INTO ph_drug (id, drug_code, category_id, generic_name, trade_name, spell_code, specification,
                      dosage_form, manufacturer, unit, drug_type, is_rx, is_special, is_pseudoephedrine,
                      is_cold_chain, storage_cond, need_expiry, retail_price, member_price, instructions_url,
@@ -64,8 +64,7 @@ SELECT p.id + 1000000, p.drug_code, c.id, p.generic_name, p.trade_name, p.spell_
        p.dosage_form, p.manufacturer, p.unit, p.drug_type, p.is_rx, p.is_special, p.is_pseudoephedrine,
        p.is_cold_chain, p.storage_cond, p.need_expiry, p.retail_price, p.member_price, p.instructions_url,
        p.description, p.approval_no,
-       IF(@demo_first_catalog_install AND p.drug_code NOT LIKE 'FS901-OTC-P%', 0, 1),
-       1, IF(p.drug_code LIKE 'FS901-OTC-P%', 1, 0), 901, 'firstsun-catalog-seed'
+       p.on_sale, 1, p.on_sale, 901, 'firstsun-catalog-seed'
 FROM firstsun_catalog_products p JOIN firstsun_catalog_categories pc ON pc.id=p.category_id
 JOIN ph_category c ON c.cat_code=pc.cat_code COLLATE utf8mb4_unicode_ci AND c.tenant_id=901 AND c.deleted=b'0'
 WHERE NOT EXISTS (SELECT 1 FROM ph_drug d WHERE d.drug_code=p.drug_code COLLATE utf8mb4_unicode_ci AND d.tenant_id=901);
@@ -73,19 +72,20 @@ WHERE NOT EXISTS (SELECT 1 FROM ph_drug d WHERE d.drug_code=p.drug_code COLLATE 
 INSERT INTO ph_inv_batch (store_id, warehouse_id, drug_id, batch_no, expiry_date, source_type, source_no,
                           qty_total, qty_avail, tenant_id, creator)
 SELECT 9101, 9201, d.id, 'DEMO-CATALOG-OPEN',
-       DATE_ADD(CURRENT_DATE, INTERVAL (IF(p.drug_code LIKE 'FS901-OTC-P%', 1, 5)) YEAR), 3, 'DEMO-CATALOG',
+       DATE_ADD(CURRENT_DATE, INTERVAL (IF(p.on_sale=1, 1, 5)) YEAR), 3, 'DEMO-CATALOG',
        p.qty_avail, p.qty_avail, 901, 'firstsun-catalog-seed'
 FROM firstsun_catalog_products p JOIN ph_drug d ON d.drug_code=p.drug_code COLLATE utf8mb4_unicode_ci AND d.tenant_id=901
 WHERE p.qty_avail>0 AND d.creator='firstsun-catalog-seed' AND d.deleted=b'0'
-  AND (@demo_first_catalog_install OR p.drug_code LIKE 'FS901-OTC-P%')
+  AND (@demo_first_catalog_install OR p.on_sale=1)
   AND NOT EXISTS (SELECT 1 FROM ph_inv_batch b WHERE b.tenant_id=901 AND b.warehouse_id=9201
                    AND b.drug_id=d.id AND b.batch_no='DEMO-CATALOG-OPEN');
 
 INSERT INTO ph_inv_location_stock (batch_id, location_id, drug_id, qty, tenant_id)
 SELECT b.id, 9202, b.drug_id, b.qty_avail, 901 FROM ph_inv_batch b
 JOIN ph_drug d ON d.id=b.drug_id AND d.tenant_id=901
+JOIN firstsun_catalog_products p ON p.drug_code=d.drug_code COLLATE utf8mb4_unicode_ci
 WHERE b.tenant_id=901 AND b.warehouse_id=9201 AND b.creator='firstsun-catalog-seed' AND b.deleted=b'0'
-  AND (@demo_first_catalog_install OR d.drug_code LIKE 'FS901-OTC-P%')
+  AND (@demo_first_catalog_install OR p.on_sale=1)
   AND NOT EXISTS (SELECT 1 FROM ph_inv_location_stock s WHERE s.batch_id=b.id AND s.location_id=9202);
 
 INSERT INTO ph_inv_flow (store_id, batch_id, drug_id, batch_no, flow_type, in_qty, out_qty, balance_qty,
@@ -93,8 +93,9 @@ INSERT INTO ph_inv_flow (store_id, batch_id, drug_id, batch_no, flow_type, in_qt
 SELECT 9101, b.id, b.drug_id, b.batch_no, 70, s.qty, 0, s.qty, 7, 'DEMO-CATALOG', s.id, NOW(), 0, 9202, 0, 901
 FROM ph_inv_batch b JOIN ph_inv_location_stock s ON s.batch_id=b.id AND s.location_id=9202
 JOIN ph_drug d ON d.id=b.drug_id AND d.tenant_id=901
+JOIN firstsun_catalog_products p ON p.drug_code=d.drug_code COLLATE utf8mb4_unicode_ci
 WHERE b.tenant_id=901 AND b.warehouse_id=9201 AND b.creator='firstsun-catalog-seed' AND b.deleted=b'0'
-  AND (@demo_first_catalog_install OR d.drug_code LIKE 'FS901-OTC-P%')
+  AND (@demo_first_catalog_install OR p.on_sale=1)
   AND NOT EXISTS (SELECT 1 FROM ph_inv_flow f WHERE f.batch_id=b.id AND f.biz_no='DEMO-CATALOG' AND f.tenant_id=901);
 
 -- Archive the original two workflow fixtures on first installation only.
